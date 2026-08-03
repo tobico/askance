@@ -24,4 +24,4 @@ Roadmap stage: [05: Nix packaging + deployment](docs/roadmaps/v1/05-nix-packagin
 - [x] 01: The flake package — [details](01-flake-package.md)
 - [x] 02: The NixOS module — [details](02-nixos-module.md)
 - [x] 03: A VM test of the module — [details](03-vm-test.md)
-- [ ] 04: Deploy it on the real box — [details](04-deploy.md)
+- [x] 04: Deploy it on the real box — [details](04-deploy.md)
