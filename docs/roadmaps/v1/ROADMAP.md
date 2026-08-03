@@ -20,6 +20,7 @@ swap if push notifications become urgent before conveniences.
 - [x] 01: API core + CLI — [brief](01-api-core-and-cli.md)
 - [x] 02: Answering web UI — [brief](02-answering-web-ui.md)
 - [ ] 03: Answering conveniences — [brief](03-answering-conveniences.md)
+      *(in progress on `answering-conveniences`)*
 - [ ] 04: PWA + push — [brief](04-pwa-and-push.md)
 - [ ] 05: Nix packaging + deployment — [brief](05-nix-packaging.md)
 - [ ] 06: Skills adoption — [brief](06-skills-adoption.md)
