@@ -363,6 +363,32 @@ h1 + .meta .branch {
   color: var(--tok-support);
 }
 
+/* Accept-all: an action over the questions below it, so it is outlined rather
+   than filled — the one solid button on the page is the submit that ends the
+   agent's wait. */
+
+.accept-all {
+  margin-bottom: 1rem;
+}
+
+.accept-all button {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px dashed var(--accent);
+  border-radius: 0.6rem;
+  cursor: pointer;
+}
+
+.accept-all .note {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
 .questions,
 .subquestions {
   list-style: none;

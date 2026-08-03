@@ -179,6 +179,39 @@ struct Filled {
     free_text: String,
 }
 
+impl Filled {
+    /// Whether the human has put anything in: an Option, words, or both.
+    /// Whitespace is not an answer here any more than it is at submit.
+    fn answered(&self) -> bool {
+        self.selected.is_some() || !self.free_text.trim().is_empty()
+    }
+}
+
+/// How one question stands when accept-all is pressed: what its fields hold,
+/// and the Option the agent recommended if it recommended one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Standing {
+    filled: Filled,
+    recommended: Option<u32>,
+}
+
+/// Which questions accept-all fills, and with which Option: the position of
+/// every question that is both unanswered and carrying a Recommendation, paired
+/// with the Recommendation's number.
+///
+/// It fills nothing else. A question the human already answered keeps their
+/// answer, and one with no ★ stays open rather than being handed an arbitrary
+/// Option — which also makes a second press a no-op, since the first press
+/// answers exactly the questions it names.
+fn accepting(standing: &[Standing]) -> Vec<(usize, u32)> {
+    standing
+        .iter()
+        .enumerate()
+        .filter(|(_, question)| !question.filled.answered())
+        .filter_map(|(index, question)| Some((index, question.recommended?)))
+        .collect()
+}
+
 /// The Response a page full of fields adds up to.
 ///
 /// Every question gets an entry, in the order it was asked: an Answer when the
@@ -196,7 +229,7 @@ fn drafted(filled: &[Filled], comment: &str) -> Response {
                 free_text: (!free_text.is_empty()).then(|| free_text.to_owned()),
                 // Exclusive with an Answer, so it goes on exactly the entries
                 // that carry nothing.
-                unanswered: field.selected.is_none() && free_text.is_empty(),
+                unanswered: !field.answered(),
             }
         })
         .collect();
@@ -207,6 +240,24 @@ fn drafted(filled: &[Filled], comment: &str) -> Response {
         answers,
         comment: (!comment.is_empty()).then(|| comment.to_owned()),
     }
+}
+
+/// One question as the page holds on to it: the name it answers to, the Option
+/// the agent recommended, and the fields the human fills.
+#[derive(Debug, Clone)]
+struct Asked {
+    label: String,
+    recommended: Option<u32>,
+    fields: Fields,
+}
+
+/// The Option the agent recommended among these, if it recommended one. At most
+/// one Option per question may be the Recommendation, so the first ★ is it.
+fn recommendation(options: &[QuestionOption]) -> Option<u32> {
+    options
+        .iter()
+        .find(|option| option.recommended)
+        .map(|option| option.n)
 }
 
 /// The questions a Response leaves open, by name — what the warning before
@@ -240,12 +291,17 @@ fn ask_sheet(set: SetView) -> impl IntoView {
     // Response has to account for them in. A question that went missing here
     // would make the Response incomplete, and the server refuses those by name
     // rather than letting one through.
-    let mut fields: Vec<(String, Fields)> = Vec::new();
+    let mut fields: Vec<Asked> = Vec::new();
     let asked: Vec<_> = set
         .questions
         .into_iter()
         .map(|asked| question(asked, &mut fields))
         .collect();
+
+    // Whether accept-all has anything it could ever do here. Read off the
+    // questions as they were drawn rather than by walking the Set again, and
+    // fixed for the life of the page: the Set does not change under it.
+    let recommended_anywhere = fields.iter().any(|asked| asked.recommended.is_some());
 
     let fields = StoredValue::new(fields);
     let comment = RwSignal::new(String::new());
@@ -254,9 +310,26 @@ fn ask_sheet(set: SetView) -> impl IntoView {
         let filled: Vec<Filled> = fields
             .read_value()
             .iter()
-            .map(|(label, fields)| fields.filled(label))
+            .map(|asked| asked.fields.filled(&asked.label))
             .collect();
         drafted(&filled, &comment.get_untracked())
+    };
+
+    // Pressing it writes the same field the human's own tap would, so every
+    // Answer it fills can still be changed, and submit is still a separate act.
+    let accept_all = move |_| {
+        let standing: Vec<Standing> = fields
+            .read_value()
+            .iter()
+            .map(|asked| Standing {
+                filled: asked.fields.filled(&asked.label),
+                recommended: asked.recommended,
+            })
+            .collect();
+
+        for (index, n) in accepting(&standing) {
+            fields.read_value()[index].fields.selected.set(Some(n));
+        }
     };
 
     let submit = Action::new(move |(id, response): &(i64, Response)| {
@@ -310,6 +383,22 @@ fn ask_sheet(set: SetView) -> impl IntoView {
                     <section class="diff">
                         <h2>"Diff"</h2>
                         <div class="diff-files" inner_html=html></div>
+                    </section>
+                }
+            })}
+        // Above the questions rather than beside the submit: it changes what is
+        // drawn below it, and the human scrolls down through the result on the
+        // way to sending it.
+        {recommended_anywhere
+            .then(|| {
+                view! {
+                    <section class="accept-all">
+                        <button type="button" on:click=accept_all>
+                            "Accept all ★ Recommendations"
+                        </button>
+                        <p class="note">
+                            "Fills the questions you have not answered yet. You can still change any of them."
+                        </p>
                     </section>
                 }
             })}
@@ -411,7 +500,7 @@ fn refusal(outcome: Option<Result<Submitted, ServerFnError>>) -> Option<AnyView>
 ///
 /// `use<>`: the view is built here and outlives the borrow of `fields`, which
 /// it does not hold on to.
-fn question(question: Question, fields: &mut Vec<(String, Fields)>) -> impl IntoView + use<> {
+fn question(question: Question, fields: &mut Vec<Asked>) -> impl IntoView + use<> {
     let own = ask(
         question.name().to_owned(),
         question.text.clone(),
@@ -451,14 +540,18 @@ fn ask(
     name: String,
     text: String,
     options: Vec<QuestionOption>,
-    collected: &mut Vec<(String, Fields)>,
+    collected: &mut Vec<Asked>,
 ) -> impl IntoView + use<> {
     let group = format!("{name}-option");
     let field = format!("{name}-free-text");
     let has_options = !options.is_empty();
 
     let live = Fields::new();
-    collected.push((name.clone(), live));
+    collected.push(Asked {
+        label: name.clone(),
+        recommended: recommendation(&options),
+        fields: live,
+    });
 
     // With no Options the free text *is* the answer; with them it is the note
     // in the margin beside one.
@@ -536,13 +629,25 @@ fn offered(group: String, option: QuestionOption, live: Fields) -> impl IntoView
 
 #[cfg(test)]
 mod tests {
-    use super::{Filled, drafted, unanswered};
+    use super::{Filled, Standing, accepting, drafted, unanswered};
 
     fn filled(label: &str, selected: Option<u32>, free_text: &str) -> Filled {
         Filled {
             label: label.to_owned(),
             selected,
             free_text: free_text.to_owned(),
+        }
+    }
+
+    fn standing(
+        label: &str,
+        selected: Option<u32>,
+        free_text: &str,
+        recommended: Option<u32>,
+    ) -> Standing {
+        Standing {
+            filled: filled(label, selected, free_text),
+            recommended,
         }
     }
 
@@ -626,6 +731,56 @@ mod tests {
         );
 
         assert_eq!(unanswered(&response), ["Q2", "Q2b"]);
+    }
+
+    #[test]
+    fn accept_all_fills_the_questions_nobody_has_touched() {
+        let questions = [
+            standing("Q1", None, "", Some(2)),
+            standing("Q2", Some(1), "", Some(2)),
+            standing("Q3", None, "the second one, but only for writes", Some(1)),
+            standing("Q4", None, "   ", Some(3)),
+        ];
+
+        assert_eq!(
+            accepting(&questions),
+            [(0, 2), (3, 3)],
+            "an Option or words is an answer and stands; whitespace is neither",
+        );
+    }
+
+    #[test]
+    fn a_question_with_no_recommendation_is_left_unanswered() {
+        let questions = [
+            standing("Q1", None, "", None),
+            standing("Q2", None, "", Some(1)),
+        ];
+
+        assert_eq!(
+            accepting(&questions),
+            [(1, 1)],
+            "with no ★ there is nothing to accept, and no Option to pick instead",
+        );
+    }
+
+    #[test]
+    fn pressing_accept_all_twice_does_nothing_the_second_time() {
+        let mut questions = vec![
+            standing("Q1", None, "", Some(2)),
+            standing("Q2", Some(1), "", Some(2)),
+            standing("Q3", None, "", None),
+        ];
+
+        let first = accepting(&questions);
+        assert_eq!(first, [(0, 2)]);
+        for (index, n) in first {
+            questions[index].filled.selected = Some(n);
+        }
+
+        assert!(
+            accepting(&questions).is_empty(),
+            "the first press answered everything it names, so a second finds nothing",
+        );
     }
 
     #[test]

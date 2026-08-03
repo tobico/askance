@@ -272,8 +272,10 @@ async fn the_recommendation_is_marked_but_nothing_is_preselected() {
 
     let html = set_page(&pool, &full_grammar_set()).await;
 
+    // The marks on the Options, not every ★ on the page: the accept-all button
+    // spells its own name with one.
     assert_eq!(
-        html.matches('★').count(),
+        html.matches(r#"class="star">★"#).count(),
         1,
         "expected exactly the one recommended Option marked:\n{html}"
     );
@@ -285,6 +287,54 @@ async fn the_recommendation_is_marked_but_nothing_is_preselected() {
         !html.contains("checked"),
         "nothing may be selected on load, or an unread Recommendation \
          could be submitted by accident:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_set_carrying_a_recommendation_offers_to_accept_them_all() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &full_grammar_set()).await;
+
+    assert!(
+        html.contains(r#"class="accept-all""#),
+        "expected the accept-all button on a Set with a Recommendation:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_recommendation_on_a_subquestion_counts_the_same_as_one_on_a_question() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.questions[0].options[1].recommended = false;
+    set.questions[1].subquestions[0].options[0].recommended = true;
+
+    let html = set_page(&pool, &set).await;
+
+    assert!(
+        html.contains(r#"class="accept-all""#),
+        "Sub-questions carry Options, so a ★ on one is a ★ on the Set:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_set_with_no_recommendation_anywhere_offers_no_accept_all() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    for question in &mut set.questions {
+        let subquestions = question.subquestions.iter_mut().map(|sub| &mut sub.options);
+        for options in std::iter::once(&mut question.options).chain(subquestions) {
+            for option in options {
+                option.recommended = false;
+            }
+        }
+    }
+
+    let html = set_page(&pool, &set).await;
+
+    assert!(
+        !html.contains("accept-all"),
+        "with nothing to accept the button is absent, not disabled:\n{html}"
     );
 }
 
