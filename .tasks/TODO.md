@@ -20,7 +20,7 @@ Roadmap stage: [01: API core + CLI](docs/roadmaps/v1/01-api-core-and-cli.md)
 
 ## Tasks
 
-- [ ] 01: Workspace, dev shell, and skeleton server — [details](01-workspace-and-skeleton-server.md)
+- [x] 01: Workspace, dev shell, and skeleton server — [details](01-workspace-and-skeleton-server.md)
 - [ ] 02: Submit a Question Set — [details](02-submit-question-set.md)
 - [ ] 03: Answer and deliver — [details](03-answer-and-deliver.md)
 - [ ] 04: `askance ask` CLI — [details](04-askance-ask-cli.md)

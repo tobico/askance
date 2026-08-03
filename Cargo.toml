@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = ["crates/cli", "crates/schema", "crates/server"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[workspace.dependencies]
+askance-schema = { path = "crates/schema" }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
