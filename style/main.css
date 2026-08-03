@@ -88,7 +88,11 @@ textarea {
   resize: vertical;
 }
 
-.pending {
+/* The two lists of Sets — what is waiting and what was decided — are drawn as
+   the same card, because they are read the same way and the same Set is looked
+   at in both. Only the last thing on the meta line differs. */
+
+.set-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -99,7 +103,7 @@ textarea {
 
 /* The whole card is the tap target, so the link is the block and the padding
    lives on it rather than on the item around it. */
-.pending-set a {
+.set-row a {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -111,11 +115,11 @@ textarea {
   text-decoration: none;
 }
 
-.pending-set .title {
+.set-row .title {
   font-weight: 600;
 }
 
-.pending-set .meta {
+.set-row .meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem 0.75rem;
@@ -123,12 +127,12 @@ textarea {
   color: var(--ink-soft);
 }
 
-.pending-set .project {
+.set-row .project {
   color: var(--accent);
   font-weight: 500;
 }
 
-.pending-set .branch {
+.set-row .branch {
   font-family: ui-monospace, SFMono-Regular, monospace;
 }
 
@@ -141,7 +145,8 @@ textarea {
   font-weight: 500;
 }
 
-.pending-set .age {
+.pending-set .age,
+.archived-set .decided-at {
   margin-left: auto;
 }
 
@@ -154,15 +159,19 @@ textarea {
   color: #b3382c;
 }
 
-/* The set view: one long column, read top to bottom and answered on the way
-   down. */
+/* Where else there is to go, in the same slot on every page: back out of a Set,
+   and between the two lists. */
 
-.back {
+.back,
+.to-archive {
   display: inline-block;
   margin-bottom: 0.75rem;
   font-size: 0.9rem;
   text-decoration: none;
 }
+
+/* The set view: one long column, read top to bottom and answered on the way
+   down. */
 
 h1 + .meta {
   display: flex;

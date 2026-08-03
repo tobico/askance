@@ -101,6 +101,10 @@ pub fn PendingList() -> impl IntoView {
     });
 
     view! {
+        // The way through to what was already decided, in the slot the set
+        // view's "← Pending" sits in: every page here starts with where else
+        // there is to go, so neither list needs a typed URL to reach the other.
+        <A href="/archive" attr:class="to-archive">"Archive →"</A>
         <h1>"Pending"</h1>
         // A Transition rather than a Suspense: the fallback belongs to the first
         // load, and a refetch every ten seconds must not blink the list away.
@@ -118,7 +122,9 @@ pub fn PendingList() -> impl IntoView {
                     }
                     Ok(sets) => {
                         view! {
-                            <ul class="pending">{sets.into_iter().map(pending_row).collect_view()}</ul>
+                            <ul class="set-list">
+                                {sets.into_iter().map(pending_row).collect_view()}
+                            </ul>
                         }
                             .into_any()
                     }
@@ -145,7 +151,7 @@ fn pending_row(entry: PendingEntry) -> impl IntoView {
     // The whole row is the link: on a phone the tap target should be the card,
     // not the title inside it.
     view! {
-        <li class="pending-set">
+        <li class="set-row pending-set">
             <A href=format!("/sets/{}", entry.id)>
                 <span class="title">{entry.title}</span>
                 <span class="meta">

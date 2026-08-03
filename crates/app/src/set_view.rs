@@ -443,13 +443,22 @@ fn sheet(set: SetView) -> impl IntoView {
         view! { <p class="answered-at">"Answered " {when}</p> }
     });
 
+    // Back to the list this Set is on: an answered one is off the pending list
+    // for good and lives in the Archive, so that is where reading it leads back
+    // to.
+    let (back, out) = if set.answered.is_some() {
+        ("/archive", "← Archive")
+    } else {
+        ("/", "← Pending")
+    };
+
     let body = match set.answered {
         Some(answered) => decided(&set.questions, answered.response).into_any(),
         None => answerable(set.id, set.questions).into_any(),
     };
 
     view! {
-        <A href="/" attr:class="back">"← Pending"</A>
+        <A href=back attr:class="back">{out}</A>
         <h1>{set.title}</h1>
         {provenance}
         {when}
@@ -879,7 +888,8 @@ fn offered(group: String, option: QuestionOption, live: Fields) -> impl IntoView
     }
 }
 
-/// When the Response landed, as the page says it.
+/// When the Response landed, as the page says it. Shared with the Archive,
+/// which dates its rows by the same reasoning and has to word them the same way.
 ///
 /// Absolute rather than the pending list's "3h ago": that list is scanned for
 /// what to do next, while an answered Set is a decision in a permanent log,
@@ -889,7 +899,7 @@ fn offered(group: String, option: QuestionOption, live: Fields) -> impl IntoView
 ///
 /// A stamp that will not parse is shown as stored: the page is still worth
 /// drawing, and the raw stamp still says when.
-fn submitted_when(submitted_at: &str) -> String {
+pub(crate) fn submitted_when(submitted_at: &str) -> String {
     let Ok(when) = OffsetDateTime::parse(submitted_at, &Rfc3339) else {
         return submitted_at.trim().to_owned();
     };

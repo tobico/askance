@@ -11,14 +11,16 @@ use leptos_meta::{MetaTags, Stylesheet, Title, provide_meta_context};
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::{ParamSegment, SsrMode, StaticSegment};
 
+pub mod archive;
+pub mod pending;
+pub mod set_view;
+
 // The Preface's markdown and the Diff are rendered before they leave the
 // server, so neither parser belongs to the browser half.
 #[cfg(feature = "ssr")]
 mod diff;
 #[cfg(feature = "ssr")]
 mod markdown;
-pub mod pending;
-pub mod set_view;
 
 /// The HTML document the server sends and the browser hydrates. Phone-first:
 /// the viewport tag is the one thing a responsive layout cannot do without.
@@ -60,6 +62,11 @@ pub fn App() -> impl IntoView {
                     <Route
                         path=StaticSegment("")
                         view=pending::PendingList
+                        ssr=SsrMode::Async
+                    />
+                    <Route
+                        path=StaticSegment("archive")
+                        view=archive::Archive
                         ssr=SsrMode::Async
                     />
                     <Route

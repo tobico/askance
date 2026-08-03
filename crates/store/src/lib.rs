@@ -50,6 +50,17 @@ pub struct PendingSet {
     pub branch: Option<String>,
 }
 
+/// One row of the Archive: a Set that has been answered, drawn from the lifted
+/// columns and its Response's stamp without touching either body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArchivedSet {
+    pub id: i64,
+    pub answered_at: String,
+    pub title: String,
+    pub project: Option<String>,
+    pub branch: Option<String>,
+}
+
 /// Word that a Set has just been answered, so a wait held on it can end
 /// without going back to the store to look.
 ///
@@ -261,6 +272,41 @@ pub async fn pending_sets(pool: &SqlitePool) -> Result<Vec<PendingSet>> {
         .map(|(id, created_at, title, project, branch)| PendingSet {
             id,
             created_at,
+            title,
+            project,
+            branch,
+        })
+        .collect())
+}
+
+/// The Sets in the Archive, newest decision first.
+///
+/// Ordered by when each Set was answered rather than by when it was asked: in
+/// the Archive the day the decision was made is what the log is read along. Two
+/// Responses can share a stamp to the millisecond, so the id — handed out in
+/// submission order, and unique — breaks the tie.
+///
+/// Like the pending list, drawn from the lifted columns alone: the Archive is
+/// permanent and only grows, and a list is scanned rather than read.
+pub async fn archived_sets(pool: &SqlitePool) -> Result<Vec<ArchivedSet>> {
+    /// The columns in the order the query below selects them.
+    type Row = (i64, String, String, Option<String>, Option<String>);
+
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT s.id, r.submitted_at, s.title, s.project, s.branch
+         FROM question_sets s
+         JOIN responses r ON r.set_id = s.id
+         ORDER BY r.submitted_at DESC, s.id DESC",
+    )
+    .fetch_all(pool)
+    .await
+    .context("listing the archived Question Sets")?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(id, answered_at, title, project, branch)| ArchivedSet {
+            id,
+            answered_at,
             title,
             project,
             branch,

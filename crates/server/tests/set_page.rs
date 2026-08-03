@@ -698,6 +698,23 @@ async fn a_set_nobody_has_answered_yet_is_still_a_form() {
 }
 
 #[tokio::test]
+async fn the_way_back_out_of_a_set_is_the_list_it_is_on() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let waiting = set_page(&pool, &full_grammar_set()).await;
+    assert!(
+        waiting.contains(r#"href="/""#) && waiting.contains("← Pending"),
+        "a Set still waiting is on the pending list:\n{waiting}"
+    );
+
+    let (answered, _) = answered_set_page(&pool, &full_grammar_set(), &decided_every_way()).await;
+    assert!(
+        answered.contains(r#"href="/archive""#) && answered.contains("← Archive"),
+        "an answered Set is off the pending list and in the Archive:\n{answered}"
+    );
+}
+
+#[tokio::test]
 async fn a_set_that_does_not_exist_says_so() {
     let (_dir, pool) = fresh_pool().await;
 
