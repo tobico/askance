@@ -13,8 +13,9 @@ sqlx.workspace = true
 # For the grace window on a released wait: the one place the store has a clock
 # of its own rather than letting SQLite stamp the time.
 time.workspace = true
-# For `Submissions` only: the announcement that a Set has been answered has to
-# cross from whichever crate took the Response to whichever is holding a wait.
+# For `Settlements` only: the announcement that a Set has been settled has to
+# cross from whichever crate took the Response — or archived the Set — to
+# whichever is holding a wait.
 tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]

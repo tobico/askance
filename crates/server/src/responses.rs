@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use askance_schema::{ApiError, Response};
-use askance_store::Submission;
+use askance_store::{Settlement, Submission};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response as HttpResponse};
@@ -21,7 +21,8 @@ use crate::{AppState, MAX_HOLD, store};
 ///
 /// Malformed YAML is a 400; a Response that leaves a question unaccounted for
 /// is a 422 naming it. A Set is answered once: a second Response is a 409 and
-/// the first one stands.
+/// the first one stands. A Set the human archived unanswered is closed for good,
+/// so a Response to one is a 410.
 pub(crate) async fn submit_response(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -37,9 +38,10 @@ pub(crate) async fn submit_response(
         }
     };
 
-    match store::submit_response(&state.pool, &state.submissions, id, &response).await {
+    match store::submit_response(&state.pool, &state.settlements, id, &response).await {
         Ok(Submission::Accepted(accepted)) => yaml(StatusCode::CREATED, &accepted),
         Ok(Submission::NoSuchSet) => not_found(id),
+        Ok(Submission::Archived) => gone(id),
         Ok(Submission::Invalid(invalid)) => yaml(
             StatusCode::UNPROCESSABLE_ENTITY,
             &ApiError::with_violations(
@@ -75,6 +77,10 @@ pub(crate) struct Wait {
 /// the connection until it is, or until the hold window closes and the reply
 /// is a bare 204 meaning "nothing yet, come back". There is no expiry on the
 /// waiting itself: the client owns retry, so it simply opens another wait.
+///
+/// A Set the human archived unanswered ends the wait with a 410 instead: nothing
+/// is ever coming, and the client is told so rather than left polling a Set
+/// nobody will answer.
 pub(crate) async fn wait_for_response(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -85,9 +91,9 @@ pub(crate) async fn wait_for_response(
         .map_or(DEFAULT_HOLD, Duration::from_secs)
         .min(MAX_HOLD);
 
-    // Subscribe before the first read, so a Response submitted between the two
-    // wakes this wait instead of slipping past it.
-    let mut submissions = state.submissions.subscribe();
+    // Subscribe before the first read, so a Set settled between the two wakes
+    // this wait instead of slipping past it.
+    let mut settlements = state.settlements.subscribe();
 
     match store::set_exists(&state.pool, id).await {
         Ok(true) => {}
@@ -108,8 +114,11 @@ pub(crate) async fn wait_for_response(
     let deadline = Instant::now() + hold;
 
     loop {
-        match store::load_response(&state.pool, id).await {
-            Ok(Some(stored)) => return yaml(StatusCode::OK, &stored.response),
+        match store::settlement(&state.pool, id).await {
+            Ok(Some(Settlement::Answered(stored))) => {
+                return yaml(StatusCode::OK, &stored.response);
+            }
+            Ok(Some(Settlement::ArchivedUnanswered(_))) => return gone(id),
             Ok(None) => {}
             Err(error) => {
                 tracing::error!(error = ?error, set_id = id, "loading a Response failed");
@@ -123,7 +132,7 @@ pub(crate) async fn wait_for_response(
         }
 
         if !matches!(
-            timeout(remaining, answered(&mut submissions, id)).await,
+            timeout(remaining, settled(&mut settlements, id)).await,
             Ok(true)
         ) {
             return StatusCode::NO_CONTENT.into_response();
@@ -131,14 +140,14 @@ pub(crate) async fn wait_for_response(
     }
 }
 
-/// Wait until this Set is answered. `false` when the channel is gone, which
-/// only happens as the server itself does.
-async fn answered(submissions: &mut broadcast::Receiver<i64>, id: i64) -> bool {
+/// Wait until this Set is settled, one way or the other. `false` when the
+/// channel is gone, which only happens as the server itself does.
+async fn settled(settlements: &mut broadcast::Receiver<i64>, id: i64) -> bool {
     loop {
-        match submissions.recv().await {
-            Ok(answered) if answered == id => return true,
+        match settlements.recv().await {
+            Ok(settled) if settled == id => return true,
             Ok(_) => continue,
-            // Overtaken by a burst of submissions: ours may have been among
+            // Overtaken by a burst of settlements: ours may have been among
             // them, so go back and look at the store.
             Err(RecvError::Lagged(_)) => return true,
             Err(RecvError::Closed) => return false,
@@ -150,6 +159,17 @@ fn not_found(id: i64) -> HttpResponse {
     yaml(
         StatusCode::NOT_FOUND,
         &ApiError::new(format!("there is no Question Set {id}")),
+    )
+}
+
+/// The Set was archived unanswered: it is closed, and no amount of retrying will
+/// change that. The CLI treats this as fatal.
+fn gone(id: i64) -> HttpResponse {
+    yaml(
+        StatusCode::GONE,
+        &ApiError::new(format!(
+            "Question Set {id} was archived unanswered, so it is closed"
+        )),
     )
 }
 

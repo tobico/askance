@@ -233,7 +233,8 @@ async fn an_empty_archive_says_so() {
     let html = page(&pool, "/archive").await;
 
     assert!(
-        html.contains("Nothing has been answered yet."),
-        "expected the empty state rather than a bare heading:\n{html}"
+        html.contains("Nothing has been answered or archived yet."),
+        "expected the empty state rather than a bare heading, and one that covers \
+         both ways into the Archive:\n{html}"
     );
 }

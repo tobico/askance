@@ -140,7 +140,8 @@ textarea {
    "agent disconnected" has to read as itself without a legend. Waiting is the
    ordinary state and stays as quiet as the rest of the line; only the Set nobody
    is listening on speaks up. */
-.pending-set .liveness.disconnected {
+.pending-set .liveness.disconnected,
+.standing .liveness.disconnected {
   color: var(--removed);
   font-weight: 500;
 }
@@ -148,6 +149,12 @@ textarea {
 .pending-set .age,
 .archived-set .decided-at {
   margin-left: auto;
+}
+
+/* A Set that was closed without ever being answered is not a decision, and the
+   log must not be skimmed as though it were. */
+.archived-set.unanswered .decided-at {
+  font-style: italic;
 }
 
 .empty,
@@ -381,6 +388,51 @@ h1 + .meta .branch {
   color: var(--tok-support);
 }
 
+/* How a waiting Set stands, above everything it is asking: whether an agent is
+   still on the other end, and the way to close the Set if none ever will be
+   again. One line, because on a phone that is a badge and a button side by
+   side. */
+
+.standing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.meta + .standing {
+  margin-top: -0.5rem;
+}
+
+/* Quiet, and quieter than accept-all: archiving is almost never the right thing
+   to do to a Set, and the one time it is, the human came here for it. It is not
+   a danger button either — nothing is destroyed, the Set is filed. */
+.standing .archive {
+  padding: 0.4rem 0.7rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.standing .archive:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+/* Its own line under the two, so a refusal is not squeezed between them. */
+.standing .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 /* Accept-all: an action over the questions below it, so it is outlined rather
    than filled — the one solid button on the page is the submit that ends the
    agent's wait. */
@@ -552,14 +604,17 @@ h1 + .meta .branch {
 
 /* Under the title, or under the provenance line when the Set has one — which
    already carries the gap below the title, so the two sit together rather than a
-   line apart. */
-.answered-at {
+   line apart. A Set that was archived unanswered is dated in the same place, by
+   the archiving instead of by a Response. */
+.answered-at,
+.archived-at {
   margin: 0 0 1.25rem;
   font-size: 0.85rem;
   color: var(--ink-soft);
 }
 
-.meta + .answered-at {
+.meta + .answered-at,
+.meta + .archived-at {
   margin-top: -1rem;
 }
 

@@ -138,7 +138,10 @@ pub fn PendingList() -> impl IntoView {
 ///
 /// Worded about the agent rather than about the connection: what the human wants
 /// to know before answering is whether anyone is still on the other end.
-fn badge(liveness: Liveness) -> (&'static str, &'static str) {
+///
+/// Shared with the set view, which badges the Set it is about to be archived
+/// from: the same state has to read as the same words wherever it is met.
+pub(crate) fn badge(liveness: Liveness) -> (&'static str, &'static str) {
     match liveness {
         Liveness::Waiting => ("waiting", "agent waiting"),
         Liveness::Disconnected => ("disconnected", "agent disconnected"),

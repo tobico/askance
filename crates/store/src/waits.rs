@@ -2,12 +2,12 @@
 //! it into what the pending list says.
 //!
 //! The server knows whether a long-poll is currently held for a Set, because it
-//! is the thing holding it. This lives beside [`Submissions`](crate::Submissions)
+//! is the thing holding it. This lives beside [`Settlements`](crate::Settlements)
 //! for the same reason that does: the agent API holds the waits and the web UI's
 //! server functions read them, and those are different crates that can only meet
 //! in this one.
 //!
-//! Also like `Submissions`, the registry is in-process and not persisted. After
+//! Also like `Settlements`, the registry is in-process and not persisted. After
 //! a server restart every pending Set reads disconnected until its CLI's next
 //! reconnect, which is a second or two away.
 //!

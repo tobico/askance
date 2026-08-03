@@ -89,6 +89,17 @@ impl Server {
     }
 
     fn bind(addr: SocketAddr, database: PathBuf) -> Self {
+        Self::serve(addr, database, false)
+    }
+
+    /// The same server with the human's UI over it. Archiving lives there and
+    /// nowhere else: the agent API has no route for it, because only a human may
+    /// close a Set nobody is going to answer.
+    fn start_with_ui(database: PathBuf) -> Self {
+        Self::serve("127.0.0.1:0".parse().unwrap(), database, true)
+    }
+
+    fn serve(addr: SocketAddr, database: PathBuf, ui: bool) -> Self {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
             .enable_all()
@@ -103,7 +114,12 @@ impl Server {
         });
 
         runtime.spawn(async move {
-            let _ = axum::serve(listener, askance_server::router(pool)).await;
+            let router = if ui {
+                askance_server::router_with_ui(pool, askance_server::leptos_options())
+            } else {
+                askance_server::router(pool)
+            };
+            let _ = axum::serve(listener, router).await;
         });
 
         Server {
@@ -167,6 +183,16 @@ impl Server {
             .send(yaml)
             .unwrap();
         assert_eq!(reply.status().as_u16(), 201);
+    }
+
+    /// Archive a Set unanswered the way the human's browser does, which needs a
+    /// server started with [`Server::start_with_ui`].
+    fn archive(&self, id: i64) {
+        let reply = ureq::post(format!("{}/api/ui/archive-set", self.url()))
+            .header("Content-Type", "application/json")
+            .send(format!("{{\"id\": {id}}}"))
+            .unwrap();
+        assert_eq!(reply.status().as_u16(), 200);
     }
 }
 
@@ -320,6 +346,41 @@ fn the_cli_reconnects_when_the_server_restarts_mid_wait() {
         stderr(&output).contains("retrying"),
         "the reconnection should be reported on stderr, got:\n{}",
         stderr(&output)
+    );
+}
+
+#[test]
+fn a_set_archived_unanswered_ends_the_wait_for_good() {
+    let tmp = tempfile::tempdir().unwrap();
+    let server = Server::start_with_ui(tmp.path().join("askance.db"));
+
+    let waiting = ask(&server, tmp.path(), SET);
+    server.await_stored_set(1);
+
+    // The human closes the Set instead of answering it — the CLI is holding a
+    // wait at this moment, and that is the wait that has to end.
+    server.archive(1);
+
+    let output = finished(waiting);
+    assert!(
+        !output.status.success(),
+        "no Response arrived, so this is not a clean exit, got {:?}",
+        output.status
+    );
+    assert!(
+        stderr(&output).contains("archived unanswered"),
+        "the agent has to be told why it is not getting an answer, got:\n{}",
+        stderr(&output)
+    );
+    assert!(
+        !stderr(&output).contains("retrying"),
+        "an archived Set is not a transient failure to reconnect through, got:\n{}",
+        stderr(&output)
+    );
+    assert!(
+        stdout(&output).is_empty(),
+        "there is no Response to print, got:\n{}",
+        stdout(&output)
     );
 }
 

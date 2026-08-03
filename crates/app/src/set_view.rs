@@ -14,8 +14,16 @@
 //! and the questions that went back open. A Set is answered once, so there is
 //! nothing here to press. Which of the two the page draws is decided from the
 //! Set as the server loads it, so an answered Set never flashes a form.
+//!
+//! A Set still waiting also says whether anyone is still on the other end, and
+//! offers the one thing that is not answering it: archiving it unanswered, for
+//! the Set whose agent is gone for good. That belongs here rather than on a list
+//! row because it is irreversible, and the Questions and the badge are what the
+//! decision is made with. A Set that was archived reads like an answered one —
+//! permanently, and with nothing to press — except that there is no Response to
+//! show, because there never was one.
 
-use askance_schema::{Answer, Question, QuestionOption, Response};
+use askance_schema::{Answer, Liveness, Question, QuestionOption, Response};
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
@@ -38,10 +46,26 @@ pub struct SetView {
     pub diff_html: Option<String>,
     pub questions: Vec<Question>,
 
-    /// What the human decided, if they have. Its presence is what makes this
-    /// page a record instead of a form, so it travels with the Set rather than
-    /// being fetched once the page is already up.
-    pub answered: Option<Answered>,
+    /// Where the Set stands. It decides whether this page is a form or a record,
+    /// so it travels with the Set rather than being fetched once the page is
+    /// already up.
+    pub standing: Standing,
+}
+
+/// How a Set stands: still waiting on the human, answered, or closed unanswered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Standing {
+    /// Waiting on the human, with what the server can say about the agent on the
+    /// other end. Display only (ADR-0001): it is the human who decides what a
+    /// disconnected agent means.
+    Waiting(Liveness),
+
+    /// Answered: what the human decided, and when.
+    Answered(Answered),
+
+    /// Archived unanswered by the human, at this time. No Response was ever sent
+    /// and none ever will be.
+    ArchivedUnanswered(String),
 }
 
 /// A Set's Response as the page needs it: the Answers, and when they were sent.
@@ -54,7 +78,10 @@ pub struct Answered {
 /// The Set with this id, or `None` if there is no such Set.
 #[server]
 pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
+    use askance_store::Settlement;
+
     let pool: sqlx::SqlitePool = expect_context();
+    let waits: askance_store::Waits = expect_context();
 
     let stored = askance_store::load_set(&pool, id)
         .await
@@ -67,9 +94,24 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
     // Read here rather than by the page once it is up: which view the human
     // gets turns on this, and asking afterwards is how a Set that was answered
     // days ago would draw a form for a moment first.
-    let answered = askance_store::load_response(&pool, id)
+    let settlement = askance_store::settlement(&pool, id)
         .await
         .map_err(|err| ServerFnError::new(format!("{err:#}")))?;
+
+    let standing = match settlement {
+        Some(Settlement::Answered(answered)) => Standing::Answered(Answered {
+            submitted_at: answered.submitted_at,
+            response: answered.response,
+        }),
+        Some(Settlement::ArchivedUnanswered(archived)) => {
+            Standing::ArchivedUnanswered(archived.archived_at)
+        }
+        // The same verdict the pending list's row carries, from the same
+        // registry: this page is where it is acted on.
+        None => {
+            Standing::Waiting(waits.liveness(id, &stored.created_at, OffsetDateTime::now_utc()))
+        }
+    };
 
     Ok(Some(SetView {
         id: stored.id,
@@ -90,10 +132,7 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
         // heading either.
         diff_html: stored.set.diff.as_deref().and_then(crate::diff::to_html),
         questions: stored.set.questions,
-        answered: answered.map(|stored| Answered {
-            submitted_at: stored.submitted_at,
-            response: stored.response,
-        }),
+        standing,
     }))
 }
 
@@ -109,6 +148,11 @@ pub enum Submitted {
 
     /// There is no such Set, though there was one when the page loaded.
     NoSuchSet,
+
+    /// The Set was archived unanswered before this Response arrived — from
+    /// another device, or another tab. Archiving closes a Set for good, so it
+    /// cannot also become an answered one.
+    Archived,
 
     /// The Response does not resolve the Set. The page builds Responses that
     /// do, so this is a bug rather than something the human can fix — but it
@@ -126,9 +170,9 @@ pub async fn submit_response(id: i64, response: Response) -> Result<Submitted, S
     use askance_store::Submission;
 
     let pool: sqlx::SqlitePool = expect_context();
-    let submissions: askance_store::Submissions = expect_context();
+    let settlements: askance_store::Settlements = expect_context();
 
-    let submission = askance_store::submit_response(&pool, &submissions, id, &response)
+    let submission = askance_store::submit_response(&pool, &settlements, id, &response)
         .await
         .map_err(|err| ServerFnError::new(format!("{err:#}")))?;
 
@@ -136,9 +180,53 @@ pub async fn submit_response(id: i64, response: Response) -> Result<Submitted, S
         Submission::Accepted(_) => Submitted::Accepted,
         Submission::AlreadyAnswered => Submitted::AlreadyAnswered,
         Submission::NoSuchSet => Submitted::NoSuchSet,
+        Submission::Archived => Submitted::Archived,
         Submission::Invalid(invalid) => {
             Submitted::Rejected(invalid.violations.iter().map(ToString::to_string).collect())
         }
+    })
+}
+
+/// What became of the human closing a Set unanswered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Archived {
+    /// Closed: the Set is off the pending list and in the Archive, and a CLI
+    /// still holding a wait on it has been told.
+    Closed,
+
+    /// It was answered before this arrived, so it is in the Archive as a
+    /// decision. Nothing was changed — a decision is not something to close.
+    AlreadyAnswered,
+
+    /// It had already been archived, from another device or another tab.
+    AlreadyArchived,
+
+    /// There is no such Set, though there was one when the page loaded.
+    NoSuchSet,
+}
+
+/// Archive a Set unanswered: the human declaring that nobody is ever going to
+/// answer it, so it stops being something that is waiting on them.
+///
+/// Only ever reached from a human's browser (ADR-0001) — the agent API has no
+/// route for it, because a disconnected agent is not evidence: the CLI
+/// reconnects through transient drops.
+#[server(prefix = "/api/ui", endpoint = "archive-set", input = server_fn::codec::Json)]
+pub async fn archive_set(id: i64) -> Result<Archived, ServerFnError> {
+    use askance_store::Archiving;
+
+    let pool: sqlx::SqlitePool = expect_context();
+    let settlements: askance_store::Settlements = expect_context();
+
+    let archiving = askance_store::archive_set(&pool, &settlements, id)
+        .await
+        .map_err(|err| ServerFnError::new(format!("{err:#}")))?;
+
+    Ok(match archiving {
+        Archiving::Archived(_) => Archived::Closed,
+        Archiving::AlreadyAnswered => Archived::AlreadyAnswered,
+        Archiving::AlreadyArchived => Archived::AlreadyArchived,
+        Archiving::NoSuchSet => Archived::NoSuchSet,
     })
 }
 
@@ -237,7 +325,7 @@ impl Filled {
 /// How one question stands when accept-all is pressed: what its fields hold,
 /// and the Option the agent recommended if it recommended one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Standing {
+struct Considered {
     filled: Filled,
     recommended: Option<u32>,
 }
@@ -250,7 +338,7 @@ struct Standing {
 /// answer, and one with no ★ stays open rather than being handed an arbitrary
 /// Option — which also makes a second press a no-op, since the first press
 /// answers exactly the questions it names.
-fn accepting(standing: &[Standing]) -> Vec<(usize, u32)> {
+fn accepting(standing: &[Considered]) -> Vec<(usize, u32)> {
     standing
         .iter()
         .enumerate()
@@ -418,12 +506,12 @@ fn unanswered(response: &Response) -> Vec<String> {
         .collect()
 }
 
-/// One Set, top to bottom: its own material — what the agent asked about and
-/// the evidence for it — and then either the sheet to answer it on or the record
-/// of how it was answered.
+/// One Set, top to bottom: how it stands and its own material — what the agent
+/// asked about and the evidence for it — and then either the sheet to answer it
+/// on or the record of what became of it.
 ///
-/// The material above is the same either way: an answered Set is read for the
-/// decision *and* for what the decision was about.
+/// The material above is the same however it stands: a settled Set is read for
+/// what was decided *and* for what the decision was about.
 fn sheet(set: SetView) -> impl IntoView {
     // A Set sent from outside a repo has neither, and an empty line of
     // provenance is worse than none.
@@ -436,25 +524,50 @@ fn sheet(set: SetView) -> impl IntoView {
         }
     });
 
-    // Beside the provenance rather than down with the Answers: on an answered
-    // Set, when the decision was made is part of knowing what one is reading.
-    let when = set.answered.as_ref().map(|answered| {
-        let when = submitted_when(&answered.submitted_at);
-        view! { <p class="answered-at">"Answered " {when}</p> }
-    });
-
-    // Back to the list this Set is on: an answered one is off the pending list
-    // for good and lives in the Archive, so that is where reading it leads back
-    // to.
-    let (back, out) = if set.answered.is_some() {
-        ("/archive", "← Archive")
-    } else {
-        ("/", "← Pending")
+    // Beside the provenance rather than down with the Answers: on a settled Set,
+    // when it was settled is part of knowing what one is reading — and for one
+    // that was closed unanswered it is most of what there is to know.
+    let when = match &set.standing {
+        Standing::Waiting(_) => None,
+        Standing::Answered(answered) => {
+            let when = submitted_when(&answered.submitted_at);
+            Some(view! { <p class="answered-at">"Answered " {when}</p> }.into_any())
+        }
+        Standing::ArchivedUnanswered(archived_at) => {
+            let when = submitted_when(archived_at);
+            // A class of its own: the line sits where an answered Set's date
+            // sits and is styled with it, but nothing here was answered.
+            Some(
+                view! {
+                    <p class="archived-at">"Archived unanswered " {when}</p>
+                }
+                .into_any(),
+            )
+        }
     };
 
-    let body = match set.answered {
-        Some(answered) => decided(&set.questions, answered.response).into_any(),
-        None => answerable(set.id, set.questions).into_any(),
+    // Whether anyone is still on the other end, and the one thing to do about it
+    // if nobody is. Above the Preface because both are about the ask rather than
+    // about answering it — and because archiving is decided with the badge and
+    // the Questions in view, not from a list row.
+    let waiting = match &set.standing {
+        Standing::Waiting(liveness) => Some(*liveness),
+        _ => None,
+    };
+    let standing = waiting.map(|liveness| pending_standing(set.id, liveness));
+
+    // Back to the list this Set is on: a settled one is off the pending list for
+    // good and lives in the Archive, so that is where reading it leads back to.
+    let (back, out) = if waiting.is_some() {
+        ("/", "← Pending")
+    } else {
+        ("/archive", "← Archive")
+    };
+
+    let body = match set.standing {
+        Standing::Waiting(_) => answerable(set.id, set.questions).into_any(),
+        Standing::Answered(answered) => settled(&set.questions, Some(answered.response)).into_any(),
+        Standing::ArchivedUnanswered(_) => orphaned(&set.questions).into_any(),
     };
 
     view! {
@@ -462,6 +575,7 @@ fn sheet(set: SetView) -> impl IntoView {
         <h1>{set.title}</h1>
         {provenance}
         {when}
+        {standing}
         {set.preface_html.map(|html| view! { <section class="preface" inner_html=html></section> })}
         // Between the Preface and the Questions: the Preface says what the
         // agent is asking about, and the Diff is the evidence for it.
@@ -477,6 +591,122 @@ fn sheet(set: SetView) -> impl IntoView {
             })}
         {body}
     }
+}
+
+/// What the human is asked before a Set is closed unanswered.
+///
+/// Named rather than written into the dialog so that the one thing it must not
+/// stop saying — that this cannot be taken back — can be held to. Archiving is
+/// the only irreversible act in the whole UI.
+const ARCHIVE_WARNING: &str = "It leaves the pending list for good and goes into the Archive \
+     with no Response. An agent still waiting on it is told the Set was archived. This cannot be \
+     undone.";
+
+/// Where a still-waiting Set stands: whether an agent is listening, and the
+/// offer to close it if none ever will be again.
+///
+/// The two sit together because one is why the other exists. Archiving is
+/// confirmed first: it is the only thing on this page that cannot be taken back,
+/// and it is a thumb's width from the questions.
+fn pending_standing(id: i64, liveness: Liveness) -> impl IntoView {
+    let (state, said) = crate::pending::badge(liveness);
+
+    let archive = Action::new(move |id: &i64| {
+        let id = *id;
+        async move { archive_set(id).await }
+    });
+
+    // `true` while the human is being asked to confirm. Nothing is archived
+    // until they answer it.
+    let confirming = RwSignal::new(false);
+
+    let close = move |_| {
+        confirming.set(false);
+        archive.dispatch(id);
+    };
+
+    let navigate = use_navigate();
+    Effect::new(move |_| {
+        let Some(Ok(Archived::Closed)) = archive.value().get() else {
+            return;
+        };
+
+        // A Set that can never take a Response has no use for a half-filled
+        // sheet, and the page is leaving anyway.
+        clear_draft(&draft_key(id));
+
+        // To the Archive rather than to the pending list: this Set was not
+        // discarded, it was filed, and seeing it filed unanswered is the
+        // confirmation that nothing was lost.
+        navigate("/archive", Default::default());
+    });
+
+    view! {
+        <section class="standing">
+            <span class=format!("liveness {state}")>{said}</span>
+            <button
+                type="button"
+                class="archive"
+                on:click=move |_| confirming.set(true)
+                prop:disabled=move || archive.pending().get()
+            >
+                {move || if archive.pending().get() { "Archiving…" } else { "Archive unanswered" }}
+            </button>
+            {move || unarchived(archive.value().get())}
+        </section>
+        // The one irreversible thing on the page, so it is asked about in as
+        // many words — including that it cannot be undone, which is what tells
+        // this dialog apart from the one before a submit.
+        {move || {
+            confirming
+                .get()
+                .then(|| {
+                    view! {
+                        <div class="confirm-backdrop">
+                            <div
+                                class="confirm"
+                                role="dialog"
+                                aria-modal="true"
+                                aria-labelledby="archive-title"
+                            >
+                                <p id="archive-title">"Archive this Set unanswered?"</p>
+                                <p class="note">{ARCHIVE_WARNING}</p>
+                                <div class="confirm-actions">
+                                    <button
+                                        type="button"
+                                        class="secondary"
+                                        on:click=move |_| confirming.set(false)
+                                    >
+                                        "Keep it pending"
+                                    </button>
+                                    <button type="button" on:click=close>
+                                        "Archive unanswered"
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                })
+        }}
+    }
+}
+
+/// Why the Set was not archived, when it was not. A Set that was says nothing
+/// here — the page is already on its way to the Archive.
+fn unarchived(outcome: Option<Result<Archived, ServerFnError>>) -> Option<AnyView> {
+    let said = match outcome? {
+        Ok(Archived::Closed) => return None,
+        Ok(Archived::AlreadyAnswered) => {
+            "This Set was answered while this page was open, so it was not \
+             archived: it is in the Archive as a decision."
+                .to_owned()
+        }
+        Ok(Archived::AlreadyArchived) => "This Set has already been archived.".to_owned(),
+        Ok(Archived::NoSuchSet) => "This Set is no longer here.".to_owned(),
+        Err(err) => format!("The Set was not archived: {err}"),
+    };
+
+    Some(view! { <p class="error">{said}</p> }.into_any())
 }
 
 /// The questions as a sheet to fill in, with the submit that ends the agent's
@@ -575,10 +805,10 @@ fn answerable(id: i64, questions: Vec<Question>) -> impl IntoView {
     // Pressing it writes the same field the human's own tap would, so every
     // Answer it fills can still be changed, and submit is still a separate act.
     let accept_all = move |_| {
-        let standing: Vec<Standing> = fields
+        let standing: Vec<Considered> = fields
             .read_value()
             .iter()
-            .map(|asked| Standing {
+            .map(|asked| Considered {
                 filled: asked.fields.filled(&asked.label),
                 recommended: asked.recommended,
             })
@@ -638,7 +868,7 @@ fn answerable(id: i64, questions: Vec<Question>) -> impl IntoView {
                 // confirmation that the agent has its answer.
                 navigate("/", Default::default());
             }
-            Submitted::AlreadyAnswered | Submitted::NoSuchSet => settle(),
+            Submitted::AlreadyAnswered | Submitted::NoSuchSet | Submitted::Archived => settle(),
             // The page builds Responses that resolve the Set, so this is a bug
             // here rather than anything the human did — and their draft stands,
             // because it is the only copy of what they wrote.
@@ -742,6 +972,11 @@ fn refusal(outcome: Option<Result<Submitted, ServerFnError>>) -> Option<AnyView>
                 .to_owned()
         }
         Ok(Submitted::NoSuchSet) => "This Set is no longer here.".to_owned(),
+        Ok(Submitted::Archived) => {
+            "This Set was archived unanswered, which closed it for good, so your \
+             Response was not stored."
+                .to_owned()
+        }
         Ok(Submitted::Rejected(violations)) => {
             format!(
                 "This Response does not resolve the Set: {}",
@@ -888,11 +1123,12 @@ fn offered(group: String, option: QuestionOption, live: Fields) -> impl IntoView
     }
 }
 
-/// When the Response landed, as the page says it. Shared with the Archive,
-/// which dates its rows by the same reasoning and has to word them the same way.
+/// When a Set was settled, as the page says it — the Response landing, or the
+/// human closing it unanswered. Shared with the Archive, which dates its rows by
+/// the same reasoning and has to word them the same way.
 ///
 /// Absolute rather than the pending list's "3h ago": that list is scanned for
-/// what to do next, while an answered Set is a decision in a permanent log,
+/// what to do next, while a settled Set is an entry in a permanent log,
 /// where relative to now stops meaning anything by the following week. UTC
 /// because the server's clock is the only one in play — the browser is given no
 /// date library, for the same reason it is given no markdown parser.
@@ -955,21 +1191,39 @@ fn answer_to<'a>(response: &'a Response, name: &str) -> Option<&'a Answer> {
         .find(|answer| answer.label.trim() == name)
 }
 
-/// What was decided: every question as it was asked, each with its Answer, and
-/// the set-level comment under them.
-fn decided(questions: &[Question], response: Response) -> impl IntoView + use<> {
+/// A Set that was archived unanswered: the questions as they were asked, and the
+/// fact that nobody ever answered them.
+///
+/// Kept readable forever rather than shown as a decision that was made: the
+/// Archive is permanent, and what is permanent here is the ask.
+fn orphaned(questions: &[Question]) -> impl IntoView + use<> {
+    view! {
+        <p class="counter-question">
+            "This Set was archived unanswered: nobody answered these questions, and no Response \
+             was ever sent. The agent was told the Set had been archived."
+        </p>
+        {settled(questions, None)}
+    }
+}
+
+/// What became of a Set, question by question: every question as it was asked,
+/// each with its Answer, and the set-level comment under them.
+///
+/// With no Response there is nothing to have decided — the Set was archived
+/// unanswered — so the questions read as they were asked and nothing is marked.
+fn settled(questions: &[Question], response: Option<Response>) -> impl IntoView + use<> {
     let outcomes: Vec<_> = questions
         .iter()
-        .map(|question| decided_question(question, &response))
+        .map(|question| settled_question(question, response.as_ref()))
         .collect();
 
-    let said = nothing_answered(&response);
+    let said = response.as_ref().and_then(nothing_answered);
 
     // Shown only when there is one, exactly as the submit only ever sends one
     // that has something in it.
     let comment = response
-        .comment
-        .as_deref()
+        .as_ref()
+        .and_then(|response| response.comment.as_deref())
         .map(str::trim)
         .filter(|comment| !comment.is_empty())
         .map(str::to_owned);
@@ -989,27 +1243,26 @@ fn decided(questions: &[Question], response: Response) -> impl IntoView + use<> 
     }
 }
 
-/// One answered Question, with its Sub-questions nested one level under it —
-/// the read counterpart of [`question`], and laid out the same way, because it
-/// is the same Set being looked at.
-fn decided_question(question: &Question, response: &Response) -> impl IntoView + use<> {
+/// One settled Question, with its Sub-questions nested one level under it — the
+/// read counterpart of [`question`], and laid out the same way, because it is the
+/// same Set being looked at.
+fn settled_question(question: &Question, response: Option<&Response>) -> impl IntoView + use<> {
     let own = resolved(
         question.name().to_owned(),
         question.text.clone(),
         &question.options,
-        answer_to(response, question.name()),
+        response,
     );
 
     let subquestions: Vec<_> = question
         .subquestions
         .iter()
         .map(|subquestion| {
-            let name = subquestion.name(question);
             let resolved = resolved(
-                name.clone(),
+                subquestion.name(question),
                 subquestion.text.clone(),
                 &subquestion.options,
-                answer_to(response, &name),
+                response,
             );
             view! { <li class="subquestion">{resolved}</li> }
         })
@@ -1027,12 +1280,18 @@ fn decided_question(question: &Question, response: &Response) -> impl IntoView +
 ///
 /// Every Option is kept, not just the chosen one: what was turned down is half
 /// of what a decision was.
+///
+/// Given the whole Response rather than this question's entry, because the
+/// absence of a Response is itself something to draw: with none at all the Set
+/// was archived unanswered, and there was nobody to tell that these questions
+/// were still open.
 fn resolved(
     name: String,
     text: String,
     options: &[QuestionOption],
-    answer: Option<&Answer>,
+    response: Option<&Response>,
 ) -> impl IntoView + use<> {
+    let answer = response.and_then(|response| answer_to(response, &name));
     let selected = answer.and_then(|answer| answer.selected);
     let said = answer
         .and_then(|answer| answer.free_text.as_deref())
@@ -1041,8 +1300,10 @@ fn resolved(
         .map(str::to_owned);
 
     // No Option and no words is the Unanswered marker, whether or not the flag
-    // is set: either way nothing was answered here.
-    let open = selected.is_none() && said.is_none();
+    // is set: either way nothing was answered here. Only a Response can leave a
+    // question open, though — an archived Set says so once, at the head of the
+    // page, rather than claiming the agent was told anything.
+    let open = response.is_some() && selected.is_none() && said.is_none();
 
     // The form's own wording, minus its "Or": there with Options the words were
     // the note in the margin beside one, and read back they are still. Addressed
@@ -1124,8 +1385,8 @@ mod tests {
     use askance_schema::{Answer, Response};
 
     use super::{
-        Draft, Filled, Standing, accepting, answer_to, draft_key, drafted, nothing_answered,
-        restorable, submitted_when, unanswered,
+        ARCHIVE_WARNING, Considered, Draft, Filled, accepting, answer_to, draft_key, drafted,
+        nothing_answered, restorable, submitted_when, unanswered,
     };
 
     fn filled(label: &str, selected: Option<u32>, free_text: &str) -> Filled {
@@ -1153,8 +1414,8 @@ mod tests {
         selected: Option<u32>,
         free_text: &str,
         recommended: Option<u32>,
-    ) -> Standing {
-        Standing {
+    ) -> Considered {
+        Considered {
             filled: filled(label, selected, free_text),
             recommended,
         }
@@ -1373,6 +1634,19 @@ mod tests {
     #[test]
     fn each_set_keeps_its_own_draft() {
         assert_ne!(draft_key(7), draft_key(8));
+    }
+
+    #[test]
+    fn the_archive_confirmation_says_it_cannot_be_undone() {
+        assert!(
+            ARCHIVE_WARNING.contains("cannot be undone"),
+            "the one irreversible act in the UI has to be asked about as one: {ARCHIVE_WARNING}",
+        );
+        assert!(
+            ARCHIVE_WARNING.contains("Archive"),
+            "and it has to say where the Set is going, because it is not being deleted: \
+             {ARCHIVE_WARNING}",
+        );
     }
 
     #[test]

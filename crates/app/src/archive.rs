@@ -1,10 +1,13 @@
-//! The Archive: every Question Set that has been answered, newest decision
-//! first.
+//! The Archive: every Question Set that has been settled, newest first — the
+//! ones that were answered, and the ones the human closed unanswered because
+//! nobody was ever going to answer them.
 //!
-//! A permanent decision log. A Set lands here by being answered rather than by
-//! anyone filing it, and nothing here is ever deleted — which is what the rows
-//! are worded for: no Liveness badge, because nothing is waiting on an answered
-//! Set, and the date the decision was made rather than how long ago it was.
+//! A permanent log. A Set lands here by being answered or by being archived
+//! unanswered rather than by anyone filing it, and nothing here is ever deleted —
+//! which is what the rows are worded for: no Liveness badge, because nothing is
+//! waiting on a settled Set, and the date it was settled rather than how long ago
+//! it was. A Set that was never answered says so, because reading it as a
+//! decision would be reading a decision nobody made.
 
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -21,12 +24,18 @@ pub struct ArchiveEntry {
     pub title: String,
     pub project: Option<String>,
     pub branch: Option<String>,
-    pub answered_at: String,
+    pub settled_at: String,
+
+    /// Whether it got here without a Response — archived unanswered by the
+    /// human, rather than decided.
+    pub unanswered: bool,
 }
 
-/// The Sets that have been answered, newest decision first.
+/// The Sets that have been settled, newest first.
 #[server]
 pub async fn list_archive() -> Result<Vec<ArchiveEntry>, ServerFnError> {
+    use askance_store::Settled;
+
     let pool: sqlx::SqlitePool = expect_context();
 
     let archived = askance_store::archived_sets(&pool)
@@ -40,7 +49,8 @@ pub async fn list_archive() -> Result<Vec<ArchiveEntry>, ServerFnError> {
             title: set.title,
             project: set.project,
             branch: set.branch,
-            answered_at: crate::set_view::submitted_when(&set.answered_at),
+            settled_at: crate::set_view::submitted_when(&set.settled_at),
+            unanswered: set.settled == Settled::ArchivedUnanswered,
         })
         .collect())
 }
@@ -65,7 +75,10 @@ pub fn Archive() -> impl IntoView {
                             .into_any()
                     }
                     Ok(sets) if sets.is_empty() => {
-                        view! { <p class="empty">"Nothing has been answered yet."</p> }.into_any()
+                        view! {
+                            <p class="empty">"Nothing has been answered or archived yet."</p>
+                        }
+                            .into_any()
                     }
                     Ok(sets) => {
                         view! {
@@ -81,20 +94,30 @@ pub fn Archive() -> impl IntoView {
     }
 }
 
-/// One decision in the log: what was asked and where from, and the day it was
-/// answered.
+/// One line of the log: what was asked and where from, and the day it was
+/// settled — with, when that is what happened, the fact that it was closed
+/// without ever being answered.
 ///
-/// Built like a pending row and styled as one — the two lists are read the same
-/// way, and the same Set may well have been looked at in both.
+/// Built like a pending row and styled as one — the lists are read the same way,
+/// and the same Set may well have been looked at in both.
 fn archive_row(entry: ArchiveEntry) -> impl IntoView {
+    // In the same words the set view uses, and in the same place a decision's
+    // date sits: what a row of this log has to say first is which of the two it
+    // is, because only one of them is a decision.
+    let (class, said) = if entry.unanswered {
+        ("set-row archived-set unanswered", "archived unanswered ")
+    } else {
+        ("set-row archived-set", "answered ")
+    };
+
     view! {
-        <li class="set-row archived-set">
+        <li class=class>
             <A href=format!("/sets/{}", entry.id)>
                 <span class="title">{entry.title}</span>
                 <span class="meta">
                     {entry.project.map(|project| view! { <span class="project">{project}</span> })}
                     {entry.branch.map(|branch| view! { <span class="branch">{branch}</span> })}
-                    <span class="decided-at">"answered " {entry.answered_at}</span>
+                    <span class="decided-at">{said} {entry.settled_at}</span>
                 </span>
             </A>
         </li>
