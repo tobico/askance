@@ -9,6 +9,21 @@
   --edge: #e3ddd4;
   --accent: #7a5c3e;
 
+  /* The Diff: a saturated colour for the markers and the tally, a wash of the
+     same behind the line. */
+  --added: #2f7d4f;
+  --added-wash: #e9f5ec;
+  --removed: #b3382c;
+  --removed-wash: #fbeceb;
+  --hunk: #f2ede6;
+
+  --tok-comment: #8d857a;
+  --tok-string: #4a7a4f;
+  --tok-constant: #8a5a2b;
+  --tok-keyword: #9b3f5e;
+  --tok-name: #2f6f8f;
+  --tok-support: #6b5aa0;
+
   color-scheme: light dark;
 }
 
@@ -20,6 +35,19 @@
     --card: #201e1b;
     --edge: #35312c;
     --accent: #c9a87c;
+
+    --added: #79c48f;
+    --added-wash: #1b2a20;
+    --removed: #e0857a;
+    --removed-wash: #2d1f1d;
+    --hunk: #26241f;
+
+    --tok-comment: #8b8378;
+    --tok-string: #9dc493;
+    --tok-constant: #d8a76a;
+    --tok-keyword: #e08aa6;
+    --tok-name: #86bcd8;
+    --tok-support: #b6a8e0;
   }
 }
 
@@ -161,6 +189,178 @@ h1 + .meta .branch {
 .preface code {
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 0.9em;
+}
+
+/* The Diff: one foldable section per file, each scrolling sideways on its own so
+   a long line never widens the page under it. */
+
+.diff {
+  margin-bottom: 1.5rem;
+}
+
+.diff h2 {
+  font-size: 1rem;
+  margin: 0 0 0.6rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.diff-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.diff-file {
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: 0.6rem;
+  /* The rounded corners have to clip the hunks, whose backgrounds run to the
+     edges. */
+  overflow: hidden;
+}
+
+.diff-file > summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  padding: 0.6rem 0.8rem;
+  cursor: pointer;
+}
+
+.diff-path {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+  /* A long path breaks rather than pushing the tally off the row. */
+  overflow-wrap: anywhere;
+}
+
+.diff-status {
+  padding: 0.05rem 0.4rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  border: 1px solid var(--edge);
+  border-radius: 0.6rem;
+}
+
+.diff-stat {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.8rem;
+}
+
+.diff-stat .add {
+  color: var(--added);
+}
+
+.diff-stat .del {
+  color: var(--removed);
+}
+
+.diff-note {
+  margin: 0;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--edge);
+}
+
+.diff-hunk-header {
+  margin: 0;
+  padding: 0.3rem 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  background: var(--hunk);
+  border-top: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge);
+  overflow-wrap: anywhere;
+}
+
+/* The scroll lives here — inside the file, never on the page. */
+.diff-lines {
+  margin: 0;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  tab-size: 4;
+}
+
+/* Each line is a block of its own so its background reaches the full scrolled
+   width, not just as far as its text. */
+.diff-line {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  padding-right: 0.8rem;
+}
+
+.diff-line .marker {
+  display: inline-block;
+  width: 1.6ch;
+  padding-left: 0.5rem;
+  color: var(--ink-soft);
+  user-select: none;
+}
+
+.diff-line.add {
+  background: var(--added-wash);
+}
+
+.diff-line.del {
+  background: var(--removed-wash);
+}
+
+.diff-line.add .marker {
+  color: var(--added);
+}
+
+.diff-line.del .marker {
+  color: var(--removed);
+}
+
+.diff-line.aside {
+  padding-left: 0.5rem;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* Token colouring, on top of the +/- wash. The classes are syntect's scope
+   atoms: an outer span carries the broad scope and inner ones refine it, so the
+   more specific colour wins by being nested. Anything not named here keeps the
+   line's own colour, which is what an unhighlighted file gets throughout. */
+
+.tok-comment {
+  color: var(--tok-comment);
+  font-style: italic;
+}
+
+.tok-string {
+  color: var(--tok-string);
+}
+
+.tok-constant {
+  color: var(--tok-constant);
+}
+
+.tok-keyword,
+.tok-storage {
+  color: var(--tok-keyword);
+}
+
+.tok-entity.tok-name {
+  color: var(--tok-name);
+}
+
+.tok-support {
+  color: var(--tok-support);
 }
 
 .questions,

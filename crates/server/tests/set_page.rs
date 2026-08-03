@@ -97,6 +97,31 @@ fn full_grammar_set() -> QuestionSet {
     }
 }
 
+/// A Diff as the CLI captures one: a tracked file edited, and an untracked file
+/// diffed against the empty file.
+fn modified_and_untracked_diff() -> String {
+    concat!(
+        "diff --git a/src/limits.rs b/src/limits.rs\n",
+        "index 4cb29ea..ddc897f 100644\n",
+        "--- a/src/limits.rs\n",
+        "+++ b/src/limits.rs\n",
+        "@@ -1,4 +1,4 @@\n",
+        " pub fn allowance() -> u32 {\n",
+        "-    60\n",
+        "+    600\n",
+        " }\n",
+        "diff --git a/notes.txt b/notes.txt\n",
+        "new file mode 100644\n",
+        "index 0000000..cdd6835\n",
+        "--- /dev/null\n",
+        "+++ b/notes.txt\n",
+        "@@ -0,0 +1,2 @@\n",
+        "+the queue backed up at 40k/min\n",
+        "+a shared counter needs redis\n",
+    )
+    .to_owned()
+}
+
 async fn page(pool: &SqlitePool, path: &str) -> (StatusCode, String) {
     let response = router_with_ui(pool.clone(), options())
         .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
@@ -319,6 +344,53 @@ async fn a_set_with_no_preface_shows_no_preface_section() {
     assert!(
         !html.contains(r#"<section class="preface">"#),
         "an empty Preface is the same as none:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn the_attached_diff_is_rendered_per_file() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let html = set_page(&pool, &set).await;
+
+    assert!(
+        html.contains(r#"<section class="diff">"#),
+        "expected the diff section:\n{html}"
+    );
+    for path in ["src/limits.rs", "notes.txt"] {
+        assert!(
+            html.contains(path),
+            "expected a section for {path}:\n{html}"
+        );
+    }
+    assert_eq!(
+        html.matches(r#"class="diff-file""#).count(),
+        2,
+        "expected one section per file, whatever git knew of it:\n{html}"
+    );
+
+    // The colouring comes from the server: the browser gets no diff parser.
+    assert!(html.contains("diff-line add"), "{html}");
+    assert!(html.contains("diff-line del"), "{html}");
+    assert!(
+        html.contains(r#"<span class="tok-"#),
+        "expected the Rust file highlighted server-side:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_set_with_no_diff_shows_no_diff_section() {
+    let (_dir, pool) = fresh_pool().await;
+    let set = full_grammar_set();
+    assert!(set.diff.is_none(), "this Set is the one without a Diff");
+
+    let html = set_page(&pool, &set).await;
+
+    assert!(
+        !html.contains(r#"<section class="diff">"#),
+        "with no Diff attached there is no section to draw:\n{html}"
     );
 }
 

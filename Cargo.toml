@@ -52,6 +52,16 @@ sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
     "sqlite",
 ] }
+# The Diff is highlighted server-side. Default features off swaps oniguruma for
+# the pure-Rust regex engine — no C dependency in the build — and drops the
+# themes: the token classes are styled by the site's own stylesheet, so a
+# bundled colour scheme would only be dead weight.
+syntect = { version = "5", default-features = false, features = [
+    "default-syntaxes",
+    "html",
+    "parsing",
+    "regex-fancy",
+] }
 tempfile = "3"
 time = { version = "0.3", default-features = false, features = [
     "parsing",

@@ -16,9 +16,9 @@ use serde::{Deserialize, Serialize};
 
 /// One Question Set as the browser receives it.
 ///
-/// The Preface arrives as HTML rather than as its markdown source: the server
-/// already has a markdown parser, and this way the browser needs none. The
-/// Questions arrive exactly as the agent sent them.
+/// The Preface and the Diff arrive as HTML rather than as their sources: the
+/// server has the markdown parser and the diff highlighter, and this way the
+/// browser needs neither. The Questions arrive exactly as the agent sent them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetView {
     pub id: i64,
@@ -26,6 +26,7 @@ pub struct SetView {
     pub project: Option<String>,
     pub branch: Option<String>,
     pub preface_html: Option<String>,
+    pub diff_html: Option<String>,
     pub questions: Vec<Question>,
 }
 
@@ -52,6 +53,10 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
             .map(str::trim)
             .filter(|preface| !preface.is_empty())
             .map(crate::markdown::to_html),
+        // A Diff with no files in it is the same as none: the CLI attaches one
+        // only when the tree is dirty, but an empty patch is not worth a
+        // heading either.
+        diff_html: stored.set.diff.as_deref().and_then(crate::diff::to_html),
         questions: stored.set.questions,
     }))
 }
@@ -296,6 +301,18 @@ fn ask_sheet(set: SetView) -> impl IntoView {
         <h1>{set.title}</h1>
         {provenance}
         {set.preface_html.map(|html| view! { <section class="preface" inner_html=html></section> })}
+        // Between the Preface and the Questions: the Preface says what the
+        // agent is asking about, and the Diff is the evidence for it.
+        {set
+            .diff_html
+            .map(|html| {
+                view! {
+                    <section class="diff">
+                        <h2>"Diff"</h2>
+                        <div class="diff-files" inner_html=html></div>
+                    </section>
+                }
+            })}
         <ol class="questions">{asked}</ol>
         <section class="set-comment">
             <label for="set-comment">"Anything about the Set as a whole"</label>

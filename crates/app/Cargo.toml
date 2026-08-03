@@ -13,13 +13,14 @@ serde.workspace = true
 time.workspace = true
 
 # The server half. `#[server]` compiles these bodies only under `ssr`, so the
-# wasm build never sees sqlx or the store — nor a markdown parser, which is why
-# the Preface arrives already rendered.
+# wasm build never sees sqlx or the store — nor a markdown parser or a syntax
+# highlighter, which is why the Preface and the Diff arrive already rendered.
 ammonia = { workspace = true, optional = true }
 askance-store = { workspace = true, optional = true }
 leptos_axum = { workspace = true, optional = true }
 pulldown-cmark = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
+syntect = { workspace = true, optional = true }
 
 [features]
 hydrate = ["leptos/hydrate"]
@@ -29,6 +30,7 @@ ssr = [
     "dep:leptos_axum",
     "dep:pulldown-cmark",
     "dep:sqlx",
+    "dep:syntect",
     "leptos/ssr",
     "leptos_meta/ssr",
     "leptos_router/ssr",

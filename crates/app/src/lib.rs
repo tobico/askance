@@ -11,8 +11,10 @@ use leptos_meta::{MetaTags, Stylesheet, Title, provide_meta_context};
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::{ParamSegment, SsrMode, StaticSegment};
 
-// The Preface's markdown is rendered before it leaves the server, so the parser
-// belongs to the server half only.
+// The Preface's markdown and the Diff are rendered before they leave the
+// server, so neither parser belongs to the browser half.
+#[cfg(feature = "ssr")]
+mod diff;
 #[cfg(feature = "ssr")]
 mod markdown;
 pub mod pending;
