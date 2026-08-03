@@ -122,7 +122,18 @@ fn modified_and_untracked_diff() -> String {
     .to_owned()
 }
 
+/// Renders take turns, however many threads the test harness runs on.
+///
+/// Two server-side renders at once can deadlock inside leptos's reactive graph —
+/// a lock-ordering inversion between an effect, an async derived value and a
+/// Suspense context (leptos-rs/leptos#4673, closed as not planned) — which wedged
+/// this file about two runs in three, at 0% CPU and with nothing printed. Every
+/// test here is "ask for a page, look at it", so queueing costs them nothing.
+static ONE_RENDER_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn page(pool: &SqlitePool, path: &str) -> (StatusCode, String) {
+    let _turn = ONE_RENDER_AT_A_TIME.lock().await;
+
     let response = router_with_ui(pool.clone(), options())
         .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
         .await

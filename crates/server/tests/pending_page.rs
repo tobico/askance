@@ -37,7 +37,14 @@ fn set(title: &str) -> QuestionSet {
     }
 }
 
+/// Renders take turns — see the note in `set_page.rs`: two server-side renders at
+/// once can deadlock inside leptos's reactive graph (leptos-rs/leptos#4673), and
+/// asking for one page at a time costs these tests nothing.
+static ONE_RENDER_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn pending_page(pool: &SqlitePool) -> String {
+    let _turn = ONE_RENDER_AT_A_TIME.lock().await;
+
     let response = router_with_ui(pool.clone(), options())
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
         .await
