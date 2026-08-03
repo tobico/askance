@@ -133,9 +133,11 @@ dependencies = [
  "leptos_router",
  "pulldown-cmark",
  "serde",
+ "serde_json",
  "sqlx",
  "syntect",
  "time",
+ "web-sys",
 ]
 
 [[package]]

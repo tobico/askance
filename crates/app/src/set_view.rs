@@ -166,11 +166,22 @@ impl Fields {
             free_text: self.free_text.get_untracked(),
         }
     }
+
+    /// The same, subscribed rather than sampled: the draft is written from an
+    /// effect, which has to run again on every tap and every keystroke.
+    fn watched(&self, label: &str) -> Filled {
+        Filled {
+            label: label.to_owned(),
+            selected: self.selected.get(),
+            free_text: self.free_text.get(),
+        }
+    }
 }
 
 /// One question's fields as the human left them, away from the signals holding
-/// them — the shape [`drafted`] turns into a Response.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// them — the shape [`drafted`] turns into a Response, and the shape a draft is
+/// stored as.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Filled {
     /// The name the question answers to: `Q7` for a Question, `Q7a` for a
     /// Sub-question.
@@ -242,6 +253,106 @@ fn drafted(filled: &[Filled], comment: &str) -> Response {
     }
 }
 
+/// A half-finished answer sheet, as it sits in `localStorage` between visits:
+/// every question's fields in the order the Set asked them, plus the set-level
+/// comment.
+///
+/// The same per-question shape submit snapshots, so a draft serializes as it
+/// stands rather than through a parallel one.
+///
+/// Deliberately per device and never sent to the server: a phone and a laptop
+/// keep their own drafts of the same Set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Draft {
+    filled: Vec<Filled>,
+    comment: String,
+}
+
+impl Draft {
+    /// Whether there is nothing in here to come back to. An untouched sheet is
+    /// not worth a stored draft, and whitespace is no more an answer here than
+    /// it is at submit.
+    fn empty(&self) -> bool {
+        self.comment.trim().is_empty() && !self.filled.iter().any(Filled::answered)
+    }
+}
+
+/// Where one Set's draft lives. Keyed by the Set's id, so two Sets being
+/// answered in turn keep independent drafts.
+fn draft_key(id: i64) -> String {
+    format!("askance.draft.{id}")
+}
+
+/// The draft in `body`, if it is one this Set can be filled in from.
+///
+/// A body that will not parse, or whose questions are not this Set's asked in
+/// this order, is discarded whole rather than applied in part: the Set as the
+/// agent sent it wins over a draft that no longer describes it.
+fn restorable(body: &str, labels: &[&str]) -> Option<Draft> {
+    let draft: Draft = serde_json::from_str(body).ok()?;
+
+    let drafted: Vec<&str> = draft
+        .filled
+        .iter()
+        .map(|field| field.label.as_str())
+        .collect();
+
+    (drafted == labels).then_some(draft)
+}
+
+/// The browser's `localStorage`, or `None` when there is none to be had — a
+/// browser that blocks it, or one that has none at all.
+///
+/// Storage is a convenience the whole way down: `None` costs the human their
+/// drafts and nothing else, so nothing on this path is worth a panic.
+#[cfg(feature = "hydrate")]
+fn local_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok().flatten()
+}
+
+/// The draft being held under this key, if there is one.
+#[cfg(feature = "hydrate")]
+fn stored_draft(key: &str) -> Option<String> {
+    local_storage()?.get_item(key).ok().flatten()
+}
+
+/// Write the draft out, replacing whatever was under the key.
+#[cfg(feature = "hydrate")]
+fn store_draft(key: &str, draft: &Draft) {
+    let Some(storage) = local_storage() else {
+        return;
+    };
+    let Ok(body) = serde_json::to_string(draft) else {
+        return;
+    };
+
+    // Full, or refused: the draft is gone, and the page carries on regardless.
+    let _ = storage.set_item(key, &body);
+}
+
+/// Drop the draft under this key.
+#[cfg(feature = "hydrate")]
+fn clear_draft(key: &str) {
+    if let Some(storage) = local_storage() {
+        let _ = storage.remove_item(key);
+    }
+}
+
+// Under `ssr` there is no browser and so no draft: the server renders the Set as
+// the agent sent it, which is what hydration then has to find waiting for it.
+// The effects that keep a draft only ever run in a browser, so these three stand
+// in for storage the server half has no way to reach and no reason to.
+#[cfg(not(feature = "hydrate"))]
+fn stored_draft(_key: &str) -> Option<String> {
+    None
+}
+
+#[cfg(not(feature = "hydrate"))]
+fn store_draft(_key: &str, _draft: &Draft) {}
+
+#[cfg(not(feature = "hydrate"))]
+fn clear_draft(_key: &str) {}
+
 /// One question as the page holds on to it: the name it answers to, the Option
 /// the agent recommended, and the fields the human fills.
 #[derive(Debug, Clone)]
@@ -306,7 +417,7 @@ fn ask_sheet(set: SetView) -> impl IntoView {
     let fields = StoredValue::new(fields);
     let comment = RwSignal::new(String::new());
 
-    let draft = move || {
+    let response = move || {
         let filled: Vec<Filled> = fields
             .read_value()
             .iter()
@@ -314,6 +425,68 @@ fn ask_sheet(set: SetView) -> impl IntoView {
             .collect();
         drafted(&filled, &comment.get_untracked())
     };
+
+    // Whether this Set is done with: it has an answer, or it can never take
+    // one. Nothing more is drafted after that.
+    let settled = RwSignal::new(false);
+
+    // The draft, in the two effects that keep it. Both are the browser's alone
+    // — an effect never runs during SSR — so the server-rendered page is the
+    // Set as the agent sent it whether or not a draft is waiting, and hydration
+    // finds exactly what the server drew before either of these touches it.
+    //
+    // Restoring comes first, both here and in the order effects run.
+    Effect::new(move |_| {
+        let key = draft_key(id);
+        let Some(body) = stored_draft(&key) else {
+            return;
+        };
+
+        let asked = fields.read_value();
+        let labels: Vec<&str> = asked.iter().map(|asked| asked.label.as_str()).collect();
+
+        let Some(draft) = restorable(&body, &labels) else {
+            // Stale, so it is no more use on the next visit than on this one.
+            clear_draft(&key);
+            return;
+        };
+
+        for (asked, filled) in asked.iter().zip(draft.filled) {
+            asked.fields.selected.set(filled.selected);
+            asked.fields.free_text.set(filled.free_text);
+        }
+        comment.set(draft.comment);
+    });
+
+    // Then every change from there on, written out as it happens.
+    Effect::new(move |saved: Option<()>| {
+        let draft = Draft {
+            filled: fields
+                .read_value()
+                .iter()
+                .map(|asked| asked.fields.watched(&asked.label))
+                .collect(),
+            comment: comment.get(),
+        };
+        let done = settled.get();
+
+        // The first run is the page as it was drawn — an empty sheet, or the
+        // draft just restored into it — and neither is news. Skipping it is
+        // also what stops a stored draft being written over by an empty sheet
+        // if the restore above has not had its turn yet.
+        if saved.is_none() || done {
+            return;
+        }
+
+        let key = draft_key(id);
+        if draft.empty() {
+            // Emptied again: a draft of nothing would only ever restore as
+            // nothing.
+            clear_draft(&key);
+        } else {
+            store_draft(&key, &draft);
+        }
+    });
 
     // Pressing it writes the same field the human's own tap would, so every
     // Answer it fills can still be changed, and submit is still a separate act.
@@ -343,11 +516,11 @@ fn ask_sheet(set: SetView) -> impl IntoView {
     let confirming = RwSignal::new(None::<Vec<String>>);
 
     let start = move |_| {
-        let response = draft();
-        let open = unanswered(&response);
+        let sending = response();
+        let open = unanswered(&sending);
 
         if open.is_empty() {
-            submit.dispatch((id, response));
+            submit.dispatch((id, sending));
         } else {
             confirming.set(Some(open));
         }
@@ -357,15 +530,35 @@ fn ask_sheet(set: SetView) -> impl IntoView {
     // while the dialog was up, and this way there is no stale copy to send.
     let send_anyway = move |_| {
         confirming.set(None);
-        submit.dispatch((id, draft()));
+        submit.dispatch((id, response()));
+    };
+
+    // This Set will take no Response from here — so the draft goes, and the
+    // effect above stops writing another. Keeping one would only resurface it,
+    // stale and unsendable, on some later visit.
+    let settle = move || {
+        settled.set(true);
+        clear_draft(&draft_key(id));
     };
 
     let navigate = use_navigate();
     Effect::new(move |_| {
-        if let Some(Ok(Submitted::Accepted)) = submit.value().get() {
-            // Back to the pending list, where the Set's absence is the
-            // confirmation that the agent has its answer.
-            navigate("/", Default::default());
+        let Some(Ok(outcome)) = submit.value().get() else {
+            return;
+        };
+
+        match outcome {
+            Submitted::Accepted => {
+                settle();
+                // Back to the pending list, where the Set's absence is the
+                // confirmation that the agent has its answer.
+                navigate("/", Default::default());
+            }
+            Submitted::AlreadyAnswered | Submitted::NoSuchSet => settle(),
+            // The page builds Responses that resolve the Set, so this is a bug
+            // here rather than anything the human did — and their draft stands,
+            // because it is the only copy of what they wrote.
+            Submitted::Rejected(_) => {}
         }
     });
 
@@ -629,13 +822,25 @@ fn offered(group: String, option: QuestionOption, live: Fields) -> impl IntoView
 
 #[cfg(test)]
 mod tests {
-    use super::{Filled, Standing, accepting, drafted, unanswered};
+    use super::{Draft, Filled, Standing, accepting, draft_key, drafted, restorable, unanswered};
 
     fn filled(label: &str, selected: Option<u32>, free_text: &str) -> Filled {
         Filled {
             label: label.to_owned(),
             selected,
             free_text: free_text.to_owned(),
+        }
+    }
+
+    /// A sheet part-way filled in, as the human might leave it.
+    fn part_way() -> Draft {
+        Draft {
+            filled: vec![
+                filled("Q1", Some(2), ""),
+                filled("Q2", None, "only for writes"),
+                filled("Q2a", None, ""),
+            ],
+            comment: "back in an hour".to_owned(),
         }
     }
 
@@ -781,6 +986,89 @@ mod tests {
             accepting(&questions).is_empty(),
             "the first press answered everything it names, so a second finds nothing",
         );
+    }
+
+    #[test]
+    fn a_draft_comes_back_exactly_as_it_was_left() {
+        let draft = part_way();
+        let body = serde_json::to_string(&draft).unwrap();
+
+        assert_eq!(
+            restorable(&body, &["Q1", "Q2", "Q2a"]),
+            Some(draft),
+            "every Option, every word and the comment survive the round trip",
+        );
+    }
+
+    #[test]
+    fn a_draft_restores_only_what_the_human_put_there() {
+        let draft = Draft {
+            filled: vec![filled("Q1", None, ""), filled("Q2", Some(1), "")],
+            comment: String::new(),
+        };
+        let body = serde_json::to_string(&draft).unwrap();
+
+        let restored = restorable(&body, &["Q1", "Q2"]).unwrap();
+        assert_eq!(
+            restored.filled[0].selected, None,
+            "a question the human left alone comes back untouched, not answered for them",
+        );
+        assert_eq!(restored.filled[1].selected, Some(1));
+    }
+
+    #[test]
+    fn a_draft_whose_questions_are_not_this_sets_is_discarded() {
+        let body = serde_json::to_string(&part_way()).unwrap();
+
+        assert_eq!(
+            restorable(&body, &["Q1", "Q2", "Q2b"]),
+            None,
+            "a Sub-question that was renamed makes the whole draft stale",
+        );
+        assert_eq!(
+            restorable(&body, &["Q1", "Q2"]),
+            None,
+            "and so does a Set that has since lost a question",
+        );
+        assert_eq!(
+            restorable(&body, &["Q2", "Q1", "Q2a"]),
+            None,
+            "the order is the order the Set asked them in, not a set of names",
+        );
+    }
+
+    #[test]
+    fn a_draft_that_will_not_parse_is_discarded() {
+        assert_eq!(restorable(r#"{"filled": ["#, &["Q1"]), None);
+        assert_eq!(
+            restorable(r#"{"answers": [], "comment": null}"#, &["Q1"]),
+            None,
+            "a body from some other shape of draft is no more usable than a truncated one",
+        );
+    }
+
+    #[test]
+    fn an_empty_sheet_is_not_a_draft_worth_keeping() {
+        let nothing = Draft {
+            filled: vec![filled("Q1", None, ""), filled("Q2", None, "  \n")],
+            comment: "   ".to_owned(),
+        };
+        assert!(nothing.empty(), "whitespace is not an answer here either");
+
+        assert!(!part_way().empty());
+        assert!(
+            !Draft {
+                filled: vec![filled("Q1", None, "")],
+                comment: "why not cache it upstream?".to_owned(),
+            }
+            .empty(),
+            "a comment on its own is a draft: it is a whole counter-question",
+        );
+    }
+
+    #[test]
+    fn each_set_keeps_its_own_draft() {
+        assert_ne!(draft_key(7), draft_key(8));
     }
 
     #[test]
