@@ -12,4 +12,5 @@ askance-schema = { path = "crates/schema" }
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
+serde-saphyr = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
