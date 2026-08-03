@@ -1,5 +1,8 @@
 //! The `askance ask` round trip: a Set goes out, the CLI blocks, and the
 //! human's Response comes back on stdout — across a server restart if need be.
+//!
+//! The last test here is the README's quickstart, run against the very files
+//! the README tells the reader to run.
 
 mod support;
 
@@ -167,15 +170,23 @@ impl Server {
     }
 }
 
-/// Start `askance ask`, feeding it `set` on stdin, running in `dir`.
-fn ask(server: &Server, dir: &Path, set: &str) -> Child {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_askance"))
+/// `askance ask`, pointed at the test server and running in `dir`, with its
+/// three streams on pipes the test can drive and read back.
+fn command(server: &Server, dir: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_askance"));
+    command
         .arg("ask")
         .env("ASKANCE_SERVER", server.url())
         .current_dir(dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    command
+}
+
+/// Start `askance ask`, feeding it `set` on stdin, running in `dir`.
+fn ask(server: &Server, dir: &Path, set: &str) -> Child {
+    let mut child = command(server, dir)
         .spawn()
         .expect("the askance binary should be built for its own tests");
 
@@ -185,6 +196,15 @@ fn ask(server: &Server, dir: &Path, set: &str) -> Child {
     drop(stdin);
 
     child
+}
+
+/// Start `askance ask <file>`, the form the README's quickstart uses.
+fn ask_file(server: &Server, dir: &Path, file: &Path) -> Child {
+    command(server, dir)
+        .arg(file)
+        .stdin(Stdio::null())
+        .spawn()
+        .expect("the askance binary should be built for its own tests")
 }
 
 /// Cut a still-waiting CLI short — the wait has no other end — without leaving
@@ -345,5 +365,45 @@ fn project_branch_and_diff_are_derived_from_the_working_directory() {
         diff.contains("+++ b/open-questions.md")
             && diff.contains("+a line only in the working tree"),
         "the Diff should carry the untracked file's contents, got:\n{diff}"
+    );
+}
+
+/// One of the workspace's `examples/`, by the name the README uses.
+fn example(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples")
+        .join(name)
+}
+
+#[test]
+fn the_readme_quickstart_delivers_the_example_response() {
+    let tmp = tempfile::tempdir().unwrap();
+    let server = Server::start(tmp.path().join("askance.db"));
+
+    // `askance ask examples/questions.yaml`, and the Set is the first one this
+    // server has seen, so the id the README curls is 1.
+    let waiting = ask_file(&server, tmp.path(), &example("questions.yaml"));
+    let stored = server.await_stored_set(1);
+    assert_eq!(stored.set.title, "Rate limiting for the public API");
+
+    // The curl step. `answer` insists on a 201, so this is also where an
+    // example Response that failed to resolve the example Set would be caught.
+    let submitted = std::fs::read_to_string(example("response.yaml")).unwrap();
+    server.answer(1, &submitted);
+
+    let output = finished(waiting);
+    assert!(
+        output.status.success(),
+        "the quickstart ends with the CLI exiting 0, got {:?}",
+        output.status
+    );
+
+    let printed = stdout(&output);
+    let response = Response::from_yaml(&printed)
+        .unwrap_or_else(|error| panic!("stdout should be a Response: {error}\n{printed}"));
+    assert_eq!(
+        response,
+        Response::from_yaml(&submitted).unwrap(),
+        "the agent should get back exactly what the human submitted"
     );
 }

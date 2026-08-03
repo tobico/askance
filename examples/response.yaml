@@ -1,0 +1,35 @@
+# The human's Response to examples/questions.yaml — what the web UI will
+# submit, and what the quickstart submits by hand:
+#
+#   curl -X POST --data-binary @examples/response.yaml \
+#     -H 'Content-Type: application/yaml' \
+#     http://127.0.0.1:8422/api/v1/sets/1/response
+#
+# Every Question and Sub-question in the Set appears exactly once — Q1, Q2,
+# Q2a and Q3 — each with a selected Option, free text, both, or the
+# `unanswered` marker. Leaving a question open is legal; leaving it out is
+# not.
+
+answers:
+  - label: Q1
+    selected: 1
+    free_text: >-
+      Start in-process. Revisit it the day we run more than two instances.
+
+  - label: Q2
+    selected: 2
+
+  # Explicitly still open: the agent must not read this as a preference.
+  - label: Q2a
+    unanswered: true
+
+  - label: Q3
+    free_text: |
+      The nightly export job in `ops/export` hammers the endpoint on
+      purpose. Give it an allowlist entry rather than a bigger bucket.
+
+comment: |
+  Ship it behind a flag and turn it on for the one noisy client first.
+
+  On Q2a I genuinely don't know — pick whatever our SDK's retry logic
+  already understands, and say in the PR which one that was.
