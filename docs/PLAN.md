@@ -12,6 +12,10 @@ glossary and `docs/adr/` for recorded decisions.
 - The CLI derives `project` and `branch` from the working directory,
   worktree-smart: in a linked worktree it reports the root repo's name (via
   `git rev-parse --git-common-dir`). Agents never supply these.
+- The CLI captures the repo's Diff at send time — all uncommitted changes
+  including untracked files, binary contents omitted — and attaches it to the
+  Set. Absent when the tree is clean or the CWD isn't a git repo. This powers
+  code-approval review in the web UI.
 - It POSTs the Set, then long-polls with reconnection — no expiry — until the
   Response arrives, and prints it as YAML on stdout. Exit only on delivery or
   being killed.
@@ -39,13 +43,17 @@ Question Set:
     question)
   - `subquestions[]` (optional): `letter`, `text`, `options[]` — leaves only;
     two levels maximum, enforced by schema
-- No multi-select. Server stamps `id` and `created_at`; CLI adds `project`
-  and `branch`.
+- No multi-select. Server stamps `id` and `created_at`; CLI adds `project`,
+  `branch`, and `diff`.
 
 Response (mirrors the Set):
 
-- per Question / Sub-question: `selected` (option number) and/or `free_text`
-  — every one must be addressed before submit is allowed
+- per Question / Sub-question: `selected` (option number) and/or `free_text`,
+  or an explicit `unanswered: true` marker — every question appears one way
+  or the other, so the agent can't silently miss an open question
+- unanswered questions are legal (the grammar's "still open" state): the
+  human may submit with any number unanswered — down to zero Answers plus a
+  comment — e.g. to ask a counter-question that redirects the discussion
 - set-level `comment` (optional)
 
 ## Server
@@ -63,11 +71,12 @@ Response (mirrors the Set):
 - Pending list: title, project, branch, age, Liveness badge. Archive view.
 - Set view: rendered Preface, then Questions with radio Options and per-
   question free-text fields; Recommendations visually highlighted.
+- Diff viewer in the set view: renders the attached Diff for code approval.
 - Explicit "accept all recommendations" button — fills every unanswered
   Question with its Recommendation; nothing is pre-selected on load;
   individual Answers can still be overridden before submit.
-- Submit disabled until every Question has an Answer (Option and/or free
-  text).
+- Submit warns — but does not block — when Questions are Unanswered: a
+  confirmation lists them before the Response goes out.
 - Draft Answers autosaved to localStorage per device.
 - Web Push: one notification per new Set, deep-linking to it. VAPID keys
   auto-generated on first run, stored in SQLite.

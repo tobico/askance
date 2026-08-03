@@ -24,9 +24,16 @@ agent-facing contract works before any UI exists.
 - **CLI derives `project` and `branch`**, worktree-smart: in a linked
   worktree, report the root repo's name (`git rev-parse --git-common-dir`).
   Agents never supply these — determinism over trust.
-- **Response completeness** — every Question and Sub-question must carry an
-  Answer (selected Option and/or free text); the server rejects partial
-  Responses. Optional set-level comment.
+- **Every question appears in the Response, answered or explicitly
+  unanswered** — per Question/Sub-question: `selected` and/or `free_text`, or
+  `unanswered: true`. Unanswered is legal (the grammar's "still open" state);
+  a Response with zero Answers plus a set-level comment is a valid
+  counter-question. The server rejects only Responses that omit a question
+  entirely — explicitness is the invariant, not completeness.
+- **CLI attaches the Diff** — all uncommitted changes including untracked
+  files, binary contents omitted, captured once at send time; absent when
+  the tree is clean or the CWD isn't a repo. Powers code approval in the UI
+  (stage 02).
 - **No app-level auth** — tailnet is the perimeter; server binds for
   localhost/tailnet use. CLI defaults to localhost, env var overrides.
 - **SQLite** persistence; server stamps `id` and `created_at`.
@@ -42,13 +49,15 @@ agent-facing contract works before any UI exists.
    - Schema violations (three levels deep, two `recommended`, missing title)
      are rejected with errors naming the offending question
 2. **Answer and deliver** — Response submission endpoint + long-poll endpoint.
-   - Incomplete Response (unaddressed question) is rejected
+   - A Response omitting a question is rejected; one marking it
+     `unanswered: true` is accepted, including the zero-Answers case
    - A long-poll waiting before submission receives the Response on submit;
      one arriving after gets it immediately
 3. **`askance ask` CLI** — stdin/file input, client-side validation,
-   `project`/`branch` detection, reconnecting long-poll, YAML Response on
-   stdout.
+   `project`/`branch` detection, Diff capture, reconnecting long-poll, YAML
+   Response on stdout.
    - From a linked worktree, `project` is the root repo's name
+   - Diff includes an untracked file's contents; omitted on a clean tree
    - Killing and restarting the server mid-wait: CLI reconnects and still
      delivers
 4. **End-to-end example + quickstart** — `examples/` sample set, README walk

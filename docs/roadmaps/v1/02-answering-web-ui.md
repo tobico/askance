@@ -3,8 +3,9 @@
 ## Goal
 
 Open the server in a browser, see the pending Question Sets, open one, read
-its Preface, answer every Question, and submit — unblocking the waiting CLI.
-Replaces the curl round trip from stage 01 as the human's interface.
+its Preface, review the attached Diff, answer the Questions, and submit —
+unblocking the waiting CLI. Replaces the curl round trip from stage 01 as
+the human's interface.
 
 ## Decisions in force
 
@@ -18,10 +19,14 @@ Replaces the curl round trip from stage 01 as the human's interface.
 - **Recommendations are highlighted but never pre-selected** — the ★ Option
   is visually marked; accidental submission of unread recommendations must be
   impossible (the accept-all affordance arrives in stage 03).
-- **Submit is gated on completeness** — disabled until every Question and
-  Sub-question has an Answer (Option and/or free text), mirroring the
-  server-side rejection from stage 01. The grammar's “still open” state must
-  be unrepresentable.
+- **Submit warns on Unanswered, never blocks** — a confirmation lists the
+  Unanswered questions before the Response goes out; submitting with zero
+  Answers plus a set-level comment is a legitimate counter-question flow.
+  Unanswered questions are sent as explicit `unanswered: true` markers,
+  matching the stage 01 server contract.
+- **Diff viewer in the set view** — renders the attached Diff (per-file,
+  syntax-aware where cheap) so code-approval questions are reviewable without
+  leaving the page. Sets without a Diff simply omit the section.
 - **Pending list shows** title, project, branch, age. (Liveness badge is
   stage 03.)
 - No auth, no user accounts — single-user tool on the tailnet.
@@ -37,11 +42,16 @@ Replaces the curl round trip from stage 01 as the human's interface.
    labelled Options, ★ highlighted, free-text fields present.
    - A set using every grammar feature (options, sub-questions, mixed nodes)
      renders correctly
-3. **Answer state + gated submit** — form state, completeness gate, submit
-   posts the Response.
-   - Submit stays disabled until every Question/Sub-question is addressed
+3. **Answer state + submit with unanswered warning** — form state; submit
+   posts the Response, confirming first when questions are Unanswered.
+   - Submitting with unanswered questions shows the warning naming them;
+     confirming sends them as `unanswered: true`
+   - A zero-Answer submit with only a set-level comment round-trips to the CLI
    - Successful submit unblocks a genuinely waiting CLI and navigates back to
      the list with the set gone
+4. **Diff viewer** — render the attached Diff in the set view.
+   - A set with a Diff spanning modified + untracked files renders per-file;
+     a set without one shows no diff section
 
 ## Re-verify at start
 
@@ -51,6 +61,8 @@ Replaces the curl round trip from stage 01 as the human's interface.
 - Markdown rendering choice in a Leptos SSR context (server-side render of
   the Preface vs client-side) — pick whichever avoids shipping a JS markdown
   parser.
-- Exact Response completeness rules as implemented in stage 01 (free text
-  only vs option required when options exist) — UI gate must match the server
-  exactly.
+- Exact Response explicitness rules as implemented in stage 01 (what counts
+  as an Answer vs `unanswered: true`) — the UI warning and payload must match
+  the server exactly.
+- Diff storage shape from stage 01 (raw unified diff vs structured) — pick
+  the viewer approach accordingly.

@@ -39,14 +39,27 @@ _Avoid_: default, suggestion
 
 **Answer**:
 The human's resolution of one Question or Sub-question: a selected Option
-and/or free text. Every Question in a Set must have an Answer before the Set
-can be submitted.
+and/or free text. A Question left without an Answer at submission is
+Unanswered.
 _Avoid_: reply, response (that's the whole Set)
 
+**Unanswered**:
+The explicit state of a Question the human chose not to resolve when
+submitting. The agent must treat it as still open — typically because the
+set-level comment redirects the discussion.
+_Avoid_: skipped, blank
+
 **Response**:
-The submitted collection of Answers for a Question Set, plus an optional
-set-level comment. What the waiting agent receives.
+The submitted collection of Answers (and Unanswered markers) for a Question
+Set, plus an optional set-level comment. What the waiting agent receives.
+May contain zero Answers.
 _Avoid_: submission, result
+
+**Diff**:
+The uncommitted changes (including untracked files) of the asking repo,
+captured by the CLI at send time and attached to every Question Set, so code
+approval can happen in the web UI.
+_Avoid_: patch, changeset
 
 **Archive**:
 Where Question Sets live after their Response is delivered (or after manual

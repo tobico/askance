@@ -26,10 +26,11 @@ askance useful.
   — in Claude Code, `askance ask` runs via Bash `run_in_background` so the
   harness wakes the agent on delivery; the instructions must say this
   explicitly so agents don't block a foreground tool call for hours.
-- The grammar's semantics don't change — labels, ★, completeness rules are
-  identical whether questions travel via chat or askance. Askance's schema
-  was designed as a direct encoding precisely so this stage is a transport
-  change, not a semantic one.
+- The grammar's semantics don't change — labels, ★, and the "unaddressed
+  questions are still open, follow up" rule are identical whether questions
+  travel via chat or askance (`unanswered: true` in a Response is exactly
+  that state). Askance's schema was designed as a direct encoding precisely
+  so this stage is a transport change, not a semantic one.
 
 ## Proposed tasks (provisional)
 
