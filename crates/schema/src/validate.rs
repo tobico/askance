@@ -16,6 +16,14 @@
 //! Multi-select needs no rule: the format gives no way to express it — an
 //! Answer carries one `selected` number.
 //!
+//! A Response is checked against the Set it answers, where the invariant is
+//! explicitness rather than completeness:
+//!
+//! - every Question and Sub-question appears exactly once, as an Answer or as
+//!   the Unanswered marker, so the agent cannot miss an open question;
+//! - an entry is one or the other, never both, and never neither;
+//! - a selected Option is one the question actually offers.
+//!
 //! Every violation is collected rather than the first one returned, so an
 //! agent that got several things wrong learns about all of them at once.
 
@@ -24,6 +32,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::response::{Answer, Response};
 use crate::set::{Question, QuestionOption, QuestionSet, Subquestion};
 
 /// One way a Set fails the question grammar.
@@ -111,6 +120,115 @@ impl QuestionSet {
         } else {
             Err(ValidationError { violations })
         }
+    }
+}
+
+impl Response {
+    /// Check the Response against the Set it answers.
+    pub fn validate(&self, set: &QuestionSet) -> Result<(), ValidationError> {
+        let mut violations = Vec::new();
+
+        // Every question the Response has to account for, in the order the
+        // human saw them, each with the Options it offered.
+        let mut expected: Vec<(String, &[QuestionOption])> = Vec::new();
+        for question in &set.questions {
+            expected.push((question.name().to_string(), &question.options));
+            for subquestion in &question.subquestions {
+                expected.push((subquestion.name(question), &subquestion.options));
+            }
+        }
+
+        let mut answered: HashSet<&str> = HashSet::new();
+        for answer in &self.answers {
+            let label = answer.label.trim();
+
+            if label.is_empty() {
+                violations.push(Violation::set(
+                    "every entry in a Response names the question it resolves; one names none",
+                ));
+                continue;
+            }
+
+            let Some((_, options)) = expected.iter().find(|(name, _)| name == label) else {
+                violations.push(Violation::at(
+                    label,
+                    "the Set has no such Question or Sub-question",
+                ));
+                continue;
+            };
+
+            if !answered.insert(label) {
+                violations.push(Violation::at(
+                    label,
+                    "this question is resolved twice; it gets one entry, not two",
+                ));
+                continue;
+            }
+
+            check_answer(answer, label, options, &mut violations);
+        }
+
+        for (name, _) in &expected {
+            if !answered.contains(name.as_str()) {
+                violations.push(Violation::at(
+                    name,
+                    "missing from the Response; every question appears, either answered \
+                     or marked `unanswered: true`",
+                ));
+            }
+        }
+
+        if violations.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationError { violations })
+        }
+    }
+}
+
+fn check_answer(
+    answer: &Answer,
+    label: &str,
+    options: &[QuestionOption],
+    violations: &mut Vec<Violation>,
+) {
+    if answer.unanswered {
+        if answer.is_answer() {
+            violations.push(Violation::at(
+                label,
+                "marked `unanswered: true` but also answered; it is one or the other",
+            ));
+        }
+        return;
+    }
+
+    if !answer.is_answer() {
+        violations.push(Violation::at(
+            label,
+            "neither answered nor marked `unanswered: true`; leaving a question open \
+             has to be said out loud",
+        ));
+        return;
+    }
+
+    let Some(selected) = answer.selected else {
+        return;
+    };
+
+    if options.is_empty() {
+        violations.push(Violation::at(
+            label,
+            format!("Option {selected} was selected, but this question offers no Options"),
+        ));
+    } else if !options.iter().any(|option| option.n == selected) {
+        let offered: Vec<String> = options.iter().map(|option| option.n.to_string()).collect();
+        violations.push(Violation::at(
+            label,
+            format!(
+                "Option {selected} was selected, but this question offers only {}",
+                offered.join(", ")
+            ),
+        ));
     }
 }
 

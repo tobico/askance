@@ -15,6 +15,18 @@ pub struct SetCreated {
     pub created_at: String,
 }
 
+/// What `POST /api/v1/sets/{id}/response` returns once a Response is stored.
+/// The human's device gets this; the agent gets the Response itself, off the
+/// wait.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResponseAccepted {
+    /// The Set that has just been answered.
+    pub set_id: i64,
+
+    /// When the server accepted the Response, RFC 3339.
+    pub submitted_at: String,
+}
+
 /// What the API returns when it refuses a request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiError {

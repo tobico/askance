@@ -2,20 +2,48 @@
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::Router;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, FromRef};
 use axum::routing::{get, post};
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnectOptions;
+use tokio::sync::broadcast;
 
+mod reply;
+mod responses;
 mod sets;
 pub mod store;
 
 /// How large a submitted Question Set may be. Generous, because the CLI
 /// attaches the whole uncommitted Diff to every Set.
 const MAX_SET_BYTES: usize = 32 * 1024 * 1024;
+
+/// The longest a client may ask to have a wait held open. There is no expiry
+/// on the waiting itself — the client owns retry (ADR-0001), so it picks the
+/// hold length and the server only bounds it.
+const MAX_HOLD: Duration = Duration::from_secs(60);
+
+/// How many submissions a held wait can fall behind before it gives up
+/// following along and goes back to the store instead. One notification per
+/// answered Set, for a single human answering them: this is generous.
+const SUBMISSION_BACKLOG: usize = 64;
+
+/// What the handlers share: the store, and word of Sets that have just been
+/// answered so held waits need not poll it.
+#[derive(Clone)]
+pub(crate) struct AppState {
+    pool: SqlitePool,
+    submissions: broadcast::Sender<i64>,
+}
+
+impl FromRef<AppState> for SqlitePool {
+    fn from_ref(state: &AppState) -> Self {
+        state.pool.clone()
+    }
+}
 
 /// How the server is pointed at its database and its socket. There is no
 /// app-level auth: the tailnet is the perimeter, so the defaults keep the
@@ -58,13 +86,19 @@ pub async fn open_database(path: &Path) -> Result<SqlitePool> {
 /// The application's routes. REST lives under `/api/v1/` to stay clear of
 /// `/api/{fn_name}`, which Leptos server functions claim by default.
 pub fn router(pool: SqlitePool) -> Router {
+    let (submissions, _) = broadcast::channel(SUBMISSION_BACKLOG);
+
     Router::new()
         .route("/api/v1/health", get(health))
         .route(
             "/api/v1/sets",
             post(sets::create_set).layer(DefaultBodyLimit::max(MAX_SET_BYTES)),
         )
-        .with_state(pool)
+        .route(
+            "/api/v1/sets/{id}/response",
+            post(responses::submit_response).get(responses::wait_for_response),
+        )
+        .with_state(AppState { pool, submissions })
 }
 
 async fn health() -> &'static str {

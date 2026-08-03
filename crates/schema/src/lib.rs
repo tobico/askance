@@ -6,9 +6,11 @@
 //! must stay free of server-only dependencies — no tokio, axum, or SQLite.
 
 mod api;
+mod response;
 mod set;
 mod validate;
 
-pub use api::{ApiError, SetCreated};
+pub use api::{ApiError, ResponseAccepted, SetCreated};
+pub use response::{Answer, Response};
 pub use set::{Question, QuestionOption, QuestionSet, Subquestion};
 pub use validate::{ValidationError, Violation};

@@ -2,11 +2,11 @@
 
 use askance_schema::{ApiError, QuestionSet};
 use axum::extract::State;
-use axum::http::{StatusCode, header};
-use axum::response::{IntoResponse, Response};
-use serde::Serialize;
+use axum::http::StatusCode;
+use axum::response::Response;
 use sqlx::SqlitePool;
 
+use crate::reply::yaml;
 use crate::store;
 
 /// `POST /api/v1/sets` — parse, validate, store, and answer with the id the
@@ -43,21 +43,6 @@ pub(crate) async fn create_set(State(pool): State<SqlitePool>, body: String) -> 
                 StatusCode::INTERNAL_SERVER_ERROR,
                 &ApiError::new("the Question Set could not be stored"),
             )
-        }
-    }
-}
-
-/// Every reply is YAML, in both directions, like the Sets themselves.
-fn yaml<T: Serialize>(status: StatusCode, body: &T) -> Response {
-    match serde_saphyr::to_string(body) {
-        Ok(text) => (status, [(header::CONTENT_TYPE, "application/yaml")], text).into_response(),
-        Err(error) => {
-            tracing::error!(error = ?error, "serialising a reply failed");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "the reply could not be serialised\n",
-            )
-                .into_response()
         }
     }
 }
