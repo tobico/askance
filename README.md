@@ -369,9 +369,19 @@ $ cargo clippy --all-targets
 $ cargo fmt
 $ cargo leptos build      # both halves of the UI, into target/site
 $ nix fmt                 # the Nix files
+$ nix flake check         # the NixOS module, in a VM (Linux only)
 
 $ tools/generate-icons.sh # the PWA icons, after editing their SVG
 ```
+
+`cargo test` covers the round trip in-process. `nix flake check` boots a VM with
+the NixOS module enabled and puts a Question Set through it again, for the sake
+of everything the module wraps around that round trip: a unit that starts itself
+at boot, the state directory systemd hands over, a database that survives the
+service being stopped and started under a waiting agent, a server serving the
+site it was packaged with rather than a working tree's, and the CLI on `PATH`
+with nothing set in the environment. It needs a Linux host to boot the guest on,
+so on macOS the check is absent rather than failing.
 
 `assets/` is copied verbatim into the site root by `cargo leptos`: the web
 manifest, the icons and the service worker. They cannot live under `/pkg/` with

@@ -42,6 +42,17 @@
         askance = import ./nix/module.nix self;
       };
 
+      # `nix flake check` builds whatever is in here, so the VM test is offered
+      # only where a NixOS VM can be booted at all: it needs a Linux host to run
+      # the guest kernel on, and on Darwin the check is simply absent rather than
+      # a failure.
+      checks = forAllSystems (
+        pkgs:
+        nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          module = pkgs.callPackage ./nix/vm-test.nix { module = self.nixosModules.askance; };
+        }
+      );
+
       # `nix run` is the server, UI and all; the CLI is the other half of the
       # same derivation and has to be asked for by name.
       apps = forAllSystems (
