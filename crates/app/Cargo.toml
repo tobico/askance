@@ -10,7 +10,12 @@ leptos.workspace = true
 leptos_meta.workspace = true
 leptos_router.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 time.workspace = true
+
+# The browser half. A draft only ever exists in front of a human, so the server
+# build has no use for `localStorage`.
+web-sys = { workspace = true, optional = true }
 
 # The server half. `#[server]` compiles these bodies only under `ssr`, so the
 # wasm build never sees sqlx or the store — nor a markdown parser or a syntax
@@ -23,7 +28,7 @@ sqlx = { workspace = true, optional = true }
 syntect = { workspace = true, optional = true }
 
 [features]
-hydrate = ["leptos/hydrate"]
+hydrate = ["dep:web-sys", "leptos/hydrate"]
 ssr = [
     "dep:ammonia",
     "dep:askance-store",

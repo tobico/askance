@@ -4,7 +4,8 @@
 //! There is no expiry on the waiting (ADR-0001). The client owns retry, so
 //! "nothing yet", a dropped connection, a refused connection and a server
 //! restart are all the same thing here: go back and open another wait. Only
-//! delivery, a refusal the server will keep repeating, or a kill ends it.
+//! delivery, a refusal the server will keep repeating — including the Set having
+//! been archived unanswered — or a kill ends it.
 
 use std::time::Duration;
 
@@ -132,6 +133,13 @@ impl Client {
             404 => Err(Interrupted::Fatal(anyhow!(
                 "the server has no Question Set {id} — it may be running against \
                  a different database"
+            ))),
+            // The human closed the Set without answering it, which is a thing
+            // only they can do and is not undone. Retrying would be waiting on a
+            // Set nobody is ever going to answer.
+            410 => Err(Interrupted::Fatal(anyhow!(
+                "Question Set {id} was archived unanswered — the human closed it \
+                 without answering, so no Response is coming"
             ))),
             status => {
                 let text = reply.body_mut().read_to_string().unwrap_or_default();
