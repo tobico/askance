@@ -4,6 +4,25 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "askance_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "askance"
 path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+askance-schema.workspace = true
+clap.workspace = true
+serde-saphyr.workspace = true
+ureq = "3"
+
+[dev-dependencies]
+# The tests run the real server in-process, so the round trip they check is the
+# one the agent gets.
+askance-server = { path = "../server" }
+axum = "0.8"
+tempfile = "3"
+tokio = { workspace = true, features = ["net", "time"] }

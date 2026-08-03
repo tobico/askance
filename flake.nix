@@ -25,6 +25,9 @@
             rustfmt
             rust-analyzer
             sqlite
+            # The CLI derives `project`, `branch` and the Diff by shelling out
+            # to git, so git is a runtime dependency and not just a habit.
+            git
           ];
 
           env.RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
