@@ -21,5 +21,5 @@ swap if push notifications become urgent before conveniences.
 - [x] 02: Answering web UI — [brief](02-answering-web-ui.md)
 - [x] 03: Answering conveniences — [brief](03-answering-conveniences.md)
 - [x] 04: PWA + push — [brief](04-pwa-and-push.md)
-- [ ] 05: Nix packaging + deployment — [brief](05-nix-packaging.md)
+- [x] 05: Nix packaging + deployment — [brief](05-nix-packaging.md)
 - [ ] 06: Skills adoption — [brief](06-skills-adoption.md)
