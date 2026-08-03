@@ -13,8 +13,12 @@ serde.workspace = true
 serde_json.workspace = true
 time.workspace = true
 
-# The browser half. A draft only ever exists in front of a human, so the server
-# build has no use for `localStorage`.
+# The browser half. A draft only ever exists in front of a human, and so does a
+# push subscription, so the server build has no use for `localStorage` or the
+# push manager.
+js-sys = { workspace = true, optional = true }
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
 web-sys = { workspace = true, optional = true }
 
 # The server half. `#[server]` compiles these bodies only under `ssr`, so the
@@ -28,7 +32,13 @@ sqlx = { workspace = true, optional = true }
 syntect = { workspace = true, optional = true }
 
 [features]
-hydrate = ["dep:web-sys", "leptos/hydrate"]
+hydrate = [
+    "dep:js-sys",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:web-sys",
+    "leptos/hydrate",
+]
 ssr = [
     "dep:ammonia",
     "dep:askance-store",

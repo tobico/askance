@@ -40,6 +40,10 @@ anyhow = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 console_error_panic_hook = "0.1"
+# Reaching past web-sys, in the browser half only: whether a global is there at
+# all — `Notification`, `PushManager` — which is how a browser without push is
+# told from one that has it.
+js-sys = "0.3"
 leptos = "0.8"
 leptos_axum = "0.8"
 leptos_meta = "0.8"
@@ -83,13 +87,24 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # to match the one built into the cargo-leptos the flake pins. Bump the two
 # together or the wasm build stops with a schema-version mismatch.
 wasm-bindgen = "=0.2.100"
+# Awaiting a JS promise from Rust: subscribing to push is four of them in a row.
+wasm-bindgen-futures = "0.4"
 # What the browser half needs and leptos's own web-sys does not turn on:
 # `Storage`, because drafts live in `localStorage` and leptos enables
-# `StorageEvent` but not `Storage` itself, and `navigator.serviceWorker` to
-# register the worker with.
+# `StorageEvent` but not `Storage` itself; `navigator.serviceWorker` to register
+# the worker with; and the push manager that hangs off the registration, with
+# the notification permission that governs it.
 web-sys = { version = "0.3", features = [
     "Navigator",
+    "Notification",
+    "NotificationPermission",
+    "PushManager",
+    "PushSubscription",
+    "PushSubscriptionJson",
+    "PushSubscriptionKeys",
+    "PushSubscriptionOptionsInit",
     "ServiceWorkerContainer",
+    "ServiceWorkerRegistration",
     "Storage",
     "Window",
 ] }

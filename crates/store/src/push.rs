@@ -172,6 +172,23 @@ pub async fn store_subscription(
     Ok(Subscribing::Stored)
 }
 
+/// Forget a device, so that nothing more is sent to it.
+///
+/// Idempotent, and deliberately silent about whether there was a row to delete:
+/// what the caller is asking for is that this endpoint not be notified, and
+/// afterwards it is not — whether it was already gone (a device turning
+/// notifications off twice, one whose subscription the browser replaced) says
+/// nothing worth acting on.
+pub async fn forget_subscription(pool: &SqlitePool, endpoint: &str) -> Result<()> {
+    sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ?")
+        .bind(endpoint)
+        .execute(pool)
+        .await
+        .context("forgetting the push subscription")?;
+
+    Ok(())
+}
+
 /// Every device that has asked to be told, oldest subscription first.
 ///
 /// Ordered so that a list of them reads the same way twice; nothing about a push

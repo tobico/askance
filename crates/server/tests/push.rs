@@ -85,6 +85,28 @@ async fn subscribe(app: &Router, endpoint: &str, p256dh: &str, auth: &str) -> Su
     serde_json::from_str(&body).unwrap_or_else(|err| panic!("reading {body:?}: {err}"))
 }
 
+/// Turn notifications off for a device, the way the page will.
+async fn unsubscribe(app: &Router, endpoint: &str) {
+    let args = serde_json::json!({ "endpoint": endpoint });
+
+    let http = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/ui/unsubscribe-push")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(&args).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = http.status();
+    let body = body_text(http).await;
+    assert_eq!(status, StatusCode::OK, "unsubscribing failed: {body}");
+}
+
 #[tokio::test]
 async fn the_page_is_handed_the_stored_public_key() {
     let (_dir, pool, app) = fresh_app().await;
@@ -157,6 +179,44 @@ async fn a_subscription_with_nothing_to_send_to_is_refused() {
         subscribe(&app, "https://push.example/phone", "p256dh-phone", "").await,
         Subscribed::Incomplete
     );
+
+    assert!(store::push_subscriptions(&pool).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_device_turning_notifications_off_is_dropped_from_the_list() {
+    let (_dir, pool, app) = fresh_app().await;
+
+    subscribe(
+        &app,
+        "https://push.example/phone",
+        "p256dh-phone",
+        "auth-phone",
+    )
+    .await;
+    subscribe(
+        &app,
+        "https://push.example/laptop",
+        "p256dh-laptop",
+        "auth-laptop",
+    )
+    .await;
+
+    unsubscribe(&app, "https://push.example/phone").await;
+
+    let stored = store::push_subscriptions(&pool).await.unwrap();
+    assert_eq!(stored.len(), 1, "only the device that asked to be dropped");
+    assert_eq!(stored[0].endpoint, "https://push.example/laptop");
+}
+
+#[tokio::test]
+async fn turning_notifications_off_on_a_device_the_server_never_heard_of_is_no_error() {
+    let (_dir, pool, app) = fresh_app().await;
+
+    // A browser can drop its own subscription without the server ever having
+    // stored it — the tap that stored it failed, or the database was replaced.
+    // What was asked for still holds afterwards: nothing is sent there.
+    unsubscribe(&app, "https://push.example/never").await;
 
     assert!(store::push_subscriptions(&pool).await.unwrap().is_empty());
 }

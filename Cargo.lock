@@ -127,6 +127,7 @@ dependencies = [
  "ammonia",
  "askance-schema",
  "askance-store",
+ "js-sys",
  "leptos",
  "leptos_axum",
  "leptos_meta",
@@ -137,6 +138,8 @@ dependencies = [
  "sqlx",
  "syntect",
  "time",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 

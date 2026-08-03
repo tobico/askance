@@ -3,8 +3,8 @@
 //! that a device re-subscribing stays one device.
 
 use askance_store::{
-    PushSubscription, Subscribing, open_database, push_subscriptions, store_subscription,
-    vapid_keys,
+    PushSubscription, Subscribing, forget_subscription, open_database, push_subscriptions,
+    store_subscription, vapid_keys,
 };
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -172,6 +172,61 @@ async fn a_subscription_missing_an_endpoint_or_a_key_is_refused() {
             "no push could ever be sent to {incomplete:?}"
         );
     }
+
+    assert_eq!(push_subscriptions(&pool).await.unwrap(), []);
+}
+
+#[tokio::test]
+async fn a_device_turning_notifications_off_is_forgotten() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let phone = subscription("https://push.example/phone", "p256dh-phone", "auth-phone");
+    store_subscription(&pool, &phone).await.unwrap();
+
+    forget_subscription(&pool, &phone.endpoint).await.unwrap();
+
+    assert_eq!(
+        push_subscriptions(&pool).await.unwrap(),
+        [],
+        "a device that asked not to be told must not be pushed to again"
+    );
+}
+
+#[tokio::test]
+async fn forgetting_one_device_leaves_the_others_subscribed() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let phone = subscription("https://push.example/phone", "p256dh-phone", "auth-phone");
+    let laptop = subscription(
+        "https://push.example/laptop",
+        "p256dh-laptop",
+        "auth-laptop",
+    );
+    store_subscription(&pool, &phone).await.unwrap();
+    store_subscription(&pool, &laptop).await.unwrap();
+
+    forget_subscription(&pool, &phone.endpoint).await.unwrap();
+
+    assert_eq!(
+        push_subscriptions(&pool).await.unwrap(),
+        [laptop],
+        "notifications are per device: the phone's says nothing about the laptop"
+    );
+}
+
+#[tokio::test]
+async fn forgetting_a_device_that_was_never_told_of_is_not_an_error() {
+    let (_dir, pool) = fresh_pool().await;
+
+    // What was asked for is that this endpoint not be notified, and it is not.
+    forget_subscription(&pool, "https://push.example/never")
+        .await
+        .unwrap();
+
+    let phone = subscription("https://push.example/phone", "p256dh-phone", "auth-phone");
+    store_subscription(&pool, &phone).await.unwrap();
+    forget_subscription(&pool, &phone.endpoint).await.unwrap();
+    forget_subscription(&pool, &phone.endpoint).await.unwrap();
 
     assert_eq!(push_subscriptions(&pool).await.unwrap(), []);
 }

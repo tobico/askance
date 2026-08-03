@@ -23,7 +23,8 @@ mod push;
 mod waits;
 
 pub use push::{
-    PushSubscription, Subscribing, VapidKeys, push_subscriptions, store_subscription, vapid_keys,
+    PushSubscription, Subscribing, VapidKeys, forget_subscription, push_subscriptions,
+    store_subscription, vapid_keys,
 };
 pub use waits::{WaitHeld, Waits};
 

@@ -18,6 +18,6 @@ Roadmap stage: [04: PWA + push](docs/roadmaps/v1/04-pwa-and-push.md)
 
 - [x] 01: Installable app shell — [details](01-app-shell.md)
 - [x] 02: VAPID identity and subscriptions — [details](02-vapid-and-subscriptions.md)
-- [ ] 03: Enable notifications on this device — [details](03-enable-notifications.md)
+- [x] 03: Enable notifications on this device — [details](03-enable-notifications.md)
 - [ ] 04: Push on Set arrival — [details](04-push-on-set-arrival.md)
 - [ ] 05: Serving over Tailscale, and the install — [details](05-tailscale-and-install.md)
