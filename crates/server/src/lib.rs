@@ -7,13 +7,13 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use askance_app::{App, shell};
+use askance_store::Submissions;
 use axum::Router;
 use axum::extract::{DefaultBodyLimit, FromRef};
 use axum::routing::{get, post};
 use leptos::prelude::{LeptosOptions, provide_context};
 use leptos_axum::{LeptosRoutes, generate_route_list};
 use sqlx::SqlitePool;
-use tokio::sync::broadcast;
 
 mod reply;
 mod responses;
@@ -44,7 +44,7 @@ const SUBMISSION_BACKLOG: usize = 64;
 #[derive(Clone)]
 pub(crate) struct AppState {
     pool: SqlitePool,
-    submissions: broadcast::Sender<i64>,
+    submissions: Submissions,
 }
 
 impl FromRef<AppState> for SqlitePool {
@@ -73,8 +73,12 @@ pub struct Config {
 /// The agent-facing routes. REST lives under `/api/v1/` to stay clear of
 /// `/api/{fn_name}`, which Leptos server functions claim by default.
 pub fn router(pool: SqlitePool) -> Router {
-    let (submissions, _) = broadcast::channel(SUBMISSION_BACKLOG);
+    api(pool, Submissions::new(SUBMISSION_BACKLOG))
+}
 
+/// The agent-facing routes over an already-made channel, so the UI half can
+/// share the one the waits are held on.
+fn api(pool: SqlitePool, submissions: Submissions) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
         .route(
@@ -100,23 +104,30 @@ async fn health() -> &'static str {
 /// CSS under `/pkg/` — reaches Leptos.
 pub fn router_with_ui(pool: SqlitePool, leptos_options: LeptosOptions) -> Router {
     let routes = generate_route_list(App);
+    let submissions = Submissions::new(SUBMISSION_BACKLOG);
 
-    // Server functions run outside any axum handler, so the pool reaches them
-    // through the Leptos context rather than through router state.
+    // Server functions run outside any axum handler, so what they need reaches
+    // them through the Leptos context rather than through router state. The
+    // channel is the same one the API's waits are held on: a submit from the
+    // browser has to wake an agent waiting on the REST endpoint.
     let context_pool = pool.clone();
+    let context_submissions = submissions.clone();
     let shell_options = leptos_options.clone();
 
     let ui = Router::new()
         .leptos_routes_with_context(
             &leptos_options,
             routes,
-            move || provide_context(context_pool.clone()),
+            move || {
+                provide_context(context_pool.clone());
+                provide_context(context_submissions.clone());
+            },
             move || shell(shell_options.clone()),
         )
         .fallback(leptos_axum::file_and_error_handler(shell))
         .with_state(leptos_options);
 
-    router(pool).merge(ui)
+    api(pool, submissions).merge(ui)
 }
 
 /// Open the database and serve until the process is stopped.

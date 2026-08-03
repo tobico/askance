@@ -10,8 +10,10 @@ askance-schema.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+# For `Submissions` only: the announcement that a Set has been answered has to
+# cross from whichever crate took the Response to whichever is holding a wait.
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
 serde-saphyr.workspace = true
 tempfile.workspace = true
-tokio.workspace = true

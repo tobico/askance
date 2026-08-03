@@ -13,9 +13,10 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use askance_schema::{QuestionSet, Response, ResponseAccepted, SetCreated};
+use askance_schema::{QuestionSet, Response, ResponseAccepted, SetCreated, ValidationError};
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnectOptions;
+use tokio::sync::broadcast;
 
 /// A Set as the store holds it: the agent's Set plus the identity the server
 /// stamped on it.
@@ -43,6 +44,79 @@ pub struct PendingSet {
     pub title: String,
     pub project: Option<String>,
     pub branch: Option<String>,
+}
+
+/// Word that a Set has just been answered, so a wait held on it can end
+/// without going back to the store to look.
+///
+/// It lives beside the store for the same reason the store is its own crate:
+/// the agent API's long-poll and the web UI's submit are in different crates,
+/// and the two have to meet at the same channel or a browser submit would
+/// leave a waiting agent hanging until its hold window closed.
+#[derive(Debug, Clone)]
+pub struct Submissions(broadcast::Sender<i64>);
+
+impl Submissions {
+    /// A channel that will hold `backlog` announcements for a listener that
+    /// falls behind.
+    pub fn new(backlog: usize) -> Self {
+        let (announcements, _) = broadcast::channel(backlog);
+        Self(announcements)
+    }
+
+    /// Hear about Sets answered from now on. Subscribe before reading the
+    /// store, so a Response landing between the two wakes the wait instead of
+    /// slipping past it.
+    pub fn subscribe(&self) -> broadcast::Receiver<i64> {
+        self.0.subscribe()
+    }
+}
+
+/// What became of a submitted Response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Submission {
+    /// Stored as the Set's answer, and everyone waiting on it has been told.
+    Accepted(ResponseAccepted),
+
+    /// There is no Set with that id to answer.
+    NoSuchSet,
+
+    /// The Response does not resolve the Set, so it is not an answer to it.
+    Invalid(ValidationError),
+
+    /// The Set was answered before this Response arrived. A Set is answered
+    /// once, and the first Response stands.
+    AlreadyAnswered,
+}
+
+/// Answer a Set: check the Response resolves it, store it, and wake whoever is
+/// waiting.
+///
+/// This is the one path a Response takes, whether it came from the human's
+/// browser or from `curl`, so a wait ends the same way either way.
+pub async fn submit_response(
+    pool: &SqlitePool,
+    submissions: &Submissions,
+    set_id: i64,
+    response: &Response,
+) -> Result<Submission> {
+    let Some(stored) = load_set(pool, set_id).await? else {
+        return Ok(Submission::NoSuchSet);
+    };
+
+    if let Err(invalid) = response.validate(&stored.set) {
+        return Ok(Submission::Invalid(invalid));
+    }
+
+    let Some(accepted) = insert_response(pool, set_id, response).await? else {
+        return Ok(Submission::AlreadyAnswered);
+    };
+
+    // A send error means nobody is listening, which is the ordinary case — the
+    // agent may well be between polls.
+    let _ = submissions.0.send(set_id);
+
+    Ok(Submission::Accepted(accepted))
 }
 
 /// Open the SQLite database at `path`, creating the file if it is absent and
