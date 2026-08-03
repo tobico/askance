@@ -11,12 +11,15 @@ The vocabulary in bold throughout is the project's, and is defined in
 
 ## Status
 
-The agent-facing contract works end to end: submit, wait, answer, deliver.
-The web UI has started landing — the server serves a pending list of the Sets
-waiting on the human, and opening one shows the whole ask: its Preface, its
-Questions, and the fields to answer them in. Submitting is not wired up yet,
-so the quickstart below still plays the human's part with `curl`. See
-[the roadmap](docs/roadmaps/v1/ROADMAP.md) for what comes next.
+The loop works end to end, and the human's end of it is the web UI: a pending
+list of the Sets waiting on you, each one opening as a form over the whole ask
+— Preface, Diff, Questions — that answers it and wakes the waiting agent.
+Answered Sets and ones closed unanswered are kept in the Archive.
+
+It installs on a phone as a PWA and pushes one notification per arriving Set,
+which needs HTTPS: see [On your phone](#on-your-phone) for the
+`tailscale serve` in front of it. What is left is packaging and the skills that
+drive the tool — see [the roadmap](docs/roadmaps/v1/ROADMAP.md).
 
 ## Quickstart
 
@@ -40,9 +43,8 @@ $ cargo leptos watch
 ```
 
 One binary serves both halves: the agent API under `/api/v1/`, and the web UI
-on <http://127.0.0.1:8422/>, which currently shows the pending Sets. It creates
-`askance.db` in the working directory on first run. Leave it running; check it
-in a third terminal if you like:
+on <http://127.0.0.1:8422/>. It creates `askance.db` in the working directory
+on first run. Leave it running; check it in a third terminal if you like:
 
 ```console
 $ curl http://127.0.0.1:8422/api/v1/health
@@ -77,25 +79,29 @@ A Set can also arrive on stdin, which is how an agent usually sends one:
 $ cat examples/questions.yaml | cargo run -p askance-cli -- ask
 ```
 
-### 4. Answer (terminal 3)
+### 4. Answer (in the browser)
 
-This is the human's part, which the web UI will take over. Post a Response to
-the Set the CLI is waiting on — id `1`, from the line it printed in step 3:
+This is the human's part. Open <http://127.0.0.1:8422/> and the Set from step 3
+is on the pending list, with its project, its branch, and `agent waiting` —
+that last one being the CLI still holding its long-poll. Open it.
 
-```console
-$ curl -X POST --data-binary @examples/response.yaml \
-    -H 'Content-Type: application/yaml' \
-    http://127.0.0.1:8422/api/v1/sets/1/response
-set_id: 1
-submitted_at: 2026-08-03T05:32:43.784Z
-```
+The page is the whole ask: the Preface, the Diff of the working tree the agent
+asked from, and each Question with its Options. Pick one, or write your own
+words, or both — an Option with a ★ is the agent's Recommendation, and
+**Accept all ★ Recommendations** fills in every question you have not answered
+yet. Leave a question alone to send it back open; **Submit** asks you to
+confirm that before it goes.
 
-[`examples/response.yaml`](examples/response.yaml) answers every Question in
-the example Set, leaves one explicitly open, and adds a set-level comment.
+The same Response can go in over the API instead, which is what an integration
+test or a script does — see [the API](#api) and
+[`examples/response.yaml`](examples/response.yaml), which answers every
+Question in the example Set, leaves one explicitly open, and adds a set-level
+comment.
 
 ### 5. Delivery
 
-Back in terminal 2, the still-waiting CLI has printed the Response and exited:
+Back in terminal 2, the still-waiting CLI has printed the Response and exited —
+this is what it prints for the answers in `examples/response.yaml`:
 
 ```console
 answers:
@@ -120,8 +126,132 @@ $ echo $?
 0
 ```
 
-That is the loop. Run step 3 again for Question Set 2, and answer it at
-`/api/v1/sets/2/response`.
+That is the loop. Run step 3 again and Question Set 2 appears on the pending
+list to be answered the same way. To answer it from your phone instead, carry
+on below.
+
+## On your phone
+
+The point of putting Askance on a phone is that a Question Set reaches you
+without the pending list being open. That needs a push notification, and a push
+notification needs HTTPS: service workers, the Push API and
+`Notification.requestPermission` are all withheld outside a secure context, and
+`http://` over a tailnet is not one — only `localhost` gets the exemption. So
+this section is HTTPS first, and everything else follows from it.
+
+### 1. Put `tailscale serve` in front of it
+
+`tailscale serve` terminates TLS with your tailnet's `ts.net` certificate and
+proxies to the plain HTTP the server is already binding. Nothing about the
+server changes: it stays on loopback, and the proxy is the only thing that
+listens on the tailnet.
+
+```console
+$ tailscale serve --bg 8422
+Available within your tailnet:
+
+https://your-host.your-tailnet.ts.net/
+|-- proxy http://127.0.0.1:8422
+
+Serve started and running in the background.
+To disable the proxy, run: tailscale serve --https=443 off
+```
+
+That URL is the one to open on the phone. It needs MagicDNS and HTTPS
+certificates enabled for the tailnet — both are switches in the admin console,
+under DNS — and `tailscale serve` says so if they are not.
+
+`--bg` is what makes it persist: the configuration is stored in `tailscaled`'s
+own preferences, so it survives a reboot and comes back with the daemon. Check
+what is in force, or take it down again:
+
+```console
+$ tailscale serve status
+https://your-host.your-tailnet.ts.net (tailnet only)
+|-- / proxy http://127.0.0.1:8422
+
+$ tailscale serve reset
+```
+
+This stays inside the tailnet. `tailscale funnel`, which is the sibling command
+that would put the same service on the public internet, is not what you want
+here: there is no app-level auth in Askance, and the tailnet is the whole
+perimeter.
+
+The CLI has no reason to go through the proxy — an agent runs on the same host
+as the server and keeps talking to `http://127.0.0.1:8422`. Only the browser
+needs the HTTPS URL.
+
+### 2. Install it
+
+On the phone, open the `ts.net` URL and add it to the home screen.
+
+- **iOS/iPadOS** (16.4 or later): Safari, Share, **Add to Home Screen**. This
+  is not optional — iOS gives Web Push only to a web app launched from the home
+  screen, so in a Safari tab there is nothing to turn on, and the control on
+  the pending list says notifications are unavailable. Open it from the home
+  screen icon afterwards.
+- **Android**: Chrome offers **Install app** from its menu. Push works in the
+  tab too, but the installed app is what gets you an icon and no browser
+  chrome.
+
+Either way it opens standalone, without the address bar, on the pending list.
+
+### 3. Turn notifications on
+
+At the top of the pending list is a line saying where this device stands, with
+one button. Tap **Turn on for this device** and answer the browser's permission
+prompt.
+
+This is per device, and it is read out of the browser on every load rather than
+remembered — the phone being subscribed says nothing about the laptop, and an
+app reopened a week later says what is actually true of it. **Turn off for this
+device** is the way back. If it says notifications are *blocked*, the browser
+has been told no and will not ask again: the way out is that browser's site
+settings, not another tap.
+
+From then on, one notification per arriving Set — titled with the Set's own
+title, with the project underneath it — and tapping it opens that Set, in the
+Askance already on screen if there is one. There are no reminders: a Set that
+goes unanswered is not notified about twice.
+
+### The long waits, through the proxy
+
+Two things here stay open much longer than a page load, and both go through
+`tailscale serve` once the phone is the device answering: the CLI's wait, which
+holds a request for up to a minute before reopening it, and the pending list's
+ten-second refetch. Both already survive a dropped connection, so the question
+was never whether the proxy breaks them but whether it makes them work harder
+than they need to. It does not. Measured against tailscale 1.90.9:
+
+- A full hold — 60 seconds, the server's ceiling — comes back `204` at 60.0s.
+  The proxy neither cuts it short nor shortens the window it was asked for.
+- A hold answered five seconds in comes back `200` at 5.0s. Nothing is
+  buffered, which is what lets the phone's **Submit** wake a waiting agent
+  immediately instead of at the end of whichever hold happened to be open.
+- `askance ask` pointed at the `ts.net` URL and left for 75 seconds — three of
+  its own 30-second holds — printed the Response and exited 0, having said
+  nothing on stderr beyond the line it opens with. The reconnections are there
+  and are invisible, which is the whole of what was asked of them.
+- The pending list refetches as it does locally: a Set submitted while the
+  installed app sits open arrives on the list without a touch.
+
+The client end is HTTP/2 and the loopback hop is plain HTTP/1.1. The `ts.net`
+certificate is publicly trusted, so nothing needs adding to a trust store —
+which is the other reason this works on a phone at all.
+
+### The one thing that leaves the tailnet
+
+Web Push is delivered by the browser vendors' push services — Apple's, Google's
+— so **the server needs outbound internet to send a notification**, even though
+its inbound surface stays tailnet-only. That asymmetry is the whole of it:
+nothing reaches Askance from outside the tailnet, and the only thing Askance
+reaches out to is the push service for the device it is notifying, carrying an
+encrypted payload it cannot read.
+
+The VAPID keypair that signs those pushes is generated on first run and stored
+in `askance.db`. There is no key ceremony and nothing to configure; a push
+service that cannot be reached costs a notification, never a Question Set.
 
 ## Configuration
 
@@ -131,7 +261,7 @@ loopback interface.
 | Variable | Used by | Default | What it is |
 | --- | --- | --- | --- |
 | `ASKANCE_SERVER` | CLI | `http://127.0.0.1:8422` | Base URL the CLI submits to and waits on. Also `--server`. |
-| `ASKANCE_LISTEN` | server | `127.0.0.1:8422` | Address and port to bind. Bind a tailnet address to answer from other devices. Also `--listen`. |
+| `ASKANCE_LISTEN` | server | `127.0.0.1:8422` | Address and port to bind. Loopback is what [`tailscale serve`](#on-your-phone) proxies to; binding the tailnet directly reaches other devices too, but over plain HTTP, which rules out notifications. Also `--listen`. |
 | `ASKANCE_DATABASE` | server | `askance.db` | SQLite file, created with its parent directory. Also `--database`. |
 
 ## The wire format
@@ -257,10 +387,11 @@ ask for. The PNGs are committed so a build needs nothing but cargo — edit the
 SVG and re-run the script rather than touching them.
 
 The tests run the real server in-process, so the round trip they check is the
-one an agent gets — including the quickstart above, which is driven against
-these very example files by
-[`crates/cli/tests/ask.rs`](crates/cli/tests/ask.rs). The UI compiles natively
-for that, so `cargo test` covers the server-rendered pages too.
+one an agent gets — including the quickstart above, whose example files
+[`crates/cli/tests/ask.rs`](crates/cli/tests/ask.rs) drives end to end, taking
+the human's part over the API the page's **Submit** posts through. The UI
+compiles natively for that, so `cargo test` covers the server-rendered pages
+too.
 
 `askance-frontend` — the wasm half of the UI — is a workspace member but not a
 default one: it turns on `leptos/hydrate`, which cannot coexist with the
