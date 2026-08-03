@@ -14,16 +14,38 @@ askance-app = { workspace = true, features = ["ssr"] }
 askance-schema.workspace = true
 askance-store.workspace = true
 axum = "0.8"
+base64.workspace = true
 clap.workspace = true
+# The request `web-push-native` builds is an `http::Request`, and this is the
+# crate that type comes from — shared with reqwest and axum, so it is the same
+# request all the way out.
+http = "1"
 leptos.workspace = true
 leptos_axum.workspace = true
+# Signing the VAPID header, which the store's keypair half of the dependency
+# does not need: `ecdsa` is what turns the stored private key into a signature.
+p256 = { workspace = true, features = ["ecdsa"] }
+# Sending the push. The one thing in Askance that talks to the public internet
+# — delivery goes through the browser vendors' own services — so default
+# features are off to keep OpenSSL out of the build: rustls, with the roots it
+# bundles, is all that reaching an https endpoint takes.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+] }
 serde.workspace = true
 serde-saphyr.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+time.workspace = true
 tokio = { workspace = true, features = ["signal", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# The aes128gcm encryption a push body has to be in. Default features off
+# leaves out its VAPID half, which pulls a whole JWT stack in for what is one
+# ES256 signature over two claims — p256 is already here to make it. 0.4 rather
+# than 0.5 for the same reason: 0.5's hashing is a generation ahead of the one
+# p256 uses, and would put two of every crypto crate in the tree.
+web-push-native = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 http-body-util = "0.1"

@@ -36,7 +36,14 @@ pub(crate) async fn create_set(State(pool): State<SqlitePool>, body: String) -> 
     }
 
     match store::insert_set(&pool, &set).await {
-        Ok(created) => yaml(StatusCode::CREATED, &created),
+        Ok(created) => {
+            // Behind the answer, never in front of it: the agent hears that its
+            // Set is stored the moment it is, and a push service that cannot be
+            // reached costs a notification rather than the Set.
+            crate::push::announce(&pool, created.id, &set);
+
+            yaml(StatusCode::CREATED, &created)
+        }
         Err(error) => {
             tracing::error!(error = ?error, "storing a Question Set failed");
             yaml(
