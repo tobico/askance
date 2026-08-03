@@ -35,6 +35,13 @@
         askance = pkgs.callPackage ./nix/askance.nix { leptosTools = leptosTools pkgs; };
       });
 
+      # The module runs the package above, so it closes over this flake rather
+      # than looking for `pkgs.askance`, which is nowhere to be found.
+      nixosModules = rec {
+        default = askance;
+        askance = import ./nix/module.nix self;
+      };
+
       # `nix run` is the server, UI and all; the CLI is the other half of the
       # same derivation and has to be asked for by name.
       apps = forAllSystems (
