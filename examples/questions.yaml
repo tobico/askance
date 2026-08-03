@@ -1,0 +1,60 @@
+# A Question Set as an agent sends it.
+#
+#   askance ask examples/questions.yaml
+#
+# `project`, `branch` and `diff` are deliberately absent: the CLI derives them
+# from the working directory and overwrites whatever a Set claims.
+
+title: Rate limiting for the public API
+
+preface: |
+  `POST /v1/messages` has no rate limit. Last night one client sent 40k
+  requests in a minute and the queue was backed up for twenty.
+
+  I can land a limiter today, but two things are product calls rather than
+  technical ones and the rest follows from them: where the counter lives,
+  and what a throttled client is told. The scaffolding I have so far is in
+  the attached Diff — nothing in it commits to either decision.
+
+questions:
+  - label: Q1
+    text: Where should the request counter live?
+    options:
+      - n: 1
+        text: >-
+          In-process, per instance. No new dependency, but the effective
+          limit multiplies by the instance count and resets on every deploy.
+        recommended: true
+      - n: 2
+        text: >-
+          In Redis, shared across instances. Exact, and survives deploys, at
+          the cost of putting Redis on the request path.
+
+  # Options with no Recommendation are fine: the agent is offering a choice
+  # it has no preference between.
+  - label: Q2
+    text: How should a throttled client be told to back off?
+    options:
+      - n: 1
+        text: A 429 with `Retry-After`, and nothing else.
+      - n: 2
+        text: >-
+          A 429 with `Retry-After`, plus `RateLimit-*` headers on every
+          response, so a client can pace itself before it is throttled.
+    subquestions:
+      - letter: a
+        text: What should `Retry-After` say?
+        options:
+          - n: 1
+            text: The exact number of seconds until the window resets.
+          - n: 2
+            text: >-
+              A rounded number, so the header gives away less about how the
+              limiter works.
+
+  # A Question with no Options at all: the answer is whatever the human
+  # writes.
+  - label: Q3
+    text: >-
+      Anything I should know before starting — clients you know will break,
+      or limits you already have in mind?

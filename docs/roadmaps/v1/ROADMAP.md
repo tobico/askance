@@ -17,7 +17,7 @@ swap if push notifications become urgent before conveniences.
 
 ## Stages
 
-- [ ] 01: API core + CLI — [brief](01-api-core-and-cli.md)
+- [x] 01: API core + CLI — [brief](01-api-core-and-cli.md)
 - [ ] 02: Answering web UI — [brief](02-answering-web-ui.md)
 - [ ] 03: Answering conveniences — [brief](03-answering-conveniences.md)
 - [ ] 04: PWA + push — [brief](04-pwa-and-push.md)
