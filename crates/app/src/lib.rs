@@ -13,6 +13,7 @@ use leptos_router::{ParamSegment, SsrMode, StaticSegment};
 
 pub mod archive;
 pub mod pending;
+pub mod push;
 pub mod set_view;
 
 // The Preface's markdown and the Diff are rendered before they leave the

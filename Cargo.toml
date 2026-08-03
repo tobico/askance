@@ -34,12 +34,23 @@ askance-store = { path = "crates/store" }
 # untrusted HTML and ammonia is not optional dressing.
 ammonia = "4"
 anyhow = "1"
+# The VAPID keypair and a subscription's keys are base64url without padding
+# throughout — that is the one encoding `PushManager.subscribe` and the Web Push
+# protocol both speak.
+base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 console_error_panic_hook = "0.1"
 leptos = "0.8"
 leptos_axum = "0.8"
 leptos_meta = "0.8"
 leptos_router = "0.8"
+# Generating the VAPID keypair, which is a P-256 one because Web Push says so.
+# Default features off drops the ECDSA half: nothing here signs anything — the
+# key is generated, encoded, and stored.
+p256 = { version = "0.13", default-features = false, features = [
+    "arithmetic",
+    "std",
+] }
 # Default features off drops the getopts-based example binary: this is a
 # library dependency of the server half only.
 pulldown-cmark = { version = "0.13", default-features = false, features = [
