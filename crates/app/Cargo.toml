@@ -1,0 +1,37 @@
+[package]
+name = "askance-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+askance-schema.workspace = true
+leptos.workspace = true
+leptos_meta.workspace = true
+leptos_router.workspace = true
+serde.workspace = true
+time.workspace = true
+
+# The server half. `#[server]` compiles these bodies only under `ssr`, so the
+# wasm build never sees sqlx or the store — nor a markdown parser or a syntax
+# highlighter, which is why the Preface and the Diff arrive already rendered.
+ammonia = { workspace = true, optional = true }
+askance-store = { workspace = true, optional = true }
+leptos_axum = { workspace = true, optional = true }
+pulldown-cmark = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true }
+syntect = { workspace = true, optional = true }
+
+[features]
+hydrate = ["leptos/hydrate"]
+ssr = [
+    "dep:ammonia",
+    "dep:askance-store",
+    "dep:leptos_axum",
+    "dep:pulldown-cmark",
+    "dep:sqlx",
+    "dep:syntect",
+    "leptos/ssr",
+    "leptos_meta/ssr",
+    "leptos_router/ssr",
+]

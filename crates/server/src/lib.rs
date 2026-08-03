@@ -1,21 +1,29 @@
-//! The Askance server: an HTTP API over a SQLite store.
+//! The Askance server: the agents' HTTP API and the human's web UI, over one
+//! SQLite store and out of one binary.
 
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use askance_app::{App, shell};
+use askance_store::Submissions;
 use axum::Router;
 use axum::extract::{DefaultBodyLimit, FromRef};
 use axum::routing::{get, post};
+use leptos::prelude::{LeptosOptions, provide_context};
+use leptos_axum::{LeptosRoutes, generate_route_list};
 use sqlx::SqlitePool;
-use sqlx::sqlite::SqliteConnectOptions;
-use tokio::sync::broadcast;
 
 mod reply;
 mod responses;
 mod sets;
-pub mod store;
+
+/// Persistence lives in its own crate so the UI's server functions can reach
+/// it without depending on the binary that links them. It is re-exported here
+/// because, from the API's side of things, it is still the server's store.
+pub use askance_store as store;
+pub use askance_store::open_database;
 
 /// How large a submitted Question Set may be. Generous, because the CLI
 /// attaches the whole uncommitted Diff to every Set.
@@ -36,7 +44,7 @@ const SUBMISSION_BACKLOG: usize = 64;
 #[derive(Clone)]
 pub(crate) struct AppState {
     pool: SqlitePool,
-    submissions: broadcast::Sender<i64>,
+    submissions: Submissions,
 }
 
 impl FromRef<AppState> for SqlitePool {
@@ -62,32 +70,15 @@ pub struct Config {
     pub listen: SocketAddr,
 }
 
-/// Open the SQLite database at `path`, creating the file if it is absent and
-/// bringing its schema up to date.
-pub async fn open_database(path: &Path) -> Result<SqlitePool> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating database directory {}", parent.display()))?;
-    }
-
-    let options = SqliteConnectOptions::new()
-        .filename(path)
-        .create_if_missing(true);
-
-    let pool = SqlitePool::connect_with(options)
-        .await
-        .with_context(|| format!("opening database {}", path.display()))?;
-
-    store::apply_schema(&pool).await?;
-
-    Ok(pool)
-}
-
-/// The application's routes. REST lives under `/api/v1/` to stay clear of
+/// The agent-facing routes. REST lives under `/api/v1/` to stay clear of
 /// `/api/{fn_name}`, which Leptos server functions claim by default.
 pub fn router(pool: SqlitePool) -> Router {
-    let (submissions, _) = broadcast::channel(SUBMISSION_BACKLOG);
+    api(pool, Submissions::new(SUBMISSION_BACKLOG))
+}
 
+/// The agent-facing routes over an already-made channel, so the UI half can
+/// share the one the waits are held on.
+fn api(pool: SqlitePool, submissions: Submissions) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
         .route(
@@ -105,9 +96,45 @@ async fn health() -> &'static str {
     "ok"
 }
 
+/// Everything the one binary serves: the agent API above, plus the Leptos UI
+/// on every other path.
+///
+/// The UI is merged in second and takes the fallback, so `/api/v1/` keeps its
+/// exact paths and anything unclaimed — pages, server functions, the wasm and
+/// CSS under `/pkg/` — reaches Leptos.
+pub fn router_with_ui(pool: SqlitePool, leptos_options: LeptosOptions) -> Router {
+    let routes = generate_route_list(App);
+    let submissions = Submissions::new(SUBMISSION_BACKLOG);
+
+    // Server functions run outside any axum handler, so what they need reaches
+    // them through the Leptos context rather than through router state. The
+    // channel is the same one the API's waits are held on: a submit from the
+    // browser has to wake an agent waiting on the REST endpoint.
+    let context_pool = pool.clone();
+    let context_submissions = submissions.clone();
+    let shell_options = leptos_options.clone();
+
+    let ui = Router::new()
+        .leptos_routes_with_context(
+            &leptos_options,
+            routes,
+            move || {
+                provide_context(context_pool.clone());
+                provide_context(context_submissions.clone());
+            },
+            move || shell(shell_options.clone()),
+        )
+        .fallback(leptos_axum::file_and_error_handler(shell))
+        .with_state(leptos_options);
+
+    api(pool, submissions).merge(ui)
+}
+
 /// Open the database and serve until the process is stopped.
 pub async fn run(config: Config) -> Result<()> {
     let pool = open_database(&config.database).await?;
+
+    let leptos_options = leptos_options();
 
     let listener = tokio::net::TcpListener::bind(config.listen)
         .await
@@ -119,7 +146,27 @@ pub async fn run(config: Config) -> Result<()> {
         "askance is listening",
     );
 
-    axum::serve(listener, router(pool))
+    axum::serve(listener, router_with_ui(pool, leptos_options))
         .await
-        .context("serving the API")
+        .context("serving Askance")
+}
+
+/// Where the built UI's files are and what they are called.
+///
+/// Under `cargo leptos` this comes from the environment, which also carries
+/// what live reload needs. Built plainly the environment is empty, so fall back
+/// to the same site root and name the workspace's Leptos metadata configures —
+/// a `cargo run -p askance-server` then serves whatever `cargo leptos build`
+/// last produced, instead of refusing to start.
+pub fn leptos_options() -> LeptosOptions {
+    if std::env::var_os("LEPTOS_OUTPUT_NAME").is_some()
+        && let Ok(conf) = leptos::config::get_configuration(None)
+    {
+        return conf.leptos_options;
+    }
+
+    LeptosOptions::builder()
+        .output_name("askance")
+        .site_root("target/site")
+        .build()
 }

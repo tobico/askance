@@ -28,6 +28,14 @@
             # The CLI derives `project`, `branch` and the Diff by shelling out
             # to git, so git is a runtime dependency and not just a habit.
             git
+            # The web UI. cargo-leptos drives the two-target build; nixpkgs'
+            # rustc already ships the wasm32 standard library, so there is no
+            # rustup in the picture.
+            cargo-leptos
+            binaryen
+            # nixpkgs' rustc does not bundle rust-lld, and wasm32 links with
+            # lld or not at all.
+            lld
           ];
 
           env.RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";

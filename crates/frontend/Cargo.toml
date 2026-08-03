@@ -1,0 +1,19 @@
+[package]
+name = "askance-frontend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+# The wasm half of the UI. cargo-leptos builds this package on its own, for
+# wasm32-unknown-unknown, and runs wasm-bindgen over the result.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+askance-app.workspace = true
+console_error_panic_hook.workspace = true
+leptos.workspace = true
+wasm-bindgen.workspace = true
+
+[features]
+hydrate = ["askance-app/hydrate", "leptos/hydrate"]

@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use askance_schema::{ApiError, Response};
+use askance_store::Submission;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response as HttpResponse};
@@ -26,15 +27,6 @@ pub(crate) async fn submit_response(
     Path(id): Path<i64>,
     body: String,
 ) -> HttpResponse {
-    let set = match store::load_set(&state.pool, id).await {
-        Ok(Some(stored)) => stored.set,
-        Ok(None) => return not_found(id),
-        Err(error) => {
-            tracing::error!(error = ?error, set_id = id, "loading a Question Set failed");
-            return unavailable("the Question Set could not be read");
-        }
-    };
-
     let response = match Response::from_yaml(&body) {
         Ok(response) => response,
         Err(error) => {
@@ -45,31 +37,23 @@ pub(crate) async fn submit_response(
         }
     };
 
-    if let Err(invalid) = response.validate(&set) {
-        return yaml(
+    match store::submit_response(&state.pool, &state.submissions, id, &response).await {
+        Ok(Submission::Accepted(accepted)) => yaml(StatusCode::CREATED, &accepted),
+        Ok(Submission::NoSuchSet) => not_found(id),
+        Ok(Submission::Invalid(invalid)) => yaml(
             StatusCode::UNPROCESSABLE_ENTITY,
             &ApiError::with_violations(
                 "the Response does not resolve the Question Set",
                 invalid.violations,
             ),
-        );
-    }
-
-    match store::insert_response(&state.pool, id, &response).await {
-        Ok(Some(accepted)) => {
-            // Wake every wait held on this Set. An error means nobody is
-            // listening, which is the ordinary case — the agent may well be
-            // between polls.
-            let _ = state.submissions.send(id);
-            yaml(StatusCode::CREATED, &accepted)
-        }
-        Ok(None) => yaml(
+        ),
+        Ok(Submission::AlreadyAnswered) => yaml(
             StatusCode::CONFLICT,
             &ApiError::new(format!("Question Set {id} has already been answered")),
         ),
         Err(error) => {
-            tracing::error!(error = ?error, set_id = id, "storing a Response failed");
-            unavailable("the Response could not be stored")
+            tracing::error!(error = ?error, set_id = id, "taking a Response failed");
+            unavailable("the Response could not be taken")
         }
     }
 }

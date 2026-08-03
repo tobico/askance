@@ -12,8 +12,11 @@ The vocabulary in bold throughout is the project's, and is defined in
 ## Status
 
 The agent-facing contract works end to end: submit, wait, answer, deliver.
-There is no web UI yet, so the quickstart below plays the human's part with
-`curl`. See [the roadmap](docs/roadmaps/v1/ROADMAP.md) for what comes next.
+The web UI has started landing — the server serves a pending list of the Sets
+waiting on the human, and opening one shows the whole ask: its Preface, its
+Questions, and the fields to answer them in. Submitting is not wired up yet,
+so the quickstart below still plays the human's part with `curl`. See
+[the roadmap](docs/roadmaps/v1/ROADMAP.md) for what comes next.
 
 ## Quickstart
 
@@ -26,23 +29,29 @@ blocks until it is answered, which is the entire point of it.
 $ nix develop
 ```
 
-Everything below assumes this shell — it carries the Rust toolchain, `sqlite`
-and `git`.
+Everything below assumes this shell — it carries the Rust toolchain, `sqlite`,
+`git`, and `cargo-leptos` with the wasm tooling the web UI needs.
 
 ### 2. Start the server (terminal 1)
 
 ```console
-$ cargo run -p askance-server
+$ cargo leptos watch
   INFO askance_server: askance is listening listen=127.0.0.1:8422 database=askance.db
 ```
 
-It creates `askance.db` in the working directory on first run. Leave it
-running; check it in a third terminal if you like:
+One binary serves both halves: the agent API under `/api/v1/`, and the web UI
+on <http://127.0.0.1:8422/>, which currently shows the pending Sets. It creates
+`askance.db` in the working directory on first run. Leave it running; check it
+in a third terminal if you like:
 
 ```console
 $ curl http://127.0.0.1:8422/api/v1/health
 ok
 ```
+
+`cargo run -p askance-server` also works, and is what you want when only the
+API matters — it skips the wasm build and serves whatever `cargo leptos build`
+last left in `target/site`.
 
 ### 3. Ask (terminal 2)
 
@@ -219,8 +228,8 @@ A Set is answered once: a second Response is a 409 and the first one stands.
 | `GET /api/v1/sets/{id}/response?hold={seconds}` | The wait. `200` with the Response, or `204` — "nothing yet, come back" — once the hold window closes. `hold` is clamped to 60s; the client owns retry. |
 | `POST /api/v1/sets/{id}/response` | The human's Response in, `201` with `set_id` and `submitted_at` back. Wakes every wait held on the Set. |
 
-REST lives under `/api/v1/` to stay clear of `/api/{fn_name}`, which Leptos
-server functions will claim when the web UI lands.
+REST lives under `/api/v1/` to stay clear of `/api/{fn_name}`, where the web
+UI's Leptos server functions live. Everything not claimed above is the UI's.
 
 ## Development
 
@@ -228,10 +237,16 @@ server functions will claim when the web UI lands.
 $ cargo test              # unit, schema and end-to-end tests
 $ cargo clippy --all-targets
 $ cargo fmt
+$ cargo leptos build      # both halves of the UI, into target/site
 $ nix fmt                 # the Nix files
 ```
 
 The tests run the real server in-process, so the round trip they check is the
 one an agent gets — including the quickstart above, which is driven against
 these very example files by
-[`crates/cli/tests/ask.rs`](crates/cli/tests/ask.rs).
+[`crates/cli/tests/ask.rs`](crates/cli/tests/ask.rs). The UI compiles natively
+for that, so `cargo test` covers the server-rendered pages too.
+
+`askance-frontend` — the wasm half of the UI — is a workspace member but not a
+default one: it turns on `leptos/hydrate`, which cannot coexist with the
+`leptos/ssr` everything else needs. Only `cargo leptos` builds it.
