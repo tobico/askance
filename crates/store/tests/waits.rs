@@ -8,16 +8,25 @@ use time::format_description::well_known::Rfc3339;
 
 /// A Set created long enough ago that its own grace window is closed: what these
 /// tests are asking about is the waits held on it, not its age.
-const CREATED: &str = "2026-08-03T12:00:00.000Z";
+const CREATED: &str = "2020-01-01T12:00:00.000Z";
 
 fn at(stamp: &str) -> OffsetDateTime {
     OffsetDateTime::parse(stamp, &Rfc3339).unwrap()
 }
 
+/// A moment after the Set was created, while its own window is still open.
+fn moments_later() -> OffsetDateTime {
+    at(CREATED) + time::Duration::seconds(1)
+}
+
 /// Long after the Set was created, so nothing but a held or lately released wait
 /// can make it read as waiting.
+///
+/// Off the clock rather than off [`CREATED`], because a released wait is stamped
+/// with the real `now_utc()` as it is dropped: a fixture time is only later than
+/// that release until the day the fixture was written.
 fn later() -> OffsetDateTime {
-    at(CREATED) + time::Duration::hours(1)
+    OffsetDateTime::now_utc() + time::Duration::hours(1)
 }
 
 #[test]
@@ -37,7 +46,7 @@ fn a_set_nothing_has_ever_waited_on_measures_its_own_age() {
     let waits = Waits::new();
 
     assert_eq!(
-        waits.liveness(404, CREATED, at("2026-08-03T12:00:01.000Z")),
+        waits.liveness(404, CREATED, moments_later()),
         Liveness::Waiting,
         "a Set submitted a moment ago is on its way to its first wait"
     );

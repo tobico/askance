@@ -15,6 +15,7 @@ use leptos::prelude::{LeptosOptions, provide_context};
 use leptos_axum::{LeptosRoutes, generate_route_list};
 use sqlx::SqlitePool;
 
+mod push;
 mod reply;
 mod responses;
 mod sets;

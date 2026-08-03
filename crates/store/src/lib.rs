@@ -19,8 +19,13 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnectOptions;
 use tokio::sync::broadcast;
 
+mod push;
 mod waits;
 
+pub use push::{
+    PushSubscription, Subscribing, VapidKeys, forget_subscription, push_subscriptions,
+    store_subscription, vapid_keys,
+};
 pub use waits::{WaitHeld, Waits};
 
 /// A Set as the store holds it: the agent's Set plus the identity the server
@@ -297,6 +302,10 @@ async fn apply_schema(pool: &SqlitePool) -> Result<()> {
     .execute(pool)
     .await
     .context("creating the archivings table")?;
+
+    // The push identity and the devices subscribed to it, which also generates
+    // the keypair when this is the database's first run.
+    push::apply_schema(pool).await?;
 
     Ok(())
 }

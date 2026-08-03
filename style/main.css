@@ -88,6 +88,50 @@ textarea {
   resize: vertical;
 }
 
+/* Notifications on this device: where it stands, and the tap that changes it.
+   Above the pending list and quiet like the Set's own standing line — it is read
+   once, when the answer is not the expected one, and then ignored for weeks. */
+
+.notifications {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.notifications .state {
+  margin: 0;
+  /* Room for the button beside it on a phone, and the whole line to itself when
+     the words run past that. */
+  flex: 1 1 12rem;
+}
+
+.notifications button {
+  padding: 0.4rem 0.7rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.notifications button:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+/* Its own line under both, so a failure is not squeezed between them. */
+.notifications .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 /* The two lists of Sets — what is waiting and what was decided — are drawn as
    the same card, because they are read the same way and the same Set is looked
    at in both. Only the last thing on the meta line differs. */

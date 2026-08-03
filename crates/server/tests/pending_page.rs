@@ -143,3 +143,25 @@ async fn an_empty_pending_list_says_so() {
         "expected the empty state:\n{html}"
     );
 }
+
+#[tokio::test]
+async fn the_pending_list_carries_the_notification_control() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = pending_page(&pool).await;
+
+    assert!(
+        html.contains(r#"class="notifications""#),
+        "the pending list is where a device is turned on:\n{html}"
+    );
+    // Only a browser knows where a device stands, so what the server renders is
+    // that it does not yet — never an offer that might already be taken up.
+    assert!(
+        html.contains("Checking notifications on this device"),
+        "the server should render the control as unlooked-at:\n{html}"
+    );
+    assert!(
+        !html.contains("Turn on for this device"),
+        "the server cannot know there is anything to turn on:\n{html}"
+    );
+}

@@ -13,6 +13,7 @@ use leptos_router::{ParamSegment, SsrMode, StaticSegment};
 
 pub mod archive;
 pub mod pending;
+pub mod push;
 pub mod set_view;
 
 // The Preface's markdown and the Diff are rendered before they leave the
@@ -24,6 +25,9 @@ mod markdown;
 
 /// The HTML document the server sends and the browser hydrates. Phone-first:
 /// the viewport tag is the one thing a responsive layout cannot do without.
+///
+/// The manifest and the icons are static files from the site root, not from
+/// `/pkg/` — see the workspace's `assets-dir`.
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
         <!DOCTYPE html>
@@ -31,6 +35,12 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <link rel="manifest" href="/manifest.webmanifest" />
+                <meta name="theme-color" content="#7a5c3e" />
+                <link rel="icon" href="/icons/askance.svg" type="image/svg+xml" />
+                // iOS reads neither the manifest's icons nor an SVG favicon, so
+                // it gets its own link, to a PNG of the size it wants.
+                <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
                 <AutoReload options=options.clone() />
                 <HydrationScripts options />
                 <MetaTags />

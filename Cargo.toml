@@ -34,12 +34,27 @@ askance-store = { path = "crates/store" }
 # untrusted HTML and ammonia is not optional dressing.
 ammonia = "4"
 anyhow = "1"
+# The VAPID keypair and a subscription's keys are base64url without padding
+# throughout — that is the one encoding `PushManager.subscribe` and the Web Push
+# protocol both speak.
+base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 console_error_panic_hook = "0.1"
+# Reaching past web-sys, in the browser half only: whether a global is there at
+# all — `Notification`, `PushManager` — which is how a browser without push is
+# told from one that has it.
+js-sys = "0.3"
 leptos = "0.8"
 leptos_axum = "0.8"
 leptos_meta = "0.8"
 leptos_router = "0.8"
+# Generating the VAPID keypair, which is a P-256 one because Web Push says so.
+# Default features off drops the ECDSA half: nothing here signs anything — the
+# key is generated, encoded, and stored.
+p256 = { version = "0.13", default-features = false, features = [
+    "arithmetic",
+    "std",
+] }
 # Default features off drops the getopts-based example binary: this is a
 # library dependency of the server half only.
 pulldown-cmark = { version = "0.13", default-features = false, features = [
@@ -72,9 +87,27 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # to match the one built into the cargo-leptos the flake pins. Bump the two
 # together or the wasm build stops with a schema-version mismatch.
 wasm-bindgen = "=0.2.100"
-# Drafts live in `localStorage`, which leptos's own web-sys does not reach:
-# it turns on `StorageEvent` but not `Storage` itself.
-web-sys = { version = "0.3", features = ["Storage", "Window"] }
+# Awaiting a JS promise from Rust: subscribing to push is four of them in a row.
+wasm-bindgen-futures = "0.4"
+# What the browser half needs and leptos's own web-sys does not turn on:
+# `Storage`, because drafts live in `localStorage` and leptos enables
+# `StorageEvent` but not `Storage` itself; `navigator.serviceWorker` to register
+# the worker with; and the push manager that hangs off the registration, with
+# the notification permission that governs it.
+web-sys = { version = "0.3", features = [
+    "Navigator",
+    "Notification",
+    "NotificationPermission",
+    "PushManager",
+    "PushSubscription",
+    "PushSubscriptionJson",
+    "PushSubscriptionKeys",
+    "PushSubscriptionOptionsInit",
+    "ServiceWorkerContainer",
+    "ServiceWorkerRegistration",
+    "Storage",
+    "Window",
+] }
 
 # cargo-leptos drives the build: it compiles `askance-frontend` to wasm, runs
 # wasm-bindgen over it, processes the stylesheet, and then builds and runs the
@@ -84,6 +117,11 @@ name = "askance"
 bin-package = "askance-server"
 lib-package = "askance-frontend"
 style-file = "style/main.css"
+# The manifest, the icons and the service worker, copied verbatim into the site
+# root. They cannot live under `site-pkg-dir`: a service worker only controls
+# the paths beneath the one it was served from, so a worker under `/pkg/` could
+# never show a notification for `/sets/12`.
+assets-dir = "assets"
 site-root = "target/site"
 site-pkg-dir = "pkg"
 # Matches `Config`'s default listen address, so `cargo leptos watch` and a
