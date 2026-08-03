@@ -33,6 +33,9 @@
             # rustup in the picture.
             cargo-leptos
             binaryen
+            # The PWA icons are one SVG rasterized to the PNG sizes the manifest
+            # and iOS need — see tools/generate-icons.sh.
+            resvg
             # nixpkgs' rustc does not bundle rust-lld, and wasm32 links with
             # lld or not at all.
             lld

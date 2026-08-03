@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The one icon source. Every PNG in this directory is rasterized from it by
+     `tools/generate-icons.sh`, and it is served as the favicon itself.
+
+     Full-bleed: Android masks launcher icons to whatever shape the launcher
+     likes, so the background covers the whole canvas and the glyph stays within
+     the central 80% safe zone. The question mark leans, because that is what
+     looking askance is. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#7a5c3e" />
+  <g transform="rotate(-12 256 256)">
+    <path
+      d="M 184 190 A 72 72 0 1 1 307 241 Q 262 292 256 330"
+      fill="none"
+      stroke="#faf8f5"
+      stroke-width="46"
+      stroke-linecap="round"
+    />
+    <circle cx="256" cy="402" r="23" fill="#faf8f5" />
+  </g>
+</svg>

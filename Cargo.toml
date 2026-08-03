@@ -72,9 +72,16 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # to match the one built into the cargo-leptos the flake pins. Bump the two
 # together or the wasm build stops with a schema-version mismatch.
 wasm-bindgen = "=0.2.100"
-# Drafts live in `localStorage`, which leptos's own web-sys does not reach:
-# it turns on `StorageEvent` but not `Storage` itself.
-web-sys = { version = "0.3", features = ["Storage", "Window"] }
+# What the browser half needs and leptos's own web-sys does not turn on:
+# `Storage`, because drafts live in `localStorage` and leptos enables
+# `StorageEvent` but not `Storage` itself, and `navigator.serviceWorker` to
+# register the worker with.
+web-sys = { version = "0.3", features = [
+    "Navigator",
+    "ServiceWorkerContainer",
+    "Storage",
+    "Window",
+] }
 
 # cargo-leptos drives the build: it compiles `askance-frontend` to wasm, runs
 # wasm-bindgen over it, processes the stylesheet, and then builds and runs the
@@ -84,6 +91,11 @@ name = "askance"
 bin-package = "askance-server"
 lib-package = "askance-frontend"
 style-file = "style/main.css"
+# The manifest, the icons and the service worker, copied verbatim into the site
+# root. They cannot live under `site-pkg-dir`: a service worker only controls
+# the paths beneath the one it was served from, so a worker under `/pkg/` could
+# never show a notification for `/sets/12`.
+assets-dir = "assets"
 site-root = "target/site"
 site-pkg-dir = "pkg"
 # Matches `Config`'s default listen address, so `cargo leptos watch` and a

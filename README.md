@@ -239,7 +239,22 @@ $ cargo clippy --all-targets
 $ cargo fmt
 $ cargo leptos build      # both halves of the UI, into target/site
 $ nix fmt                 # the Nix files
+
+$ tools/generate-icons.sh # the PWA icons, after editing their SVG
 ```
+
+`assets/` is copied verbatim into the site root by `cargo leptos`: the web
+manifest, the icons and the service worker. They cannot live under `/pkg/` with
+the wasm and the CSS — a service worker only controls the paths beneath the one
+it was served from, so one under `/pkg/` could never show a notification for
+`/sets/12`. The worker itself does no caching; every page is rendered against
+live SQLite, and a cached copy of a Set that has since been answered is worse
+to the human than a failure to load.
+
+The icons are all one SVG, `assets/icons/askance.svg`, rasterized by the script
+above (using `resvg` from the dev shell) to the PNG sizes the manifest and iOS
+ask for. The PNGs are committed so a build needs nothing but cargo — edit the
+SVG and re-run the script rather than touching them.
 
 The tests run the real server in-process, so the round trip they check is the
 one an agent gets — including the quickstart above, which is driven against
