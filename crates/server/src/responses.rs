@@ -98,6 +98,13 @@ pub(crate) async fn wait_for_response(
         }
     }
 
+    // Taken once the Set is known to exist, so a 404 leaves no trace in the
+    // registry, and held for exactly as long as this future lives: a client that
+    // vanishes mid-hold has its future dropped rather than returned, and the
+    // guard is what both endings have in common. Display only — nothing below
+    // consults it, and no Set is withdrawn for want of one.
+    let _held = state.waits.hold(id);
+
     let deadline = Instant::now() + hold;
 
     loop {

@@ -18,6 +18,10 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteConnectOptions;
 use tokio::sync::broadcast;
 
+mod waits;
+
+pub use waits::{WaitHeld, Waits};
+
 /// A Set as the store holds it: the agent's Set plus the identity the server
 /// stamped on it.
 #[derive(Debug, Clone, PartialEq, Eq)]

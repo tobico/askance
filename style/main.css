@@ -132,6 +132,15 @@ textarea {
   font-family: ui-monospace, SFMono-Regular, monospace;
 }
 
+/* A word rather than a light, because the list is scanned on a phone and
+   "agent disconnected" has to read as itself without a legend. Waiting is the
+   ordinary state and stays as quiet as the rest of the line; only the Set nobody
+   is listening on speaks up. */
+.pending-set .liveness.disconnected {
+  color: var(--removed);
+  font-weight: 500;
+}
+
 .pending-set .age {
   margin-left: auto;
 }

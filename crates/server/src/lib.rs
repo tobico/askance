@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use askance_app::{App, shell};
-use askance_store::Submissions;
+use askance_store::{Submissions, Waits};
 use axum::Router;
 use axum::extract::{DefaultBodyLimit, FromRef};
 use axum::routing::{get, post};
@@ -39,12 +39,13 @@ const MAX_HOLD: Duration = Duration::from_secs(60);
 /// answered Set, for a single human answering them: this is generous.
 const SUBMISSION_BACKLOG: usize = 64;
 
-/// What the handlers share: the store, and word of Sets that have just been
-/// answered so held waits need not poll it.
+/// What the handlers share: the store, word of Sets that have just been answered
+/// so held waits need not poll it, and which Sets a wait is being held on.
 #[derive(Clone)]
 pub(crate) struct AppState {
     pool: SqlitePool,
     submissions: Submissions,
+    waits: Waits,
 }
 
 impl FromRef<AppState> for SqlitePool {
@@ -73,12 +74,12 @@ pub struct Config {
 /// The agent-facing routes. REST lives under `/api/v1/` to stay clear of
 /// `/api/{fn_name}`, which Leptos server functions claim by default.
 pub fn router(pool: SqlitePool) -> Router {
-    api(pool, Submissions::new(SUBMISSION_BACKLOG))
+    api(pool, Submissions::new(SUBMISSION_BACKLOG), Waits::new())
 }
 
-/// The agent-facing routes over an already-made channel, so the UI half can
-/// share the one the waits are held on.
-fn api(pool: SqlitePool, submissions: Submissions) -> Router {
+/// The agent-facing routes over an already-made channel and registry, so the UI
+/// half can share the ones the waits are held on and recorded in.
+fn api(pool: SqlitePool, submissions: Submissions, waits: Waits) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
         .route(
@@ -89,7 +90,11 @@ fn api(pool: SqlitePool, submissions: Submissions) -> Router {
             "/api/v1/sets/{id}/response",
             post(responses::submit_response).get(responses::wait_for_response),
         )
-        .with_state(AppState { pool, submissions })
+        .with_state(AppState {
+            pool,
+            submissions,
+            waits,
+        })
 }
 
 async fn health() -> &'static str {
@@ -105,13 +110,16 @@ async fn health() -> &'static str {
 pub fn router_with_ui(pool: SqlitePool, leptos_options: LeptosOptions) -> Router {
     let routes = generate_route_list(App);
     let submissions = Submissions::new(SUBMISSION_BACKLOG);
+    let waits = Waits::new();
 
     // Server functions run outside any axum handler, so what they need reaches
     // them through the Leptos context rather than through router state. The
-    // channel is the same one the API's waits are held on: a submit from the
-    // browser has to wake an agent waiting on the REST endpoint.
+    // channel and the registry are the same ones the API's waits are held on: a
+    // submit from the browser has to wake an agent waiting on the REST endpoint,
+    // and the pending list has to see the waits that endpoint is holding.
     let context_pool = pool.clone();
     let context_submissions = submissions.clone();
+    let context_waits = waits.clone();
     let shell_options = leptos_options.clone();
 
     let ui = Router::new()
@@ -121,13 +129,14 @@ pub fn router_with_ui(pool: SqlitePool, leptos_options: LeptosOptions) -> Router
             move || {
                 provide_context(context_pool.clone());
                 provide_context(context_submissions.clone());
+                provide_context(context_waits.clone());
             },
             move || shell(shell_options.clone()),
         )
         .fallback(leptos_axum::file_and_error_handler(shell))
         .with_state(leptos_options);
 
-    api(pool, submissions).merge(ui)
+    api(pool, submissions, waits).merge(ui)
 }
 
 /// Open the database and serve until the process is stopped.

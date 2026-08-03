@@ -16,7 +16,7 @@ Roadmap stage: [03: Answering conveniences](docs/roadmaps/v1/03-answering-conven
 
 - [x] 01: Accept all recommendations — [details](01-accept-all-recommendations.md)
 - [x] 02: Draft autosave — [details](02-draft-autosave.md)
-- [ ] 03: Liveness tracking and badge — [details](03-liveness-badge.md)
+- [x] 03: Liveness tracking and badge — [details](03-liveness-badge.md)
 - [ ] 04: Answered Sets render read-only — [details](04-answered-set-read-only.md)
 - [ ] 05: Archive list — [details](05-archive-list.md)
 - [ ] 06: Manual archive of an orphaned Set — [details](06-manual-archive.md)
