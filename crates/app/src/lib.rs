@@ -9,9 +9,14 @@
 use leptos::prelude::*;
 use leptos_meta::{MetaTags, Stylesheet, Title, provide_meta_context};
 use leptos_router::components::{Route, Router, Routes};
-use leptos_router::{SsrMode, StaticSegment};
+use leptos_router::{ParamSegment, SsrMode, StaticSegment};
 
+// The Preface's markdown is rendered before it leaves the server, so the parser
+// belongs to the server half only.
+#[cfg(feature = "ssr")]
+mod markdown;
 pub mod pending;
+pub mod set_view;
 
 /// The HTML document the server sends and the browser hydrates. Phone-first:
 /// the viewport tag is the one thing a responsive layout cannot do without.
@@ -47,10 +52,17 @@ pub fn App() -> impl IntoView {
                 <Routes fallback=|| view! { <p class="empty">"No such page."</p> }>
                     // Rendered whole rather than streamed: the pending list is
                     // the entire page, so there is nothing to show first, and
-                    // a local SQLite query is not worth a loading flash.
+                    // a local SQLite query is not worth a loading flash. The
+                    // set view is the same story, and its Preface has to be
+                    // rendered before any of the page can go out.
                     <Route
                         path=StaticSegment("")
                         view=pending::PendingList
+                        ssr=SsrMode::Async
+                    />
+                    <Route
+                        path=(StaticSegment("sets"), ParamSegment("id"))
+                        view=set_view::SetPage
                         ssr=SsrMode::Async
                     />
                 </Routes>

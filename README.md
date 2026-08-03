@@ -12,9 +12,10 @@ The vocabulary in bold throughout is the project's, and is defined in
 ## Status
 
 The agent-facing contract works end to end: submit, wait, answer, deliver.
-The web UI has started landing — the server now serves a pending list of the
-Sets waiting on the human — but there is nothing to answer with yet, so the
-quickstart below still plays the human's part with `curl`. See
+The web UI has started landing — the server serves a pending list of the Sets
+waiting on the human, and opening one shows the whole ask: its Preface, its
+Questions, and the fields to answer them in. Submitting is not wired up yet,
+so the quickstart below still plays the human's part with `curl`. See
 [the roadmap](docs/roadmaps/v1/ROADMAP.md) for what comes next.
 
 ## Quickstart

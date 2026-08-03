@@ -30,6 +30,9 @@ rust-version = "1.85"
 askance-app = { path = "crates/app" }
 askance-schema = { path = "crates/schema" }
 askance-store = { path = "crates/store" }
+# The Preface is agent-supplied markdown, so what pulldown-cmark renders is
+# untrusted HTML and ammonia is not optional dressing.
+ammonia = "4"
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 console_error_panic_hook = "0.1"
@@ -37,6 +40,11 @@ leptos = "0.8"
 leptos_axum = "0.8"
 leptos_meta = "0.8"
 leptos_router = "0.8"
+# Default features off drops the getopts-based example binary: this is a
+# library dependency of the server half only.
+pulldown-cmark = { version = "0.13", default-features = false, features = [
+    "html",
+] }
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "1"
 serde_json = "1"

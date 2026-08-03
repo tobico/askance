@@ -74,6 +74,21 @@ async fn a_submitted_set_is_rendered_into_the_pending_list() {
 }
 
 #[tokio::test]
+async fn each_pending_row_opens_its_set_view() {
+    let (_dir, pool) = fresh_pool().await;
+    let stored = store::insert_set(&pool, &set("Storage layout"))
+        .await
+        .unwrap();
+
+    let html = pending_page(&pool).await;
+
+    assert!(
+        html.contains(&format!(r#"href="/sets/{}""#, stored.id)),
+        "expected the row to link to its set view:\n{html}"
+    );
+}
+
+#[tokio::test]
 async fn the_pending_list_is_rendered_newest_first() {
     let (_dir, pool) = fresh_pool().await;
     for title in ["the older ask", "the newer ask"] {

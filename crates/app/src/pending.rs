@@ -2,6 +2,7 @@
 //! first.
 
 use leptos::prelude::*;
+use leptos_router::components::A;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -101,14 +102,18 @@ pub fn PendingList() -> impl IntoView {
 }
 
 fn pending_row(entry: PendingEntry) -> impl IntoView {
+    // The whole row is the link: on a phone the tap target should be the card,
+    // not the title inside it.
     view! {
         <li class="pending-set">
-            <span class="title">{entry.title}</span>
-            <span class="meta">
-                {entry.project.map(|project| view! { <span class="project">{project}</span> })}
-                {entry.branch.map(|branch| view! { <span class="branch">{branch}</span> })}
-                <span class="age">{entry.age}</span>
-            </span>
+            <A href=format!("/sets/{}", entry.id)>
+                <span class="title">{entry.title}</span>
+                <span class="meta">
+                    {entry.project.map(|project| view! { <span class="project">{project}</span> })}
+                    {entry.branch.map(|branch| view! { <span class="branch">{branch}</span> })}
+                    <span class="age">{entry.age}</span>
+                </span>
+            </A>
         </li>
     }
 }
