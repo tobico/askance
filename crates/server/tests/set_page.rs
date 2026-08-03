@@ -1,7 +1,9 @@
 //! The set view as the human's browser gets it: the Preface rendered from
-//! markdown by the server, then every Question in order, ready to answer.
+//! markdown by the server, then every Question in order, ready to answer — or,
+//! once the Set has been answered, the record of what was decided instead of a
+//! form.
 
-use askance_schema::{Question, QuestionOption, QuestionSet, Subquestion};
+use askance_schema::{Answer, Question, QuestionOption, QuestionSet, Response, Subquestion};
 use askance_server::{open_database, router_with_ui, store};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -97,6 +99,43 @@ fn full_grammar_set() -> QuestionSet {
     }
 }
 
+fn answer(label: &str, selected: Option<u32>, free_text: Option<&str>) -> Answer {
+    Answer {
+        label: label.to_owned(),
+        selected,
+        free_text: free_text.map(str::to_owned),
+        unanswered: false,
+    }
+}
+
+fn unanswered(label: &str) -> Answer {
+    Answer {
+        label: label.to_owned(),
+        selected: None,
+        free_text: None,
+        unanswered: true,
+    }
+}
+
+/// A Response resolving [`full_grammar_set`] every way a question can be
+/// resolved: an Option chosen over the agent's Recommendation, an Option with
+/// words beside it, words alone where there were no Options, and two questions
+/// handed back open.
+fn decided_every_way() -> Response {
+    Response {
+        answers: vec![
+            // Q1's ★ is Option 2, and this picks 1: what was suggested and what
+            // was decided have to be legible as different things.
+            answer("Q1", Some(1), None),
+            answer("Q2", Some(2), Some("and document them in the changelog")),
+            unanswered("Q2a"),
+            answer("Q2b", None, Some("keep them short")),
+            unanswered("Q3"),
+        ],
+        comment: Some("Do the in-process one first; we can move it later.".to_owned()),
+    }
+}
+
 /// A Diff as the CLI captures one: a tracked file edited, and an untracked file
 /// diffed against the empty file.
 fn modified_and_untracked_diff() -> String {
@@ -151,6 +190,46 @@ async fn set_page(pool: &SqlitePool, set: &QuestionSet) -> String {
 
     assert_eq!(status, StatusCode::OK);
     html
+}
+
+/// The set view of a Set that has already been answered, and the time its
+/// Response landed.
+///
+/// The Response goes through validation on the way in, so a test cannot assert
+/// on a page drawn from Answers the server would never have stored.
+async fn answered_set_page(
+    pool: &SqlitePool,
+    set: &QuestionSet,
+    response: &Response,
+) -> (String, String) {
+    response
+        .validate(set)
+        .expect("the Response a test answers with has to resolve its Set");
+
+    let stored = store::insert_set(pool, set).await.unwrap();
+    let accepted = store::insert_response(pool, stored.id, response)
+        .await
+        .unwrap()
+        .expect("a freshly stored Set has no Response yet");
+
+    let (status, html) = page(pool, &format!("/sets/{}", stored.id)).await;
+
+    assert_eq!(status, StatusCode::OK);
+    (html, accepted.submitted_at)
+}
+
+/// The `<li>` whose text contains `needle` — one Option's row, so a test can ask
+/// what that Option was marked with.
+fn option_row(html: &str, needle: &str) -> String {
+    let at = html
+        .find(needle)
+        .unwrap_or_else(|| panic!("expected Option {needle:?} in the page:\n{html}"));
+    let opens = html[..at]
+        .rfind("<li")
+        .unwrap_or_else(|| panic!("expected Option {needle:?} inside a row:\n{html}"));
+    let closes = at + html[at..].find("</li>").unwrap_or(0);
+
+    html[opens..closes].to_owned()
 }
 
 /// Where each of these markers sits in the page, in the order given, failing
@@ -453,6 +532,169 @@ async fn a_set_with_no_diff_shows_no_diff_section() {
         !html.contains(r#"<section class="diff">"#),
         "with no Diff attached there is no section to draw:\n{html}"
     );
+}
+
+#[tokio::test]
+async fn an_answered_set_offers_nothing_to_press() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let (html, _) = answered_set_page(&pool, &full_grammar_set(), &decided_every_way()).await;
+
+    // The Set is drawn, and what is drawn is the record: everything below is an
+    // assertion about a page that is really there.
+    assert!(
+        html.contains(r#"class="questions decided""#),
+        "expected the answered Set's questions:\n{html}"
+    );
+    for absent in ["<input", "<textarea", "<button", "accept-all"] {
+        assert!(
+            !html.contains(absent),
+            "a Set is answered once, so {absent} has no business on the page:\n{html}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_answered_set_shows_what_was_chosen_apart_from_what_was_recommended() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let (html, _) = answered_set_page(&pool, &full_grammar_set(), &decided_every_way()).await;
+
+    // Q1: Option 1 was chosen, and it is Option 2 that carries the ★.
+    let chosen = option_row(&html, "In-process, per instance.");
+    assert!(
+        chosen.contains("chosen"),
+        "expected the human's Option marked as chosen:\n{chosen}"
+    );
+    assert!(
+        !chosen.contains("★"),
+        "the agent recommended the other one:\n{chosen}"
+    );
+
+    let recommended = option_row(&html, "In Redis, shared across instances.");
+    assert!(
+        recommended.contains("★"),
+        "expected the Recommendation still marked as one:\n{recommended}"
+    );
+    assert!(
+        !recommended.contains("chosen"),
+        "the Recommendation was not taken, and the page must not read as if it was:\n{recommended}"
+    );
+
+    // Every Option is kept, chosen or not: what was turned down is half of what
+    // the decision was.
+    for text in ["A bare 429.", "The exact number of seconds."] {
+        assert!(
+            html.contains(text),
+            "expected the Option that was not taken:\n{html}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_answered_set_shows_what_was_written() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let (html, _) = answered_set_page(&pool, &full_grammar_set(), &decided_every_way()).await;
+
+    assert!(
+        html.contains("and document them in the changelog"),
+        "expected the words written beside a chosen Option:\n{html}"
+    );
+    assert!(
+        html.contains("keep them short"),
+        "expected the words that were the whole Answer on a question with no Options:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_question_that_went_back_open_says_it_went_back_unanswered() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let (html, _) = answered_set_page(&pool, &full_grammar_set(), &decided_every_way()).await;
+
+    // Q2a and Q3 went back open, and both are still drawn: an Unanswered
+    // question is part of what the agent was told, not an omission.
+    assert!(
+        html.contains("What should Retry-After say?"),
+        "expected the Sub-question that went back open:\n{html}"
+    );
+    assert!(
+        html.contains("Anything I should know before starting?"),
+        "expected the Question that went back open:\n{html}"
+    );
+    assert_eq!(
+        html.matches(r#"class="unanswered""#).count(),
+        2,
+        "expected exactly the two questions that went back open marked:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn an_answered_set_says_what_was_said_about_it_and_when() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let (html, submitted_at) =
+        answered_set_page(&pool, &full_grammar_set(), &decided_every_way()).await;
+
+    assert!(
+        html.contains("Do the in-process one first; we can move it later."),
+        "expected the set-level comment:\n{html}"
+    );
+    assert!(
+        html.contains(r#"class="answered-at""#),
+        "expected the page to say when the Response landed:\n{html}"
+    );
+    // The stamp SQLite wrote, as the page dates it: the day it was answered,
+    // read in the server's own offset.
+    assert!(
+        html.contains(&submitted_at[..10]) && html.contains(" UTC"),
+        "expected {submitted_at} dated on the page:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_set_answered_with_only_a_comment_reads_as_a_counter_question() {
+    let (_dir, pool) = fresh_pool().await;
+    let set = full_grammar_set();
+    let counter_question = Response {
+        answers: ["Q1", "Q2", "Q2a", "Q2b", "Q3"].map(unanswered).to_vec(),
+        comment: Some("Neither, really — why not cache it upstream?".to_owned()),
+    };
+
+    let (html, _) = answered_set_page(&pool, &set, &counter_question).await;
+
+    assert!(
+        html.contains(r#"class="counter-question""#),
+        "a Response that resolved nothing is still a Response, and has to read as one:\n{html}"
+    );
+    assert!(
+        html.contains("Neither, really — why not cache it upstream?"),
+        "expected the comment that is the whole Response:\n{html}"
+    );
+    assert_eq!(
+        html.matches(r#"class="unanswered""#).count(),
+        5,
+        "every question went back open, and every one of them says so:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_set_nobody_has_answered_yet_is_still_a_form() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &full_grammar_set()).await;
+
+    assert!(
+        html.contains(r#"name="set-comment""#),
+        "expected the answerable form:\n{html}"
+    );
+    for absent in ["answered-at", "counter-question", "chosen"] {
+        assert!(
+            !html.contains(absent),
+            "nothing has been decided here, so {absent} does not belong:\n{html}"
+        );
+    }
 }
 
 #[tokio::test]

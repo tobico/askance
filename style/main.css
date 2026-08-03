@@ -538,6 +538,103 @@ h1 + .meta .branch {
   margin-bottom: 0;
 }
 
+/* An answered Set: the same column, read rather than filled in. What was decided
+   is the ink; what was only offered fades behind it. */
+
+/* Under the title, or under the provenance line when the Set has one — which
+   already carries the gap below the title, so the two sit together rather than a
+   line apart. */
+.answered-at {
+  margin: 0 0 1.25rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.meta + .answered-at {
+  margin-top: -1rem;
+}
+
+/* A Response that resolved nothing still decided something — that these were
+   the wrong questions. It gets a card of its own so the page below it cannot be
+   mistaken for one whose Answers failed to load. */
+.counter-question {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--accent);
+  border-radius: 0.6rem;
+}
+
+/* There is no radio to wrap here, so the row itself carries what the label
+   carried in the form. */
+.ask.decided .option {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  color: var(--ink-soft);
+  border: 1px solid var(--edge);
+  border-radius: 0.4rem;
+}
+
+/* Marked as it was in the form: dashed, because a Recommendation is what was
+   suggested and not what was decided — which on any given question may well
+   have been the other Option. */
+.ask.decided .option.recommended {
+  border-style: dashed;
+  border-color: var(--accent);
+}
+
+/* The one Option that is not history keeps the page's ink, takes the solid
+   outline the form gave a selected radio, and says so in a word besides. */
+.ask.decided .option.chosen {
+  color: var(--ink);
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.ask.decided .chose {
+  margin-left: auto;
+  padding-left: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+/* Written by a human in a textarea, so their line breaks are part of what they
+   said. */
+.ask.decided .answer-text,
+.set-comment.decided .comment {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.ask.decided .prompt {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.ask.decided .unanswered {
+  margin: 0;
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.set-comment.decided h2 {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
 /* The warning before a Response goes out with questions left open. It covers
    the page because it is the one thing to decide at that moment; it never
    refuses, so both ways out are buttons of equal weight. */

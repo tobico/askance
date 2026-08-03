@@ -7,12 +7,21 @@
 //! marker rather than being left out. Leaving a question open is a thing the
 //! human is allowed to do — it just has to be said out loud, and the warning
 //! before submit is where they say it.
+//!
+//! A Set that has already been answered gets the same page read rather than
+//! filled in: its own material above, and under it what was decided — the
+//! Option chosen beside the one the agent recommended, whatever was written,
+//! and the questions that went back open. A Set is answered once, so there is
+//! nothing here to press. Which of the two the page draws is decided from the
+//! Set as the server loads it, so an answered Set never flashes a form.
 
 use askance_schema::{Answer, Question, QuestionOption, Response};
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use serde::{Deserialize, Serialize};
+use time::format_description::well_known::Rfc3339;
+use time::{OffsetDateTime, UtcOffset};
 
 /// One Question Set as the browser receives it.
 ///
@@ -28,6 +37,18 @@ pub struct SetView {
     pub preface_html: Option<String>,
     pub diff_html: Option<String>,
     pub questions: Vec<Question>,
+
+    /// What the human decided, if they have. Its presence is what makes this
+    /// page a record instead of a form, so it travels with the Set rather than
+    /// being fetched once the page is already up.
+    pub answered: Option<Answered>,
+}
+
+/// A Set's Response as the page needs it: the Answers, and when they were sent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Answered {
+    pub submitted_at: String,
+    pub response: Response,
 }
 
 /// The Set with this id, or `None` if there is no such Set.
@@ -39,7 +60,18 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
         .await
         .map_err(|err| ServerFnError::new(format!("{err:#}")))?;
 
-    Ok(stored.map(|stored| SetView {
+    let Some(stored) = stored else {
+        return Ok(None);
+    };
+
+    // Read here rather than by the page once it is up: which view the human
+    // gets turns on this, and asking afterwards is how a Set that was answered
+    // days ago would draw a form for a moment first.
+    let answered = askance_store::load_response(&pool, id)
+        .await
+        .map_err(|err| ServerFnError::new(format!("{err:#}")))?;
+
+    Ok(Some(SetView {
         id: stored.id,
         title: stored.set.title,
         project: stored.set.project,
@@ -58,6 +90,10 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
         // heading either.
         diff_html: stored.set.diff.as_deref().and_then(crate::diff::to_html),
         questions: stored.set.questions,
+        answered: answered.map(|stored| Answered {
+            submitted_at: stored.submitted_at,
+            response: stored.response,
+        }),
     }))
 }
 
@@ -134,7 +170,7 @@ pub fn SetPage() -> impl IntoView {
                             .into_any()
                     }
                     Ok(None) => view! { <p class="empty">"No such Set."</p> }.into_any(),
-                    Ok(Some(set)) => ask_sheet(set).into_any(),
+                    Ok(Some(set)) => sheet(set).into_any(),
                 }
             })}
         </Suspense>
@@ -382,10 +418,13 @@ fn unanswered(response: &Response) -> Vec<String> {
         .collect()
 }
 
-/// The whole ask, top to bottom, with the submit that ends the agent's wait.
-fn ask_sheet(set: SetView) -> impl IntoView {
-    let id = set.id;
-
+/// One Set, top to bottom: its own material — what the agent asked about and
+/// the evidence for it — and then either the sheet to answer it on or the record
+/// of how it was answered.
+///
+/// The material above is the same either way: an answered Set is read for the
+/// decision *and* for what the decision was about.
+fn sheet(set: SetView) -> impl IntoView {
     // A Set sent from outside a repo has neither, and an empty line of
     // provenance is worse than none.
     let provenance = (set.project.is_some() || set.branch.is_some()).then(|| {
@@ -397,14 +436,50 @@ fn ask_sheet(set: SetView) -> impl IntoView {
         }
     });
 
+    // Beside the provenance rather than down with the Answers: on an answered
+    // Set, when the decision was made is part of knowing what one is reading.
+    let when = set.answered.as_ref().map(|answered| {
+        let when = submitted_when(&answered.submitted_at);
+        view! { <p class="answered-at">"Answered " {when}</p> }
+    });
+
+    let body = match set.answered {
+        Some(answered) => decided(&set.questions, answered.response).into_any(),
+        None => answerable(set.id, set.questions).into_any(),
+    };
+
+    view! {
+        <A href="/" attr:class="back">"← Pending"</A>
+        <h1>{set.title}</h1>
+        {provenance}
+        {when}
+        {set.preface_html.map(|html| view! { <section class="preface" inner_html=html></section> })}
+        // Between the Preface and the Questions: the Preface says what the
+        // agent is asking about, and the Diff is the evidence for it.
+        {set
+            .diff_html
+            .map(|html| {
+                view! {
+                    <section class="diff">
+                        <h2>"Diff"</h2>
+                        <div class="diff-files" inner_html=html></div>
+                    </section>
+                }
+            })}
+        {body}
+    }
+}
+
+/// The questions as a sheet to fill in, with the submit that ends the agent's
+/// wait.
+fn answerable(id: i64, questions: Vec<Question>) -> impl IntoView {
     // The fields are gathered as the questions are drawn, so the list holds one
     // entry per question in the order the Set asked them — which is the order a
     // Response has to account for them in. A question that went missing here
     // would make the Response incomplete, and the server refuses those by name
     // rather than letting one through.
     let mut fields: Vec<Asked> = Vec::new();
-    let asked: Vec<_> = set
-        .questions
+    let asked: Vec<_> = questions
         .into_iter()
         .map(|asked| question(asked, &mut fields))
         .collect();
@@ -563,22 +638,6 @@ fn ask_sheet(set: SetView) -> impl IntoView {
     });
 
     view! {
-        <A href="/" attr:class="back">"← Pending"</A>
-        <h1>{set.title}</h1>
-        {provenance}
-        {set.preface_html.map(|html| view! { <section class="preface" inner_html=html></section> })}
-        // Between the Preface and the Questions: the Preface says what the
-        // agent is asking about, and the Diff is the evidence for it.
-        {set
-            .diff_html
-            .map(|html| {
-                view! {
-                    <section class="diff">
-                        <h2>"Diff"</h2>
-                        <div class="diff-files" inner_html=html></div>
-                    </section>
-                }
-            })}
         // Above the questions rather than beside the submit: it changes what is
         // drawn below it, and the human scrolls down through the result on the
         // way to sending it.
@@ -820,9 +879,244 @@ fn offered(group: String, option: QuestionOption, live: Fields) -> impl IntoView
     }
 }
 
+/// When the Response landed, as the page says it.
+///
+/// Absolute rather than the pending list's "3h ago": that list is scanned for
+/// what to do next, while an answered Set is a decision in a permanent log,
+/// where relative to now stops meaning anything by the following week. UTC
+/// because the server's clock is the only one in play — the browser is given no
+/// date library, for the same reason it is given no markdown parser.
+///
+/// A stamp that will not parse is shown as stored: the page is still worth
+/// drawing, and the raw stamp still says when.
+fn submitted_when(submitted_at: &str) -> String {
+    let Ok(when) = OffsetDateTime::parse(submitted_at, &Rfc3339) else {
+        return submitted_at.trim().to_owned();
+    };
+
+    let when = when.to_offset(UtcOffset::UTC);
+    format!(
+        "{}-{:02}-{:02} {:02}:{:02} UTC",
+        when.year(),
+        u8::from(when.month()),
+        when.day(),
+        when.hour(),
+        when.minute(),
+    )
+}
+
+/// What to say at the head of a Response that resolved nothing — and `None`
+/// when it resolved something, which is the ordinary case.
+///
+/// Answering a Set by leaving every question open is allowed: with the set-level
+/// comment it is a counter-question, the human's "not these questions", and it
+/// is as much a Response as any other. It has to read as one rather than as a
+/// page whose Answers failed to arrive, which is what a column of Unanswered
+/// with no word about why would look like.
+fn nothing_answered(response: &Response) -> Option<&'static str> {
+    if response.answers.iter().any(Answer::is_answer) {
+        return None;
+    }
+
+    let commented = response
+        .comment
+        .as_deref()
+        .is_some_and(|comment| !comment.trim().is_empty());
+
+    Some(if commented {
+        "Nothing here was answered. The comment below is the whole Response — a \
+         counter-question — and every question went back to the agent still open."
+    } else {
+        "Nothing here was answered, and nothing was said about the Set either: \
+         every question went back to the agent still open."
+    })
+}
+
+/// The Response's entry for this question, if it has one.
+///
+/// A stored Response was validated against its Set, so every question has
+/// exactly one entry. The lookup is still fallible because the page draws the
+/// Set rather than the Response: a question with nothing to show reads as
+/// Unanswered, which is true of one, rather than as a gap in the page.
+fn answer_to<'a>(response: &'a Response, name: &str) -> Option<&'a Answer> {
+    response
+        .answers
+        .iter()
+        .find(|answer| answer.label.trim() == name)
+}
+
+/// What was decided: every question as it was asked, each with its Answer, and
+/// the set-level comment under them.
+fn decided(questions: &[Question], response: Response) -> impl IntoView + use<> {
+    let outcomes: Vec<_> = questions
+        .iter()
+        .map(|question| decided_question(question, &response))
+        .collect();
+
+    let said = nothing_answered(&response);
+
+    // Shown only when there is one, exactly as the submit only ever sends one
+    // that has something in it.
+    let comment = response
+        .comment
+        .as_deref()
+        .map(str::trim)
+        .filter(|comment| !comment.is_empty())
+        .map(str::to_owned);
+
+    view! {
+        {said.map(|said| view! { <p class="counter-question">{said}</p> })}
+        <ol class="questions decided">{outcomes}</ol>
+        {comment
+            .map(|comment| {
+                view! {
+                    <section class="set-comment decided">
+                        <h2>"On the Set as a whole"</h2>
+                        <p class="comment">{comment}</p>
+                    </section>
+                }
+            })}
+    }
+}
+
+/// One answered Question, with its Sub-questions nested one level under it —
+/// the read counterpart of [`question`], and laid out the same way, because it
+/// is the same Set being looked at.
+fn decided_question(question: &Question, response: &Response) -> impl IntoView + use<> {
+    let own = resolved(
+        question.name().to_owned(),
+        question.text.clone(),
+        &question.options,
+        answer_to(response, question.name()),
+    );
+
+    let subquestions: Vec<_> = question
+        .subquestions
+        .iter()
+        .map(|subquestion| {
+            let name = subquestion.name(question);
+            let resolved = resolved(
+                name.clone(),
+                subquestion.text.clone(),
+                &subquestion.options,
+                answer_to(response, &name),
+            );
+            view! { <li class="subquestion">{resolved}</li> }
+        })
+        .collect();
+
+    let nested =
+        (!subquestions.is_empty()).then(|| view! { <ol class="subquestions">{subquestions}</ol> });
+
+    view! { <li class="question">{own} {nested}</li> }
+}
+
+/// A Question or a Sub-question as it was resolved: its text, every Option it
+/// offered with the human's pick marked among them, whatever they wrote, and —
+/// when they left it open — the fact that it went back Unanswered.
+///
+/// Every Option is kept, not just the chosen one: what was turned down is half
+/// of what a decision was.
+fn resolved(
+    name: String,
+    text: String,
+    options: &[QuestionOption],
+    answer: Option<&Answer>,
+) -> impl IntoView + use<> {
+    let selected = answer.and_then(|answer| answer.selected);
+    let said = answer
+        .and_then(|answer| answer.free_text.as_deref())
+        .map(str::trim)
+        .filter(|said| !said.is_empty())
+        .map(str::to_owned);
+
+    // No Option and no words is the Unanswered marker, whether or not the flag
+    // is set: either way nothing was answered here.
+    let open = selected.is_none() && said.is_none();
+
+    // The form's own wording, minus its "Or": there with Options the words were
+    // the note in the margin beside one, and read back they are still. Addressed
+    // to the human who answered, because there is only ever the one of them.
+    let prompt = if options.is_empty() {
+        "Your answer"
+    } else {
+        "In your own words"
+    };
+
+    let offers: Vec<_> = options
+        .iter()
+        .map(|option| decided_option(option, selected))
+        .collect();
+    let shown = (!offers.is_empty()).then(|| view! { <ul class="options">{offers}</ul> });
+
+    view! {
+        <div class="ask decided">
+            <p class="text">
+                <span class="label">{name}</span>
+                {text}
+            </p>
+            {shown}
+            {said
+                .map(|said| {
+                    view! {
+                        <p class="answer-text">
+                            <span class="prompt">{prompt}</span>
+                            {said}
+                        </p>
+                    }
+                })}
+            {open
+                .then(|| {
+                    view! {
+                        <p class="unanswered">
+                            "Unanswered — the agent was told this one is still open."
+                        </p>
+                    }
+                })}
+        </div>
+    }
+}
+
+/// One Option after the fact: numbered and worded as it was offered, marked if
+/// the agent recommended it, and marked separately — in a word, not only in the
+/// outline — if this is the one the human chose.
+///
+/// The two marks are deliberately different things to read: the ★ is what was
+/// suggested, and "chosen" is what was decided, which on any given question may
+/// well not be the same Option.
+fn decided_option(option: &QuestionOption, selected: Option<u32>) -> impl IntoView + use<> {
+    let chosen = selected == Some(option.n);
+    let class = match (chosen, option.recommended) {
+        (true, true) => "option chosen recommended",
+        (true, false) => "option chosen",
+        (false, true) => "option recommended",
+        (false, false) => "option",
+    };
+
+    view! {
+        <li class=class>
+            <span class="n">{option.n}</span>
+            <span class="option-text">{option.text.clone()}</span>
+            {option
+                .recommended
+                .then(|| {
+                    view! {
+                        <span class="star" title="the agent's Recommendation">"★"</span>
+                    }
+                })}
+            {chosen.then(|| view! { <span class="chose">"chosen"</span> })}
+        </li>
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Draft, Filled, Standing, accepting, draft_key, drafted, restorable, unanswered};
+    use askance_schema::{Answer, Response};
+
+    use super::{
+        Draft, Filled, Standing, accepting, answer_to, draft_key, drafted, nothing_answered,
+        restorable, submitted_when, unanswered,
+    };
 
     fn filled(label: &str, selected: Option<u32>, free_text: &str) -> Filled {
         Filled {
@@ -1085,6 +1379,106 @@ mod tests {
         assert_eq!(
             response.comment.as_deref(),
             Some("Neither, really — why not cache it upstream?")
+        );
+    }
+
+    /// A Response as the store hands one back, built the way the submit builds
+    /// them: an entry per question, answered or marked.
+    fn answered(entries: &[(&str, Option<u32>, &str)], comment: Option<&str>) -> Response {
+        drafted(
+            &entries
+                .iter()
+                .map(|(label, selected, free_text)| filled(label, *selected, free_text))
+                .collect::<Vec<_>>(),
+            comment.unwrap_or_default(),
+        )
+    }
+
+    #[test]
+    fn the_time_a_response_landed_is_shown_absolutely() {
+        assert_eq!(
+            submitted_when("2026-08-03T12:04:07.412Z"),
+            "2026-08-03 12:04 UTC",
+            "a decision in a permanent log is dated, not aged",
+        );
+        assert_eq!(
+            submitted_when("2026-08-03T22:04:07+10:00"),
+            "2026-08-03 12:04 UTC",
+            "whatever offset it was written with, it is read in the server's",
+        );
+    }
+
+    #[test]
+    fn an_unreadable_stamp_is_shown_as_stored() {
+        assert_eq!(
+            submitted_when(" not a timestamp "),
+            "not a timestamp",
+            "the page is worth drawing without a pretty date",
+        );
+    }
+
+    #[test]
+    fn a_response_that_resolved_nothing_says_so_at_the_head_of_the_page() {
+        let counter = answered(
+            &[("Q1", None, ""), ("Q2", None, "")],
+            Some("Neither, really — why not cache it upstream?"),
+        );
+
+        let said = nothing_answered(&counter).expect("a Response with no Answers has to say so");
+        assert!(
+            said.contains("counter-question"),
+            "with a comment and no Answers it is a counter-question, not an empty page: {said}",
+        );
+
+        let silent = answered(&[("Q1", None, ""), ("Q2", None, "  ")], None);
+        let said = nothing_answered(&silent).expect("nothing answered and nothing said, either");
+        assert!(
+            !said.contains("comment below"),
+            "there is no comment below to point at: {said}",
+        );
+    }
+
+    #[test]
+    fn a_response_that_answered_anything_needs_no_such_note() {
+        let one = answered(&[("Q1", None, ""), ("Q2", Some(1), "")], None);
+        assert_eq!(nothing_answered(&one), None, "an Option is an Answer");
+
+        let words = answered(&[("Q1", None, "only for writes"), ("Q2", None, "")], None);
+        assert_eq!(nothing_answered(&words), None, "and so are words");
+    }
+
+    #[test]
+    fn each_question_is_shown_the_entry_that_names_it() {
+        let response = answered(
+            &[("Q1", Some(2), ""), ("Q2", None, ""), ("Q2a", None, "no")],
+            None,
+        );
+
+        assert_eq!(answer_to(&response, "Q1").unwrap().selected, Some(2));
+        assert!(answer_to(&response, "Q2").unwrap().unanswered);
+        assert_eq!(
+            answer_to(&response, "Q2a").unwrap().free_text.as_deref(),
+            Some("no"),
+            "a Sub-question answers to its own name, not its parent's",
+        );
+    }
+
+    #[test]
+    fn a_question_the_response_never_mentions_reads_as_unanswered() {
+        let response = Response {
+            answers: vec![Answer {
+                label: "Q1".to_owned(),
+                selected: Some(1),
+                free_text: None,
+                unanswered: false,
+            }],
+            comment: None,
+        };
+
+        assert_eq!(
+            answer_to(&response, "Q2"),
+            None,
+            "the page draws the Set, so a question with no entry is still drawn",
         );
     }
 }
