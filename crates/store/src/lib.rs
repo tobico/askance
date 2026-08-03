@@ -5,10 +5,17 @@
 //! back verbatim. `title`, `project` and `branch` are lifted into columns
 //! beside the Set so the pending list can be drawn without deserializing every
 //! Set.
+//!
+//! The store sits below both the agent API and the web UI: the UI's server
+//! functions live in the shared `askance-app` crate, which cannot reach back
+//! into the server binary that links it.
+
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use askance_schema::{QuestionSet, Response, ResponseAccepted, SetCreated};
 use sqlx::SqlitePool;
+use sqlx::sqlite::SqliteConnectOptions;
 
 /// A Set as the store holds it: the agent's Set plus the identity the server
 /// stamped on it.
@@ -27,9 +34,41 @@ pub struct StoredResponse {
     pub response: Response,
 }
 
+/// One row of the pending list: a Set still waiting on the human, drawn from
+/// the lifted columns without touching its body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingSet {
+    pub id: i64,
+    pub created_at: String,
+    pub title: String,
+    pub project: Option<String>,
+    pub branch: Option<String>,
+}
+
+/// Open the SQLite database at `path`, creating the file if it is absent and
+/// bringing its schema up to date.
+pub async fn open_database(path: &Path) -> Result<SqlitePool> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating database directory {}", parent.display()))?;
+    }
+
+    let options = SqliteConnectOptions::new()
+        .filename(path)
+        .create_if_missing(true);
+
+    let pool = SqlitePool::connect_with(options)
+        .await
+        .with_context(|| format!("opening database {}", path.display()))?;
+
+    apply_schema(&pool).await?;
+
+    Ok(pool)
+}
+
 /// Bring an opened database up to the shape the server expects. Safe to run
 /// against a database that already has it.
-pub(crate) async fn apply_schema(pool: &SqlitePool) -> Result<()> {
+async fn apply_schema(pool: &SqlitePool) -> Result<()> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS question_sets (
              id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,6 +156,38 @@ pub async fn set_exists(pool: &SqlitePool, id: i64) -> Result<bool> {
         .with_context(|| format!("looking for Question Set {id}"))?;
 
     Ok(found.is_some())
+}
+
+/// The Sets still waiting on the human, newest first.
+///
+/// Ordered by id rather than `created_at`: the id is handed out in submission
+/// order, so it says "newest" without two Sets stamped in the same millisecond
+/// coming back in an arbitrary order.
+pub async fn pending_sets(pool: &SqlitePool) -> Result<Vec<PendingSet>> {
+    /// The lifted columns in the order the query below selects them.
+    type Row = (i64, String, String, Option<String>, Option<String>);
+
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT s.id, s.created_at, s.title, s.project, s.branch
+         FROM question_sets s
+         LEFT JOIN responses r ON r.set_id = s.id
+         WHERE r.set_id IS NULL
+         ORDER BY s.id DESC",
+    )
+    .fetch_all(pool)
+    .await
+    .context("listing the pending Question Sets")?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(id, created_at, title, project, branch)| PendingSet {
+            id,
+            created_at,
+            title,
+            project,
+            branch,
+        })
+        .collect())
 }
 
 /// Store the Response to a Set, stamping it with a submission time.

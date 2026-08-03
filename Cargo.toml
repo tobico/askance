@@ -1,6 +1,25 @@
 [workspace]
 resolver = "3"
-members = ["crates/cli", "crates/schema", "crates/server"]
+members = [
+    "crates/app",
+    "crates/cli",
+    "crates/frontend",
+    "crates/schema",
+    "crates/server",
+    "crates/store",
+]
+
+# `askance-frontend` is the wasm half of the UI: it turns on `leptos/hydrate`,
+# which cannot be unified with the `leptos/ssr` the server needs. cargo-leptos
+# builds it on its own with `--package`, so keep it out of what a bare `cargo
+# build` or `cargo test` at the root picks up.
+default-members = [
+    "crates/app",
+    "crates/cli",
+    "crates/schema",
+    "crates/server",
+    "crates/store",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,9 +27,48 @@ edition = "2024"
 rust-version = "1.85"
 
 [workspace.dependencies]
+askance-app = { path = "crates/app" }
 askance-schema = { path = "crates/schema" }
+askance-store = { path = "crates/store" }
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
+console_error_panic_hook = "0.1"
+leptos = "0.8"
+leptos_axum = "0.8"
+leptos_meta = "0.8"
+leptos_router = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "1"
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+] }
+tempfile = "3"
+time = { version = "0.3", default-features = false, features = [
+    "parsing",
+    "std",
+] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# Pinned exactly: the bindgen format is unstable, so the wasm-bindgen crate has
+# to match the one built into the cargo-leptos the flake pins. Bump the two
+# together or the wasm build stops with a schema-version mismatch.
+wasm-bindgen = "=0.2.100"
+
+# cargo-leptos drives the build: it compiles `askance-frontend` to wasm, runs
+# wasm-bindgen over it, processes the stylesheet, and then builds and runs the
+# server binary that serves the result.
+[[workspace.metadata.leptos]]
+name = "askance"
+bin-package = "askance-server"
+lib-package = "askance-frontend"
+style-file = "style/main.css"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+# Matches `Config`'s default listen address, so `cargo leptos watch` and a
+# plain `askance-server` put the UI in the same place.
+site-addr = "127.0.0.1:8422"
+reload-port = 3001
+lib-features = ["hydrate"]
+lib-default-features = false
+bin-features = []

@@ -1,0 +1,17 @@
+[package]
+name = "askance-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+askance-schema.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+
+[dev-dependencies]
+serde-saphyr.workspace = true
+tempfile.workspace = true
+tokio.workspace = true

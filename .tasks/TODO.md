@@ -15,7 +15,7 @@ Roadmap stage: [02: Answering web UI](docs/roadmaps/v1/02-answering-web-ui.md)
 
 ## Tasks
 
-- [ ] 01: Leptos SSR skeleton + pending list — [details](01-leptos-skeleton-pending-list.md)
+- [x] 01: Leptos SSR skeleton + pending list — [details](01-leptos-skeleton-pending-list.md)
 - [ ] 02: Set view: render the ask — [details](02-set-view-render.md)
 - [ ] 03: Answer state + submit with unanswered warning — [details](03-answer-state-submit.md)
 - [ ] 04: Diff viewer — [details](04-diff-viewer.md)

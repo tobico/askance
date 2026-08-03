@@ -1,0 +1,99 @@
+/* Phone-first: one column, comfortable tap targets, widening only where a
+   wider screen actually helps. */
+
+:root {
+  --ink: #1c1a17;
+  --ink-soft: #6b645c;
+  --paper: #faf8f5;
+  --card: #ffffff;
+  --edge: #e3ddd4;
+  --accent: #7a5c3e;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #ece7e0;
+    --ink-soft: #a19a91;
+    --paper: #171614;
+    --card: #201e1b;
+    --edge: #35312c;
+    --accent: #c9a87c;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 3rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 1rem;
+}
+
+.pending {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.pending-set {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: 0.6rem;
+}
+
+.pending-set .title {
+  font-weight: 600;
+}
+
+.pending-set .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.pending-set .project {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.pending-set .branch {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.pending-set .age {
+  margin-left: auto;
+}
+
+.empty,
+.error {
+  color: var(--ink-soft);
+}
+
+.error {
+  color: #b3382c;
+}
