@@ -23,6 +23,8 @@ pub mod switch;
 #[cfg(feature = "ssr")]
 mod diff;
 #[cfg(feature = "ssr")]
+mod highlight;
+#[cfg(feature = "ssr")]
 mod markdown;
 
 /// The HTML document the server sends and the browser hydrates. Phone-first:
