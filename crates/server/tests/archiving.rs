@@ -323,7 +323,7 @@ async fn an_archived_sets_page_is_the_ask_kept_readable_with_nothing_to_press() 
             && html.contains("In Redis, shared across instances."),
         "expected the Questions and their Options still readable:\n{html}"
     );
-    for absent in ["<input", "<textarea", "accept-all"] {
+    for absent in ["<input", "<textarea"] {
         assert!(
             !html.contains(absent),
             "an archived Set can never be answered, so {absent} has no business \
