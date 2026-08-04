@@ -242,9 +242,23 @@ h1 + .meta .branch {
   font-family: ui-monospace, SFMono-Regular, monospace;
 }
 
+/* The quiet headings naming the page's sections, so a jump from the table of
+   contents lands somewhere the reader can see they have arrived at. Under the
+   title rather than beside it: they are signposts, not the ask. */
+
+.section-heading {
+  font-size: 1rem;
+  margin: 0 0 0.6rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
 .preface {
-  padding: 0.25rem 1rem;
   margin-bottom: 1.5rem;
+}
+
+.preface-body {
+  padding: 0.25rem 1rem;
   background: var(--card);
   border: 1px solid var(--edge);
   border-radius: 0.6rem;
@@ -265,13 +279,6 @@ h1 + .meta .branch {
 
 .diff {
   margin-bottom: 1.5rem;
-}
-
-.diff h2 {
-  font-size: 1rem;
-  margin: 0 0 0.6rem;
-  color: var(--ink-soft);
-  font-weight: 600;
 }
 
 .diff-files {

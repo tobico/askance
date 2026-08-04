@@ -512,6 +512,45 @@ fn unanswered(response: &Response, multiple_choice: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// The heading naming the Questions, and the anchor they are reached by.
+///
+/// The one section every Set has, so unlike the Preface and the Diff it is drawn
+/// unconditionally — and drawn the same way whether the Set is being answered or
+/// read back. The id sits on the heading rather than on the list, so a jump
+/// lands on the name of the thing rather than just above its first row.
+fn questions_heading() -> impl IntoView {
+    view! { <h2 class="section-heading" id="questions">"Questions"</h2> }
+}
+
+/// The id a Question is reached by: its label, lowercased — `Q3` becomes `q3`,
+/// which is also what a human writing the link by hand would type.
+///
+/// A label is the agent's own string, and an id cannot hold everything a string
+/// can, so anything an id will not take becomes a hyphen; a label made of
+/// nothing else falls back to the Question's position. Labels are distinct
+/// across a Set and in practice they are `Q1`, `Q2`, …, so the fallback is for
+/// the pathological Set rather than the ordinary one.
+///
+/// Sub-questions get none: one scrolls into view with its parent.
+fn anchor(label: &str, position: usize) -> String {
+    let id: String = label
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | '0'..='9' | '-' | '_' => ch,
+            _ => '-',
+        })
+        .collect();
+
+    let id = id.trim_matches('-');
+    if id.is_empty() {
+        format!("q{position}")
+    } else {
+        id.to_owned()
+    }
+}
+
 /// One Set, top to bottom: how it stands and its own material — what the agent
 /// asked about and the evidence for it — and then either the sheet to answer it
 /// on or the record of what became of it.
@@ -582,15 +621,31 @@ fn sheet(set: SetView) -> impl IntoView {
         {provenance}
         {when}
         {standing}
-        {set.preface_html.map(|html| view! { <section class="preface" inner_html=html></section> })}
+        // Named and anchored like the Diff below it: the heading is what a jump
+        // from the table of contents lands on, and the id is what it jumps to.
+        // Both are in the page the server writes, so a hash deep-link works
+        // before any script has run.
+        {set
+            .preface_html
+            .map(|html| {
+                view! {
+                    <section class="preface" id="preface">
+                        <h2 class="section-heading">"Preface"</h2>
+                        <div class="preface-body" inner_html=html></div>
+                    </section>
+                }
+            })}
         // Between the Preface and the Questions: the Preface says what the
         // agent is asking about, and the Diff is the evidence for it.
         {set
             .diff_html
             .map(|html| {
                 view! {
-                    <section class="diff">
-                        <h2>"Diff"</h2>
+                    <section class="diff" id="diff">
+                        <h2 class="section-heading">"Diff"</h2>
+                        // The per-file anchors — `diff-1`, `diff-2`, … — are
+                        // stamped by the renderer, since this arrives already
+                        // rendered.
                         <div class="diff-files" inner_html=html></div>
                     </section>
                 }
@@ -726,7 +781,8 @@ fn answerable(id: i64, questions: Vec<Question>) -> impl IntoView {
     let mut fields: Vec<Asked> = Vec::new();
     let asked: Vec<_> = questions
         .into_iter()
-        .map(|asked| question(asked, &mut fields))
+        .enumerate()
+        .map(|(index, asked)| question(index + 1, asked, &mut fields))
         .collect();
 
     // Whether accept-all has anything it could ever do here. Read off the
@@ -889,6 +945,10 @@ fn answerable(id: i64, questions: Vec<Question>) -> impl IntoView {
     });
 
     view! {
+        // Above the accept-all rather than below it: the offer to accept every
+        // Recommendation is part of the Questions, so a jump to them arrives at
+        // it rather than past it.
+        {questions_heading()}
         // Above the questions rather than beside the submit: it changes what is
         // drawn below it, and the human scrolls down through the result on the
         // way to sending it.
@@ -1008,9 +1068,14 @@ fn refusal(outcome: Option<Result<Submitted, ServerFnError>>) -> Option<AnyView>
 /// Each ask puts its fields on `fields` as it is drawn, so they come out in the
 /// order the Set asked them.
 ///
+/// `position` is the Question's place in the Set, counting from one — the name
+/// it falls back to when its label makes no id.
+///
 /// `use<>`: the view is built here and outlives the borrow of `fields`, which
 /// it does not hold on to.
-fn question(question: Question, fields: &mut Vec<Asked>) -> impl IntoView + use<> {
+fn question(position: usize, question: Question, fields: &mut Vec<Asked>) -> impl IntoView + use<> {
+    let id = anchor(question.name(), position);
+
     let own = ask(
         question.name().to_owned(),
         question.text.clone(),
@@ -1038,7 +1103,7 @@ fn question(question: Question, fields: &mut Vec<Asked>) -> impl IntoView + use<
         Some(view! { <ol class="subquestions">{subquestions}</ol> })
     };
 
-    view! { <li class="question">{own} {nested}</li> }
+    view! { <li class="question" id=id>{own} {nested}</li> }
 }
 
 /// A Question or a Sub-question — both are asked the same way: the name it
@@ -1229,7 +1294,8 @@ fn orphaned(questions: &[Question]) -> impl IntoView + use<> {
 fn settled(questions: &[Question], response: Option<Response>) -> impl IntoView + use<> {
     let outcomes: Vec<_> = questions
         .iter()
-        .map(|question| settled_question(question, response.as_ref()))
+        .enumerate()
+        .map(|(index, question)| settled_question(index + 1, question, response.as_ref()))
         .collect();
 
     let said = response.as_ref().and_then(nothing_answered);
@@ -1244,7 +1310,11 @@ fn settled(questions: &[Question], response: Option<Response>) -> impl IntoView 
         .map(str::to_owned);
 
     view! {
+        // Above the heading: what a Response resolved — or did not — is said at
+        // the head of the page, about the Set as a whole, not under the
+        // Questions.
         {said.map(|said| view! { <p class="counter-question">{said}</p> })}
+        {questions_heading()}
         <ol class="questions decided">{outcomes}</ol>
         {comment
             .map(|comment| {
@@ -1261,7 +1331,13 @@ fn settled(questions: &[Question], response: Option<Response>) -> impl IntoView 
 /// One settled Question, with its Sub-questions nested one level under it — the
 /// read counterpart of [`question`], and laid out the same way, because it is the
 /// same Set being looked at.
-fn settled_question(question: &Question, response: Option<&Response>) -> impl IntoView + use<> {
+fn settled_question(
+    position: usize,
+    question: &Question,
+    response: Option<&Response>,
+) -> impl IntoView + use<> {
+    let id = anchor(question.name(), position);
+
     let own = resolved(
         question.name().to_owned(),
         question.text.clone(),
@@ -1286,7 +1362,7 @@ fn settled_question(question: &Question, response: Option<&Response>) -> impl In
     let nested =
         (!subquestions.is_empty()).then(|| view! { <ol class="subquestions">{subquestions}</ol> });
 
-    view! { <li class="question">{own} {nested}</li> }
+    view! { <li class="question" id=id>{own} {nested}</li> }
 }
 
 /// A Question or a Sub-question as it was resolved: its text, every Option it
@@ -1400,8 +1476,8 @@ mod tests {
     use askance_schema::{Answer, Response};
 
     use super::{
-        ARCHIVE_WARNING, Considered, Draft, Filled, accepting, answer_to, draft_key, drafted,
-        nothing_answered, restorable, submitted_when, unanswered,
+        ARCHIVE_WARNING, Considered, Draft, Filled, accepting, anchor, answer_to, draft_key,
+        drafted, nothing_answered, restorable, submitted_when, unanswered,
     };
 
     fn filled(label: &str, selected: Option<u32>, free_text: &str) -> Filled {
@@ -1663,6 +1739,30 @@ mod tests {
             }
             .empty(),
             "a comment on its own is a draft: it is a whole counter-question",
+        );
+    }
+
+    #[test]
+    fn a_question_is_reached_by_its_label_lowercased() {
+        assert_eq!(anchor("Q3", 3), "q3");
+        assert_eq!(
+            anchor(" Q12 ", 12),
+            "q12",
+            "a padded label is still that one"
+        );
+    }
+
+    #[test]
+    fn a_label_an_id_cannot_hold_is_made_into_one() {
+        assert_eq!(
+            anchor("Q 7.a", 7),
+            "q-7-a",
+            "a label is the agent's own string, and an id takes less than one does",
+        );
+        assert_eq!(
+            anchor("...", 4),
+            "q4",
+            "a label that makes no id at all falls back to the Question's place in the Set",
         );
     }
 

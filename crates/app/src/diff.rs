@@ -27,6 +27,11 @@ static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_no
 
 /// Render a unified diff to HTML, or `None` when there is nothing in it to
 /// show.
+///
+/// Each file's section is anchored by its position in the Diff — `diff-1`,
+/// `diff-2`, … — rather than by its path, which would have to be squeezed into
+/// an id and could collide once it was. A Set is immutable once sent, so a
+/// position is a name that holds for its lifetime.
 pub fn to_html(diff: &str) -> Option<String> {
     if diff.trim().is_empty() {
         return None;
@@ -35,10 +40,11 @@ pub fn to_html(diff: &str) -> Option<String> {
     let files = files(diff);
 
     // Whatever this is, git did not write it — but it was attached to the Set as
-    // the Diff, so it gets shown as it arrived rather than swallowed.
+    // the Diff, so it gets shown as it arrived rather than swallowed. It is
+    // still the Diff's first and only section, so it is anchored as one.
     if files.is_empty() {
         let mut html = String::from(
-            r#"<details class="diff-file" open><summary><span class="diff-path">The Diff, as it arrived</span></summary><div class="diff-hunk"><pre class="diff-lines"><code>"#,
+            r#"<details class="diff-file" id="diff-1" open><summary><span class="diff-path">The Diff, as it arrived</span></summary><div class="diff-hunk"><pre class="diff-lines"><code>"#,
         );
         html.push_str(&escaped(diff));
         html.push_str("</code></pre></div></details>");
@@ -46,8 +52,8 @@ pub fn to_html(diff: &str) -> Option<String> {
     }
 
     let mut html = String::new();
-    for file in &files {
-        file.render(&mut html);
+    for (position, file) in files.iter().enumerate() {
+        file.render(&mut html, position + 1);
     }
     Some(html)
 }
@@ -276,10 +282,14 @@ fn worktree_path(field: &str) -> Option<String> {
 }
 
 impl FileDiff {
-    fn render(&self, out: &mut String) {
+    /// `position` is this file's place in the Diff, counting from one: the name
+    /// the table of contents and a hash deep-link reach it by.
+    fn render(&self, out: &mut String, position: usize) {
         // Open, because a Diff is there to be read — but foldable, so a long
         // file can be got out of the way on a phone.
-        out.push_str(r#"<details class="diff-file" open><summary><span class="diff-path">"#);
+        out.push_str(&format!(
+            r#"<details class="diff-file" id="diff-{position}" open><summary><span class="diff-path">"#
+        ));
         out.push_str(&escaped(&self.path));
         out.push_str("</span>");
 
@@ -644,6 +654,28 @@ mod tests {
     }
 
     #[test]
+    fn each_file_is_anchored_by_its_position_in_the_diff() {
+        let html = to_html(MODIFIED_AND_NEW).unwrap();
+
+        let first = html
+            .find(r#"id="diff-1""#)
+            .unwrap_or_else(|| panic!("expected the first file anchored:\n{html}"));
+        let second = html
+            .find(r#"id="diff-2""#)
+            .unwrap_or_else(|| panic!("expected the second file anchored:\n{html}"));
+
+        assert!(first < second, "the ids follow Diff order:\n{html}");
+        assert!(
+            html[first..second].contains(">src/lib.rs<"),
+            "expected diff-1 to be the first file the Diff names:\n{html}"
+        );
+        assert!(
+            html[second..].contains(">notes.txt<"),
+            "expected diff-2 to be the second:\n{html}"
+        );
+    }
+
+    #[test]
     fn a_clean_tree_has_nothing_to_show() {
         assert_eq!(to_html("   \n\n"), None);
     }
@@ -656,6 +688,11 @@ mod tests {
             html.contains("who knows what this is"),
             "the Diff is evidence, so an unreadable one is shown rather than \
              dropped:\n{html}"
+        );
+        assert!(
+            html.contains(r#"id="diff-1""#),
+            "it is still the Diff's one foldable section, so it is still \
+             addressable:\n{html}"
         );
     }
 }

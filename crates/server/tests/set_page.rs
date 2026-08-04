@@ -192,6 +192,24 @@ async fn set_page(pool: &SqlitePool, set: &QuestionSet) -> String {
     html
 }
 
+/// The set view of a Set the human closed unanswered: the third standing the
+/// page is drawn in, and the one with no Response behind it.
+async fn archived_set_page(pool: &SqlitePool, set: &QuestionSet) -> String {
+    let stored = store::insert_set(pool, set).await.unwrap();
+    let archiving = store::archive_set(pool, &store::Settlements::new(1), stored.id)
+        .await
+        .unwrap();
+    assert!(
+        matches!(archiving, store::Archiving::Archived(_)),
+        "a freshly stored Set archives unanswered: {archiving:?}"
+    );
+
+    let (status, html) = page(pool, &format!("/sets/{}", stored.id)).await;
+
+    assert_eq!(status, StatusCode::OK);
+    html
+}
+
 /// The set view of a Set that has already been answered, and the time its
 /// Response landed.
 ///
@@ -482,7 +500,7 @@ async fn a_set_with_no_preface_shows_no_preface_section() {
     let html = set_page(&pool, &set).await;
 
     assert!(
-        !html.contains(r#"<section class="preface">"#),
+        !html.contains(r#"class="preface""#),
         "an empty Preface is the same as none:\n{html}"
     );
 }
@@ -496,7 +514,7 @@ async fn the_attached_diff_is_rendered_per_file() {
     let html = set_page(&pool, &set).await;
 
     assert!(
-        html.contains(r#"<section class="diff">"#),
+        html.contains(r#"class="diff""#),
         "expected the diff section:\n{html}"
     );
     for path in ["src/limits.rs", "notes.txt"] {
@@ -529,7 +547,7 @@ async fn a_set_with_no_diff_shows_no_diff_section() {
     let html = set_page(&pool, &set).await;
 
     assert!(
-        !html.contains(r#"<section class="diff">"#),
+        !html.contains(r#"class="diff""#),
         "with no Diff attached there is no section to draw:\n{html}"
     );
 }
@@ -711,6 +729,101 @@ async fn the_way_back_out_of_a_set_is_the_list_it_is_on() {
     assert!(
         answered.contains(r#"href="/archive""#) && answered.contains("← Archive"),
         "an answered Set is off the pending list and in the Archive:\n{answered}"
+    );
+}
+
+#[tokio::test]
+async fn every_section_file_and_question_is_addressable_in_the_rendered_page() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let html = set_page(&pool, &set).await;
+
+    // The ids are in the page the server writes, so a hash deep-link lands
+    // before any script has run.
+    for id in ["preface", "diff", "diff-1", "diff-2", "q1", "q2", "q3"] {
+        assert!(
+            html.contains(&format!(r#"id="{id}""#)),
+            "expected #{id} anchored server-side:\n{html}"
+        );
+    }
+    assert!(
+        !html.contains(r#"id="q2a""#),
+        "a Sub-question scrolls with its parent and needs no anchor of its own:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn each_question_anchor_sits_on_the_question_it_names() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &full_grammar_set()).await;
+
+    let at = html.find(r#"id="q3""#).unwrap();
+    assert!(
+        html[at..].contains("Anything I should know before starting?"),
+        "expected #q3 to open the Question labelled Q3:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn the_preface_and_the_questions_are_named_by_headings_on_every_standing() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let waiting = set_page(&pool, &set).await;
+    let (answered, _) = answered_set_page(&pool, &set, &decided_every_way()).await;
+    let archived = archived_set_page(&pool, &set).await;
+
+    for (standing, html) in [
+        ("waiting", &waiting),
+        ("answered", &answered),
+        ("archived unanswered", &archived),
+    ] {
+        // Named so a jump from the table of contents lands somewhere the reader
+        // can see they have arrived at, and quiet enough not to shout over the
+        // title — the same heading the Diff already had.
+        for heading in ["Preface", "Questions", "Diff"] {
+            assert!(
+                html.contains(&format!(r#"class="section-heading">{heading}</h2>"#)),
+                "expected the {heading} heading on a {standing} Set:\n{html}"
+            );
+        }
+        for id in ["preface", "diff", "diff-1", "questions", "q1"] {
+            assert!(
+                html.contains(&format!(r#"id="{id}""#)),
+                "expected #{id} on a {standing} Set:\n{html}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_section_the_set_does_not_have_gets_no_heading_and_no_anchor() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.preface = Some("   \n".to_owned());
+    assert!(set.diff.is_none(), "and no Diff either");
+
+    let html = set_page(&pool, &set).await;
+
+    for absent in [r#"id="preface""#, r#"id="diff""#, r#"id="diff-1""#] {
+        assert!(
+            !html.contains(absent),
+            "there is no section for {absent} to anchor:\n{html}"
+        );
+    }
+    for heading in ["Preface", "Diff"] {
+        assert!(
+            !html.contains(&format!(r#"class="section-heading">{heading}</h2>"#)),
+            "with no {heading} there is no heading to draw:\n{html}"
+        );
+    }
+    assert!(
+        html.contains(r#"id="questions""#),
+        "the Questions are the one section every Set has:\n{html}"
     );
 }
 
