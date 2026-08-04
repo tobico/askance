@@ -214,6 +214,15 @@ device** is the way back. If it says notifications are *blocked*, the browser
 has been told no and will not ask again: the way out is that browser's site
 settings, not another tap.
 
+On a Chromium browser that de-Googles — **Brave** above all — the tap can fail
+with *Registration failed - push service error*. Chromium has no push transport
+but Google's, and Brave ships with it switched off, so the subscribe is refused
+inside the browser before this server hears about it. Turn on **Use Google
+services for push messaging** under `brave://settings/privacy` and restart the
+browser. That is the de-Googling trade this browser exists to offer, so it is
+yours to make rather than something Askance can work around: Safari and Chrome
+are unaffected, and so is Brave on Android once the same setting is on.
+
 From then on, one notification per arriving Set — titled with the Set's own
 title, with the project underneath it — and tapping it opens that Set, in the
 Askance already on screen if there is one. There are no reminders: a Set that

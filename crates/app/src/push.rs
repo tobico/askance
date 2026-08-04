@@ -161,6 +161,37 @@ fn standing(permission: Permission, subscribed: bool) -> Standing {
     }
 }
 
+/// The browser's account of a refused subscribe, with a way out appended where
+/// its wording names the push service.
+///
+/// A Chromium browser has no push transport but Google's, and the ones that
+/// de-Google — Brave chiefly — ship with it switched off. A subscribe there is
+/// refused inside the browser, before anything is asked of this server, and all
+/// the browser says about it is "push service error". Left at that it reads as
+/// the server's fault, and it is the one refusal here that neither another tap
+/// nor the site's own permission settings lead out of.
+///
+/// Matched on what the browser said rather than on which browser said it: a
+/// build that reports this cannot subscribe whatever it calls itself, and the
+/// user agent is no help anyway — Brave answers that it is Chrome. Wording is
+/// the browser's to change, so a version that rephrases this costs the way out
+/// and not the error.
+///
+/// Kept out of the browser module, like [`standing`], so the judgement in it can
+/// be tested on the host where there is no browser to refuse.
+#[cfg_attr(not(feature = "hydrate"), allow(dead_code))]
+fn refusal(said: String) -> String {
+    if !said.to_lowercase().contains("push service") {
+        return said;
+    }
+
+    format!(
+        "{said} — a browser that de-Googles, Brave among them, refuses this \
+         until \"Use Google services for push messaging\" is turned on in its \
+         privacy settings and it has been restarted."
+    )
+}
+
 /// The control on the pending list: where this device stands, and the one tap
 /// that changes it.
 #[component]
@@ -266,7 +297,7 @@ fn offer(standing: Standing) -> Option<&'static str> {
 // control renders there as what it renders before anything is known.
 #[cfg(feature = "hydrate")]
 mod browser {
-    use super::{Permission, Standing, Subscribed, Subscription, standing};
+    use super::{Permission, Standing, Subscribed, Subscription, refusal, standing};
     use wasm_bindgen::{JsCast, JsValue};
     use wasm_bindgen_futures::JsFuture;
 
@@ -423,11 +454,16 @@ mod browser {
         // either, and the encoding the server hands out is already this one.
         options.set_application_server_key(&JsValue::from_str(&key));
 
-        let subscribing = manager.subscribe_with_options(&options).map_err(js_said)?;
+        // Both halves through `refusal`: a browser with the push service off
+        // refuses this asynchronously, but a throw from the call itself is the
+        // same obstacle and deserves the same way out.
+        let subscribing = manager
+            .subscribe_with_options(&options)
+            .map_err(|err| refusal(js_said(err)))?;
 
         JsFuture::from(subscribing)
             .await
-            .map_err(js_said)?
+            .map_err(|err| refusal(js_said(err)))?
             .dyn_into()
             .map_err(|_| "The browser subscribed to something other than push.".to_owned())
     }
@@ -518,7 +554,7 @@ async fn disable() -> Result<Standing, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Permission, Standing, offer, standing};
+    use super::{Permission, Standing, offer, refusal, standing};
 
     #[test]
     fn a_subscribed_device_is_on_and_can_be_turned_off() {
@@ -546,6 +582,38 @@ mod tests {
     fn nothing_a_tap_could_do_is_offered_as_a_tap() {
         for nothing in [Standing::Unknown, Standing::Unavailable, Standing::Blocked] {
             assert_eq!(offer(nothing), None, "{nothing:?} offered a tap");
+        }
+    }
+
+    #[test]
+    fn a_push_service_refused_names_the_setting_that_allows_it() {
+        // Chromium's own words for it, which is all a de-Googled build says.
+        let said = refusal("Registration failed - push service error".to_owned());
+
+        // The browser's account survives: it is the half that names the
+        // obstacle, and the hint is only the way out of it.
+        assert!(said.starts_with("Registration failed - push service error"));
+        assert!(said.contains("Use Google services for push messaging"));
+    }
+
+    #[test]
+    fn a_push_service_missing_altogether_gets_the_same_way_out() {
+        // The other wording Chromium has for a push service it cannot use.
+        let said = refusal("Registration failed - push service not available".to_owned());
+
+        assert!(said.contains("Use Google services for push messaging"));
+    }
+
+    #[test]
+    fn any_other_refusal_is_passed_on_as_the_browser_put_it() {
+        // Nothing to do with the push service, so the hint would be a wrong
+        // guess at the obstacle rather than help with it.
+        for unrelated in [
+            "Registration failed - permission denied",
+            "The provided applicationServerKey is not valid.",
+            "The browser refused, without saying why.",
+        ] {
+            assert_eq!(refusal(unrelated.to_owned()), unrelated);
         }
     }
 }
