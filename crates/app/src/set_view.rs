@@ -2026,11 +2026,19 @@ fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
     // human has to say, which may stand instead of an Option or beside one. Hence
     // the neutral word: "Or in your own words" read as a choice between the two,
     // which was never what it meant.
-    let prompt = if has_options {
-        "Your thoughts"
-    } else {
-        "Your answer"
-    };
+    //
+    // Named for the question it belongs to, because five fields prompted alike is
+    // five fields nothing tells apart — which a screen reader has no way around at
+    // all, and which is worth a reminder of where you are even when you can see
+    // the whole page.
+    let prompt = format!(
+        "{name} — {}",
+        if has_options {
+            "Your thoughts"
+        } else {
+            "Your answer"
+        }
+    );
 
     let radios = has_options.then(|| {
         let offers: Vec<_> = options
@@ -2047,10 +2055,11 @@ fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
             // The prompt is the placeholder rather than a label above the field:
             // one line of small print per question, times five questions, was
             // more of the page spent saying what a text box is for than reading
-            // the Questions. It is the `aria-label` as well, because a
-            // placeholder is not a label — it is a hint the browser is free to
-            // leave unspoken, and a field with nothing else naming it would reach
-            // a screen reader unnamed.
+            // the Questions. It is the `aria-label` as well, in the same words,
+            // because a placeholder is not a label — it is a hint the browser is
+            // free to leave unspoken, and a field with nothing else naming it
+            // would reach a screen reader unnamed.
+            //
             // The wrapper carries the text a second time, where the stylesheet
             // uses it to give the field its height — see `.grow`. It is the
             // signal's own value, so a restored draft arrives at the right height
@@ -2060,7 +2069,7 @@ fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
                     id=field.clone()
                     name=field
                     rows="1"
-                    placeholder=prompt
+                    placeholder=prompt.clone()
                     aria-label=prompt
                     prop:value=move || live.free_text.get()
                     on:input:target=move |ev| live.free_text.set(ev.target().value())

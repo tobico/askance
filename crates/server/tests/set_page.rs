@@ -694,27 +694,33 @@ async fn every_field_is_prompted_by_its_placeholder_and_starts_one_line_tall() {
     let html = set_page(&pool, &full_grammar_set()).await;
 
     // Q1, Q2 and Q2a offer Options, so the neutral prompt goes on those three;
-    // Q2b and Q3 offer none, and there the words are the whole answer.
-    assert_eq!(
-        html.matches(r#"placeholder="Your thoughts""#).count(),
-        3,
-        "expected the neutral prompt wherever there are Options to stand beside:\n{html}"
-    );
-    assert_eq!(
-        html.matches(r#"placeholder="Your answer""#).count(),
-        2,
-        "with no Options the words are the answer:\n{html}"
-    );
+    // Q2b and Q3 offer none, and there the words are the whole answer. Each is
+    // named for its own question, so that five fields in a column are five
+    // different fields — to a screen reader above all, which has nothing else to
+    // tell them apart by.
+    for named in [
+        "Q1 — Your thoughts",
+        "Q2 — Your thoughts",
+        "Q2a — Your thoughts",
+        "Q2b — Your answer",
+        "Q3 — Your answer",
+    ] {
+        assert!(
+            html.contains(&format!(r#"placeholder="{named}""#)),
+            "expected a field prompted `{named}`:\n{html}"
+        );
+        // No labels left to name them, so the placeholder has to be the
+        // accessible name as well — a browser is free to leave one unspoken.
+        assert!(
+            html.contains(&format!(r#"aria-label="{named}""#)),
+            "expected `{named}` to be the field's name as well as its hint:\n{html}"
+        );
+    }
+
+    // The one field that belongs to no question keeps a name of its own.
     assert!(
         html.contains(r#"placeholder="Other comments""#),
         "expected the set-level field prompted too:\n{html}"
-    );
-    // No labels left to name them, so the placeholder has to be the accessible
-    // name as well — a browser is free to leave a placeholder unspoken.
-    assert_eq!(
-        html.matches(r#"aria-label="Your thoughts""#).count(),
-        3,
-        "a field with no label needs a name of its own:\n{html}"
     );
 
     // Every field grows from one row, and the wrapper the stylesheet measures it
