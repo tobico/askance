@@ -956,6 +956,77 @@ async fn every_standing_gets_a_table_of_contents() {
     }
 }
 
+/// Where the nav says the reader is: the jump the highlighted line points at.
+///
+/// Read off the rendered nav rather than from a class list, because what the
+/// highlight is worth is which part of the page it names.
+fn highlighted(contents: &str) -> String {
+    let lit = contents
+        .find("contents-here")
+        .unwrap_or_else(|| panic!("expected a highlighted line in the nav:\n{contents}"));
+
+    // Back to the start of the line's own tag, since the class is written after
+    // the href it carries.
+    let opens = contents[..lit]
+        .rfind("<a ")
+        .unwrap_or_else(|| panic!("expected the highlight on a link:\n{contents}"));
+
+    let jump = r##"href="#"##;
+    let at = contents[opens..lit]
+        .find(jump)
+        .unwrap_or_else(|| panic!("expected the highlighted line to jump somewhere:\n{contents}"));
+
+    let from = opens + at + jump.len();
+    let closes = contents[from..].find('"').expect("an attribute closes");
+
+    contents[from..from + closes].to_owned()
+}
+
+#[tokio::test]
+async fn the_first_section_is_highlighted_before_any_script_has_run() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    assert_eq!(
+        highlighted(&contents),
+        "preface",
+        "a page nobody has scrolled reads as being at the top of it, so the nav \
+         the server writes is already right and the scroll-spy has nothing to \
+         correct when the wasm arrives",
+    );
+    assert_eq!(
+        contents.matches("contents-here").count(),
+        1,
+        "exactly one line is ever the highlight:\n{contents}"
+    );
+    assert_eq!(
+        contents.matches("contents-within").count(),
+        0,
+        "and the quiet mark is on the section the highlight is inside, so at the \
+         top of the page there is none:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn the_highlight_starts_on_whatever_section_the_set_starts_with() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.preface = None;
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    assert_eq!(
+        highlighted(&contents),
+        "diff",
+        "with no Preface the page opens on the Diff, and the first line of the \
+         nav is the Diff's",
+    );
+}
+
 #[tokio::test]
 async fn a_set_that_does_not_exist_says_so() {
     let (_dir, pool) = fresh_pool().await;

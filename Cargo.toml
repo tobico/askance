@@ -96,9 +96,14 @@ wasm-bindgen-futures = "0.4"
 # the notification permission that governs it. `History` and
 # `HtmlDetailsElement` are the table of contents': a jump records where it
 # landed without adding a way back, and unfolds a folded file before it lands.
+# The `IntersectionObserver` three are that same nav the other way round — the
+# reader scrolling, and the browser saying which section they have reached.
 web-sys = { version = "0.3", features = [
     "History",
     "HtmlDetailsElement",
+    "IntersectionObserver",
+    "IntersectionObserverEntry",
+    "IntersectionObserverInit",
     "Navigator",
     "Notification",
     "NotificationPermission",

@@ -314,7 +314,11 @@ p.meta .branch {
 
 .contents-link {
   display: block;
-  padding: 0.15rem 0;
+  padding: 0.15rem 0 0.15rem 0.4rem;
+  /* Where the mark goes on the line the reader has reached. Its room is kept on
+     every line whether or not there is one to draw, so a line lighting up moves
+     nothing beside it. */
+  border-left: 2px solid transparent;
   color: var(--ink-soft);
   text-decoration: none;
   /* One line each: the nav is a way around the page, not the page. What runs
@@ -333,6 +337,23 @@ p.meta .branch {
 .contents-link:hover,
 .contents-link:focus-visible {
   color: var(--accent);
+}
+
+/* Where the reader is: the line they have reached, in the accent and marked down
+   its left edge. Marked as well as coloured because hover is the pointer doing
+   something and this is the page saying something, and the two should not read
+   as the same thing. */
+.contents-link.contents-here {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+/* And the section that line is inside, said far more quietly: the mark alone,
+   half there, with the words left exactly as they were. Which part of the page
+   the reader is in is worth saying, but it is not where they are — so it never
+   competes with the line that is. */
+.contents-link.contents-within {
+  border-left-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* The Question's label, in the face the page sets it in, so the eye can run
