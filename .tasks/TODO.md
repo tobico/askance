@@ -13,7 +13,7 @@ picture of the delta pays off most.
 
 ## Tasks
 
-- [ ] 01: Mermaid fence fallback — [details](01-mermaid-fence-fallback.md)
+- [x] 01: Mermaid fence fallback — [details](01-mermaid-fence-fallback.md)
 - [ ] 02: Diagram rendering — [details](02-diagram-rendering.md)
 - [ ] 03: Theme and fit — [details](03-theme-and-fit.md)
 - [ ] 04: Semantic palette — [details](04-semantic-palette.md)

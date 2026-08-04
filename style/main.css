@@ -883,7 +883,11 @@ p.meta .branch {
    shade apart. The scroll is the box's, never the page's: a long line moves
    inside it. The size is set here rather than left to the monospace default,
    which is a browser quirk shorter than the rest of the page by a point or
-   two. */
+   two.
+
+   A Diagram that has not rendered is one of these: `pre.mermaid` holds its own
+   source and nothing else, so everything a fenced block is drawn with is set
+   here rather than on the `code` inside — there isn't one. */
 .markdown pre {
   padding: 0.6rem 0.7rem;
   overflow-x: auto;
