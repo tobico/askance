@@ -59,8 +59,10 @@ pub fn to_html(diff: &str) -> Option<DiffView> {
     // still the Diff's first and only section, so it is anchored as one, and
     // named as one.
     if files.is_empty() {
+        // Marked as verbatim, because it has none of the line cells that hold a
+        // hunk's text off the left edge and so needs the inset put on it.
         let mut html = format!(
-            r#"<details class="diff-file" id="diff-1" open><summary><span class="diff-path">{AS_IT_ARRIVED}</span></summary><div class="diff-hunk"><pre class="diff-lines"><code>"#
+            r#"<details class="diff-file" id="diff-1" open><summary><span class="diff-path">{AS_IT_ARRIVED}</span></summary><div class="diff-hunk"><pre class="diff-lines diff-verbatim"><code>"#
         );
         html.push_str(&escaped(diff));
         html.push_str("</code></pre></div></details>");
@@ -134,8 +136,10 @@ enum Kind {
 
 impl Kind {
     /// How the line is styled, and the marker it keeps. The marker stays in the
-    /// page so the lines are told apart by more than colour, and so a copied
-    /// hunk is still a patch.
+    /// page so the lines are told apart by more than colour — but the stylesheet
+    /// takes it out of the selection, along with the line numbers, so a hunk
+    /// copied off the page comes out as code to paste into an editor rather than
+    /// as a patch.
     fn marked(self) -> (&'static str, &'static str) {
         match self {
             Kind::Added => ("add", "+"),
@@ -612,7 +616,7 @@ mod tests {
         );
 
         // The markers stay in the page: colour is not the only thing telling an
-        // addition from a removal, and a copied hunk is still a patch.
+        // addition from a removal.
         assert!(html.contains(r#"<span class="marker">+</span>"#), "{html}");
         assert!(html.contains(r#"<span class="marker">-</span>"#), "{html}");
     }
@@ -932,6 +936,11 @@ mod tests {
             html.contains(r#"id="diff-1""#),
             "it is still the Diff's one foldable section, so it is still \
              addressable:\n{html}"
+        );
+        assert!(
+            html.contains("diff-verbatim"),
+            "having no line cells to hold its text off the edge, it has to say \
+             so and be inset by the stylesheet instead:\n{html}"
         );
         assert_eq!(
             paths("who knows what this is\n"),
