@@ -445,6 +445,14 @@ p.meta .branch {
   }
 }
 
+/* The floating header, which exists only where the sidebar does: below that width
+   the nav's own bar is already pinned to the top saying the same thing, and two of
+   them would be two answers to one question. */
+
+.page-header {
+  display: none;
+}
+
 /* The sidebar: the page's sections, top to bottom, in the margin — so the column
    stays exactly where it was and nothing below the nav has moved.
 
@@ -476,6 +484,88 @@ p.meta .branch {
     font-size: 0.85rem;
     line-height: 1.4;
   }
+
+  /* The header, pinned across the reading column. Sticky rather than fixed, like
+     the bar below this width and for the same reason: it belongs to the column
+     and pins itself as the page goes up under it, so nothing is covered on
+     arrival and there is no room to make for it.
+
+     Out past the column's padding on both sides, so once pinned the page passes
+     behind it rather than beside it. */
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin: 0 -1rem 1rem;
+    padding: 0.5rem 1rem;
+    min-height: 2.5rem;
+    background: var(--card);
+    border-bottom: 1px solid var(--edge);
+  }
+
+  /* The provenance line is set to pull up against the title, because until now it
+     followed the title: the nav between them in the markup is out of the flow at
+     this width. The header is not out of the flow — that is what lets it be sticky
+     — so left alone the line would be dragged up underneath it. */
+  .page-header + p.meta {
+    margin-top: 0;
+  }
+
+  /* Where a jump lands: the header covers the top edge exactly as the bar does at
+     the narrower width, so everything the nav jumps to keeps its height clear of
+     itself, plus a little air. */
+  .preface,
+  .diff,
+  #questions,
+  .diff-file,
+  .question {
+    scroll-margin-top: 3.25rem;
+  }
+}
+
+/* One line, cut where it runs out of column — the sidebar's own rule, for the same
+   reason. The section it names is given whatever room the switch beside it does not
+   want. */
+.page-header-where {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.page-header-section {
+  flex: none;
+  color: var(--ink-soft);
+}
+
+.page-header-sep {
+  flex: none;
+  color: var(--ink-soft);
+}
+
+.page-header-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+/* A path here is set as the Diff sets it, so the two read as the same name. */
+.page-header-name.contents-path {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+/* Room for the switch, whatever the name is doing. */
+.page-header .switch {
+  flex: none;
 }
 
 .contents ol {
