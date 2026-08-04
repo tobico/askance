@@ -8,29 +8,14 @@
 //! Diff is escaped on its way out; the HTML around it is ours, which is why
 //! this output is not run through a sanitiser the way the Preface's is (a
 //! sanitiser would take the class attributes the colouring depends on with it).
+//!
+//! The highlighter itself lives in [`crate::highlight`], shared with the fenced
+//! blocks in the agent's markdown.
 
-use std::sync::LazyLock;
+use syntect::parsing::SyntaxReference;
 
-use syntect::html::{ClassStyle, line_tokens_to_classed_spans};
-use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
-
+use crate::highlight::{escaped, for_path};
 use crate::set_view::DiffView;
-
-/// Prefixed so a scope named after some language's keyword cannot collide with
-/// the page's own class names.
-const TOKENS: ClassStyle = ClassStyle::SpacedPrefixed { prefix: "tok-" };
-
-/// Loaded once and shared: a few megabytes of syntax definitions, and every
-/// Diff wants the same ones.
-///
-/// The no-newlines set is the one for line-at-a-time input, which is all a diff
-/// ever gives us.
-///
-/// `two-face`'s set rather than syntect's own, which is Sublime Text's default
-/// packages and so has no TypeScript, TOML or Nix in it — the languages this
-/// machine's repositories are largely written in, and every one of them came out
-/// unhighlighted. See the dependency's note in the workspace manifest.
-static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_no_newlines);
 
 /// What the one section of a Diff git did not write is called — in the page and
 /// in the table of contents alike, since both name the same fold.
@@ -391,7 +376,7 @@ impl FileDiff {
 
         // Highlighting is keyed off the path, so it is settled once per file
         // rather than looked up per line.
-        let syntax = syntax_for(&self.path);
+        let syntax = for_path(&self.path);
         for hunk in &self.hunks {
             hunk.render(out, syntax);
         }
@@ -467,7 +452,7 @@ impl Line {
 
         match syntax
             .filter(|_| self.kind != Kind::Aside)
-            .and_then(|syntax| highlighted(&self.text, syntax))
+            .and_then(|syntax| crate::highlight::line(&self.text, syntax))
         {
             Some(html) => out.push_str(&html),
             None => out.push_str(&escaped(&self.text)),
@@ -475,66 +460,6 @@ impl Line {
 
         out.push_str("</span>");
     }
-}
-
-/// The syntax to highlight a file with, or `None` for one nothing recognises.
-///
-/// Keyed off the extension, falling back to the whole file name for the ones
-/// that go without — `Makefile` and its kind.
-fn syntax_for(path: &str) -> Option<&'static SyntaxReference> {
-    let syntaxes: &'static SyntaxSet = &SYNTAXES;
-
-    let name = path.rsplit('/').next()?;
-    let token = match name.rsplit_once('.') {
-        Some((_, extension)) => extension,
-        None => name,
-    };
-
-    let syntax = syntaxes.find_syntax_by_extension(token)?;
-
-    // Plain text is what the fallback already does, and without the spans.
-    (syntax.name != "Plain Text").then_some(syntax)
-}
-
-/// One line highlighted into `tok-`prefixed spans, escaped by syntect as it
-/// goes.
-///
-/// Each line is parsed on its own rather than continuing the file's state,
-/// because the two sides of a diff interleave and a hunk is a fragment either
-/// way. The cost is that a line inside a multi-line string or comment is
-/// highlighted as though it were code; the alternative is carrying two parse
-/// states and reopening spans across every line boundary, for a fragment that
-/// may well have started mid-construct anyway.
-fn highlighted(text: &str, syntax: &SyntaxReference) -> Option<String> {
-    let syntaxes: &'static SyntaxSet = &SYNTAXES;
-
-    let mut state = ParseState::new(syntax);
-    let mut stack = ScopeStack::new();
-
-    let ops = state.parse_line(text, syntaxes).ok()?;
-    let (mut html, open) = line_tokens_to_classed_spans(text, &ops, TOKENS, &mut stack).ok()?;
-
-    // Whatever the line left open, it closes: each line is its own element, so
-    // a span cannot reach across to the next one.
-    for _ in 0..open.max(0) {
-        html.push_str("</span>");
-    }
-
-    Some(html)
-}
-
-/// Text from the Diff, safe to put in the page.
-fn escaped(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            _ => out.push(ch),
-        }
-    }
-    out
 }
 
 #[cfg(test)]

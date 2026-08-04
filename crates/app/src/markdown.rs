@@ -7,7 +7,10 @@
 //! rather than trusted — every word rendered here is agent-supplied prose, and
 //! pulldown-cmark passes raw HTML straight through by design.
 
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, html};
+use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, html};
+use syntect::parsing::SyntaxReference;
+
+use crate::highlight;
 
 /// What the parser is asked for wherever agents write markdown. They write
 /// GitHub-flavoured whether or not anyone asked them to, so tables and
@@ -20,11 +23,96 @@ fn dialect() -> Options {
 }
 
 /// Render `markdown` to HTML with anything that could act on the page removed.
+///
+/// A fenced block naming a language it recognises is coloured by the same
+/// highlighter the Diff uses, which is the one thing here that puts markup of our
+/// own into the agent's prose — see [`sanitizer`] for what that costs.
 pub fn to_html(markdown: &str) -> String {
     let mut rendered = String::new();
-    html::push_html(&mut rendered, Parser::new_ext(markdown, dialect()));
+    html::push_html(
+        &mut rendered,
+        coloured(Parser::new_ext(markdown, dialect())).into_iter(),
+    );
 
-    ammonia::clean(&rendered)
+    sanitizer().clean(&rendered).to_string()
+}
+
+/// What the agent's rendered markdown is cleaned by.
+///
+/// Ammonia's defaults, widened by exactly one thing: `class` on a `span`,
+/// restricted to the handful of names the stylesheet colours. That is the whole
+/// of what the highlighter needs to survive, and the narrowest widening that lets
+/// it — a `span` could already come through, and every other class name syntect
+/// emits is dropped along with everything else ammonia does not recognise.
+///
+/// `class` itself is deliberately not whitelisted as an attribute: ammonia panics
+/// if it is both, and the point is that the values are a closed set rather than
+/// anything the agent cares to write.
+fn sanitizer() -> ammonia::Builder<'static> {
+    let mut sanitizer = ammonia::Builder::default();
+    sanitizer.allowed_classes(std::collections::HashMap::from([(
+        "span",
+        highlight::TOKEN_CLASSES.iter().copied().collect(),
+    )]));
+
+    sanitizer
+}
+
+/// The same markdown with every fenced block that names a language it recognises
+/// replaced by the highlighter's own HTML.
+///
+/// A whole block at a time, so the parse state carries from line to line and a
+/// multi-line string is coloured as one — which is why the text is held back until
+/// the block closes rather than passed on as it arrives.
+///
+/// Anything else is left exactly as it came: a fence with no language, one naming
+/// a language nothing here has, an indented block, or a block the highlighter
+/// declined. All of those keep the `pre` and `code` pulldown-cmark would have
+/// written, which is what they had before there was any colour at all.
+fn coloured<'a>(events: impl Iterator<Item = Event<'a>>) -> Vec<Event<'a>> {
+    let mut out: Vec<Event<'a>> = Vec::new();
+
+    // `Some` from a highlightable block's start to its end, gathering its lines.
+    let mut gathering: Option<(&'static SyntaxReference, String)> = None;
+
+    for event in events {
+        if let Some((_, gathered)) = gathering.as_mut() {
+            match event {
+                Event::Text(text) => gathered.push_str(&text),
+                Event::End(TagEnd::CodeBlock) => {
+                    let (syntax, code) = gathering.take().expect("just matched as gathering");
+                    match highlight::block(&code, syntax) {
+                        Some(marked) => {
+                            out.push(Event::Html(
+                                format!("<pre><code>{marked}</code></pre>").into(),
+                            ));
+                        }
+                        // The highlighter gave up part way. The block is still the
+                        // agent's words and still has to be shown, so it goes in
+                        // as the plain one it would always have been.
+                        None => out.push(Event::Html(
+                            format!("<pre><code>{}</code></pre>", highlight::escaped(&code)).into(),
+                        )),
+                    }
+                }
+                // A code block holds nothing but its own text.
+                _ => {}
+            }
+            continue;
+        }
+
+        match &event {
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
+                match highlight::for_token(info) {
+                    Some(syntax) => gathering = Some((syntax, String::new())),
+                    None => out.push(event),
+                }
+            }
+            _ => out.push(event),
+        }
+    }
+
+    out
 }
 
 /// Render `markdown` as inline content: the emphasis, the code spans, the links
@@ -215,6 +303,64 @@ mod tests {
 
         assert!(html.contains("<code>askance ask</code>"), "{html}");
         assert!(html.contains("<li>first</li>"), "{html}");
+    }
+
+    #[test]
+    fn a_fence_that_names_its_language_comes_out_coloured() {
+        let html = to_html("```rust\nfn allowance() -> u32 {\n    600\n}\n```\n");
+
+        assert!(
+            html.contains("<pre><code>"),
+            "the block is still a block:\n{html}"
+        );
+        assert!(
+            html.contains("tok-keyword") || html.contains("tok-storage"),
+            "expected `fn` coloured as the keyword it is:\n{html}"
+        );
+        assert!(
+            html.contains("allowance"),
+            "every word the agent wrote is still there:\n{html}"
+        );
+    }
+
+    #[test]
+    fn a_fence_with_no_language_is_left_as_plain_code() {
+        let html = to_html("```\nsome unlabelled thing\n```\n");
+
+        assert!(html.contains("some unlabelled thing"), "{html}");
+        assert!(
+            !html.contains("tok-"),
+            "nothing guesses what unlabelled code is written in:\n{html}"
+        );
+    }
+
+    #[test]
+    fn code_in_a_coloured_fence_is_still_escaped() {
+        // Inside a fence it is code to read, not markup to run — and it is the
+        // highlighter escaping it now rather than the markdown renderer.
+        let html = to_html("```rust\nlet evil = \"<script>alert('pwned')</script>\";\n```\n");
+
+        assert!(
+            !html.contains("<script"),
+            "a script in a fence must reach the page as text:\n{html}"
+        );
+        assert!(
+            html.contains("&lt;script&gt;"),
+            "expected the tag escaped and still readable:\n{html}"
+        );
+    }
+
+    #[test]
+    fn the_only_classes_that_survive_are_the_ones_that_colour_code() {
+        // The widening the highlighter needed is a closed set of values, not the
+        // `class` attribute — an agent writing its own cannot get one through.
+        let html = to_html("<span class=\"evil\">careful</span>\n");
+
+        assert!(html.contains("careful"), "the words stay:\n{html}");
+        assert!(
+            !html.contains("evil"),
+            "a class of the agent's own is not one of ours:\n{html}"
+        );
     }
 
     #[test]

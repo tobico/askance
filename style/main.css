@@ -9,6 +9,14 @@
   --edge: #e3ddd4;
   --accent: #7a5c3e;
 
+  /* Inline code gets a wash of its own rather than the fenced block's: a span of
+     it is a few characters inside a line of prose, with no box and no margin to
+     set it apart, so it has to be a shade more present than a block that has
+     both. `mark` is the one colour here that is not a shade of the paper — it
+     means "look at this", which nothing else in the palette is for. */
+  --code-wash: #efe8dd;
+  --marked: #fbeeba;
+
   /* The Diff: a saturated colour for the markers and the tally, a wash of the
      same behind the line. */
   --added: #2f7d4f;
@@ -35,6 +43,9 @@
     --card: #201e1b;
     --edge: #35312c;
     --accent: #c9a87c;
+
+    --code-wash: #2e2b26;
+    --marked: #4a3f1c;
 
     --added: #79c48f;
     --added-wash: #1b2a20;
@@ -95,51 +106,98 @@ textarea {
   border: 1px solid var(--edge);
   border-radius: 0.4rem;
   padding: 0.5rem 0.6rem;
-  resize: vertical;
+  /* Every field in the app grows to fit what is in it — see `.grow` — so there is
+     nothing to scroll and no reason to offer a drag handle. A height dragged by
+     hand would be overwritten by the next keystroke anyway. */
+  resize: none;
+  overflow: hidden;
 }
 
-/* Notifications on this device: where it stands, and the tap that changes it.
-   Above the pending list and quiet like the Set's own standing line — it is read
-   once, when the answer is not the expected one, and then ignored for weeks. */
+/* A field as tall as what has been typed into it, and one line tall when nothing
+   has.
 
-.notifications {
+   Nothing measures anything. The wrapper holds two things in the same grid cell:
+   the field, and a copy of the field's text that is in the layout but invisible.
+   The copy is ordinary wrapped text and so has an ordinary height; a grid cell is
+   as tall as its tallest occupant; the field is stretched to match. That makes the
+   height right before the first keystroke as well as after it — a restored draft
+   included, and a server-rendered page before any script has run.
+
+   The trailing space in the content is what reserves the last line: a value ending
+   in a newline would otherwise measure as though it did not. */
+
+.grow {
+  display: grid;
+}
+
+.grow > textarea,
+.grow::after {
+  grid-area: 1 / 1;
+}
+
+.grow::after {
+  content: attr(data-value) " ";
+  visibility: hidden;
+  /* Every metric that decides where a line breaks, matching the field's own — a
+     copy that wrapped differently would be the wrong height. The border is
+     transparent rather than absent, because it still takes up its width. */
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid transparent;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* The prompt is the placeholder rather than a label above the field, so it is
+   doing a label's work and has to be as readable as one. `opacity` because
+   Firefox dims a placeholder on top of whatever colour it is given. */
+textarea::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
+}
+
+/* A page's title with a control on the other end of its line. Wrapping, so that
+   anything the control has to say in words drops to a full-width line of its own
+   underneath rather than being squeezed into the column beside the title. */
+
+.page-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem 1rem;
-  margin: 0 0 1rem;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
+  margin-bottom: 1rem;
+}
+
+/* The gap below belongs to the row, which has more in it than the heading. */
+.page-head h1 {
+  margin: 0;
+}
+
+/* Notifications on this device: the switch, and the line for what a switch cannot
+   say. Quiet like the Set's own standing line — it is read once, when the answer
+   is not the expected one, and then ignored for weeks.
+
+   The control has no box of its own. The switch belongs on the heading's line and
+   the line belongs under both, so its children are laid out by the header row
+   instead of by it — the same dissolving a Question's rendered markdown does. */
+
+.notifications {
+  display: contents;
 }
 
 .notifications .state {
-  margin: 0;
-  /* Room for the button beside it on a phone, and the whole line to itself when
-     the words run past that. */
-  flex: 1 1 12rem;
-}
-
-.notifications button {
-  padding: 0.4rem 0.7rem;
-  font: inherit;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--edge);
-  border-radius: 0.5rem;
-  cursor: pointer;
-}
-
-.notifications button:disabled {
-  cursor: progress;
-  opacity: 0.65;
-}
-
-/* Its own line under both, so a failure is not squeezed between them. */
-.notifications .error {
   flex-basis: 100%;
   margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+/* Nothing to say, so nothing in the layout — but the paragraph stays in the
+   document, because a screen reader announces into a live region it was already
+   watching and not into one that has just appeared. */
+.notifications .state:empty {
+  display: none;
 }
 
 /* The two lists of Sets — what is waiting and what was decided — are drawn as
@@ -496,6 +554,98 @@ p.meta .branch {
   font-size: 0.8rem;
 }
 
+/* The one on/off control, wherever a device setting is offered: the words, and
+   the switch hard right so that two of them on different pages line up down the
+   same edge.
+
+   The checkbox is repainted rather than replaced — `appearance: none` takes the
+   browser's box away and leaves everything else about it, so the keyboard, the
+   label association and the focus ring all still belong to the browser. */
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.switch input {
+  appearance: none;
+  flex: none;
+  margin: 0;
+  /* The track. Sized in rem rather than em so that the switch is the same size
+     beside a heading as it is beside small print. */
+  width: 2.2rem;
+  height: 1.3rem;
+  padding: 0.15rem;
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: 1rem;
+  cursor: inherit;
+  /* The knob is the box's own text, laid out by the track: `flex` puts it at
+     whichever end `justify-content` says, and that is the whole animation. */
+  display: flex;
+  justify-content: flex-start;
+}
+
+.switch input::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  background: var(--ink-soft);
+  border-radius: 50%;
+}
+
+.switch input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  justify-content: flex-end;
+}
+
+.switch input:checked::before {
+  background: var(--paper);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .switch input {
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .switch input::before {
+    transition: background 0.15s ease;
+  }
+}
+
+.switch input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A switch waiting on something says where it stands and will not be flipped
+   again until it gets there — so it is dimmed rather than redrawn, and the
+   cursor says the wait is the reason. */
+.switch:has(input:disabled) {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.switch input:disabled {
+  cursor: default;
+}
+
+/* A section heading with a control on the other end of its line. The heading
+   keeps its own margin, so the row is only the arrangement. */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
 /* The quiet headings naming the page's sections, so a jump from the table of
    contents lands somewhere the reader can see they have arrived at. Under the
    title rather than beside it: they are signposts, not the ask. */
@@ -589,9 +739,52 @@ p.meta .branch {
   margin: 0.25rem 0;
 }
 
-.markdown code {
+/* Code inside a line, and program output beside it: washed and rounded, because
+   the monospace font alone was doing all the work of saying where the code
+   started and stopped — and at this size, in prose, it was not enough. Padded in
+   `em` so the wash grows with whatever text it lands in. */
+.markdown code,
+.markdown samp {
+  padding: 0.1em 0.3em;
+  background: var(--code-wash);
+  border-radius: 0.25em;
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 0.9em;
+}
+
+/* A key to press, drawn as one: the heavier bottom edge is the whole of the
+   illusion. */
+.markdown kbd {
+  padding: 0.1em 0.35em;
+  background: var(--code-wash);
+  border: 1px solid var(--edge);
+  border-bottom-width: 2px;
+  border-radius: 0.3em;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85em;
+}
+
+.markdown mark {
+  padding: 0.05em 0.2em;
+  background: var(--marked);
+  /* The browser's own `mark` sets a colour to go with its yellow, which is the
+     wrong one on either of these washes. */
+  color: var(--ink);
+  border-radius: 0.2em;
+}
+
+/* Dotted, because a solid underline in prose is a link. */
+.markdown abbr[title] {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+  cursor: help;
+}
+
+/* Agents write links whose text is prose, and prose has descenders: the default
+   underline sits close enough to cut through them. */
+.markdown a {
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.2em;
 }
 
 /* A fenced block, washed and boxed like the Diff's hunks so it reads as code
@@ -613,8 +806,12 @@ p.meta .branch {
   tab-size: 4;
 }
 
-/* The block is already the code; the span inside adds nothing to it. */
+/* The block is already the code; the span inside adds nothing to it — and the
+   wash an inline span carries would be a second box drawn inside the first. */
 .markdown pre code {
+  padding: 0;
+  background: none;
+  border-radius: 0;
   font: inherit;
 }
 
@@ -639,6 +836,13 @@ p.meta .branch {
 .markdown th {
   font-weight: 600;
   background: var(--hunk);
+}
+
+/* Banded, so a row of a wide table can be followed across a phone without losing
+   which one it was. Half strength, so the header above stays the strongest thing
+   in the table rather than one more band. */
+.markdown tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--hunk) 55%, transparent);
 }
 
 /* Quoted the way a Sub-question is nested: a rule beside the words rather than
@@ -811,12 +1015,21 @@ p.meta .branch {
    Neither cell is part of what a selection picks up, so a hunk copied off the
    page comes out as code to paste into an editor rather than as a patch. */
 
+/* Named on the file rather than measured twice, because the wrap rules below
+   have to indent by exactly the width of these two and a drift between them
+   would show as code that does not line up with itself. */
+.diff-file {
+  /* As many digits as this file's highest line number needs — set per file by
+     the renderer, since a forty-line file should not carry a column cut for a
+     long one — plus the gutter either side of them. */
+  --diff-number-width: calc(var(--diff-digits, 3) * 1ch + 1.2rem);
+  --diff-marker-width: calc(1ch + 0.5rem);
+  --diff-gutter: calc(var(--diff-number-width) + var(--diff-marker-width));
+}
+
 .diff-number {
   display: inline-block;
-  /* As many digits as this file's highest line number needs — set per file, since
-     a forty-line file should not carry a column cut for a long one — plus the
-     gutter either side of them. */
-  width: calc(var(--diff-digits, 3) * 1ch + 1.2rem);
+  width: var(--diff-number-width);
   padding: 0 0.6rem;
   text-align: right;
   color: var(--ink-soft);
@@ -825,7 +1038,7 @@ p.meta .branch {
 
 .diff-line .marker {
   display: inline-block;
-  width: calc(1ch + 0.5rem);
+  width: var(--diff-marker-width);
   padding-right: 0.5rem;
   color: var(--ink-soft);
   user-select: none;
@@ -852,6 +1065,43 @@ p.meta .branch {
 .diff-line.aside {
   color: var(--ink-soft);
   font-style: italic;
+}
+
+/* Word wrap, remembered per device and switched on beside the heading. It undoes
+   the three rules that hold a hunk on one line: the `pre`'s own `white-space`,
+   the box measured to the longest line, and — because a wrapped line has to
+   break somewhere — the browser's refusal to break inside a long word, which
+   here is a minified line or a URL that would otherwise still overflow.
+
+   Nothing about the colouring changes: the wash is on the line, and a line that
+   is three rows tall is washed three rows deep. */
+
+.diff.wrapped .diff-lines {
+  /* Nothing left to scroll to, so the box stops offering. */
+  overflow-x: visible;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff.wrapped .diff-lines > code {
+  width: auto;
+}
+
+/* Hung off the code column: the padding holds every row of the line clear of the
+   two cells, and the negative indent pulls the first row — the one those cells
+   are actually in — back out to the edge again. The remainder of a wrapped line
+   then starts under the code above it rather than under the line numbers. */
+.diff.wrapped .diff-line {
+  padding-left: var(--diff-gutter);
+  text-indent: calc(-1 * var(--diff-gutter));
+}
+
+/* `text-indent` is inherited and an inline-block is a block container of its own,
+   so without this the two cells would each pull their own contents out to the
+   left along with the line. */
+.diff.wrapped .diff-number,
+.diff.wrapped .diff-line .marker {
+  text-indent: 0;
 }
 
 /* Token colouring, on top of the +/- wash. The classes are syntect's scope
@@ -928,32 +1178,6 @@ p.meta .branch {
 .standing .error {
   flex-basis: 100%;
   margin: 0;
-}
-
-/* Accept-all: an action over the questions below it, so it is outlined rather
-   than filled — the one solid button on the page is the submit that ends the
-   agent's wait. */
-
-.accept-all {
-  margin-bottom: 1rem;
-}
-
-.accept-all button {
-  width: 100%;
-  padding: 0.7rem 1rem;
-  font: inherit;
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--card);
-  border: 1px dashed var(--accent);
-  border-radius: 0.6rem;
-  cursor: pointer;
-}
-
-.accept-all .note {
-  margin: 0.4rem 0 0;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
 }
 
 .questions,
@@ -1063,22 +1287,8 @@ p.meta .branch {
   border-style: solid;
 }
 
-.ask .free-text {
-  display: block;
-  margin-bottom: 0.3rem;
-  font-size: 0.8rem;
-  color: var(--ink-soft);
-}
-
 .set-comment {
   margin-top: 1.5rem;
-}
-
-.set-comment label {
-  display: block;
-  margin-bottom: 0.3rem;
-  font-size: 0.9rem;
-  color: var(--ink-soft);
 }
 
 /* The submit sits at the foot of the column, after the last thing there is to

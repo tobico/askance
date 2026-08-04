@@ -653,8 +653,6 @@ async fn the_recommendation_is_marked_but_nothing_is_preselected() {
 
     let html = set_page(&pool, &full_grammar_set()).await;
 
-    // The marks on the Options, not every ★ on the page: the accept-all button
-    // spells its own name with one.
     assert_eq!(
         html.matches(r#"class="star">★"#).count(),
         1,
@@ -668,54 +666,6 @@ async fn the_recommendation_is_marked_but_nothing_is_preselected() {
         !html.contains("checked"),
         "nothing may be selected on load, or an unread Recommendation \
          could be submitted by accident:\n{html}"
-    );
-}
-
-#[tokio::test]
-async fn a_set_carrying_a_recommendation_offers_to_accept_them_all() {
-    let (_dir, pool) = fresh_pool().await;
-
-    let html = set_page(&pool, &full_grammar_set()).await;
-
-    assert!(
-        html.contains(r#"class="accept-all""#),
-        "expected the accept-all button on a Set with a Recommendation:\n{html}"
-    );
-}
-
-#[tokio::test]
-async fn a_recommendation_on_a_subquestion_counts_the_same_as_one_on_a_question() {
-    let (_dir, pool) = fresh_pool().await;
-    let mut set = full_grammar_set();
-    set.questions[0].options[1].recommended = false;
-    set.questions[1].subquestions[0].options[0].recommended = true;
-
-    let html = set_page(&pool, &set).await;
-
-    assert!(
-        html.contains(r#"class="accept-all""#),
-        "Sub-questions carry Options, so a ★ on one is a ★ on the Set:\n{html}"
-    );
-}
-
-#[tokio::test]
-async fn a_set_with_no_recommendation_anywhere_offers_no_accept_all() {
-    let (_dir, pool) = fresh_pool().await;
-    let mut set = full_grammar_set();
-    for question in &mut set.questions {
-        let subquestions = question.subquestions.iter_mut().map(|sub| &mut sub.options);
-        for options in std::iter::once(&mut question.options).chain(subquestions) {
-            for option in options {
-                option.recommended = false;
-            }
-        }
-    }
-
-    let html = set_page(&pool, &set).await;
-
-    assert!(
-        !html.contains("accept-all"),
-        "with nothing to accept the button is absent, not disabled:\n{html}"
     );
 }
 
@@ -734,6 +684,57 @@ async fn every_question_has_a_free_text_field_and_the_set_has_one_comment_box() 
     assert!(
         html.contains(r#"name="set-comment""#),
         "expected the set-level comment box:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn every_field_is_prompted_by_its_placeholder_and_starts_one_line_tall() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &full_grammar_set()).await;
+
+    // Q1, Q2 and Q2a offer Options, so the neutral prompt goes on those three;
+    // Q2b and Q3 offer none, and there the words are the whole answer. Each is
+    // named for its own question, so that five fields in a column are five
+    // different fields — to a screen reader above all, which has nothing else to
+    // tell them apart by.
+    for named in [
+        "Q1 — Your thoughts",
+        "Q2 — Your thoughts",
+        "Q2a — Your thoughts",
+        "Q2b — Your answer",
+        "Q3 — Your answer",
+    ] {
+        assert!(
+            html.contains(&format!(r#"placeholder="{named}""#)),
+            "expected a field prompted `{named}`:\n{html}"
+        );
+        // No labels left to name them, so the placeholder has to be the
+        // accessible name as well — a browser is free to leave one unspoken.
+        assert!(
+            html.contains(&format!(r#"aria-label="{named}""#)),
+            "expected `{named}` to be the field's name as well as its hint:\n{html}"
+        );
+    }
+
+    // The one field that belongs to no question keeps a name of its own.
+    assert!(
+        html.contains(r#"placeholder="Other comments""#),
+        "expected the set-level field prompted too:\n{html}"
+    );
+
+    // Every field grows from one row, and the wrapper the stylesheet measures it
+    // by is in the page the server writes — so the height is already right for a
+    // restored draft, before any script has run.
+    assert_eq!(
+        html.matches(r#"class="grow""#).count(),
+        6,
+        "expected every field wrapped for growing:\n{html}"
+    );
+    assert_eq!(
+        html.matches(r#"rows="1""#).count(),
+        6,
+        "an empty field is one line tall, the comment box included:\n{html}"
     );
 }
 
@@ -837,7 +838,7 @@ async fn an_answered_set_offers_nothing_to_press() {
         html.contains(r#"class="questions decided""#),
         "expected the answered Set's questions:\n{html}"
     );
-    for absent in ["<input", "<textarea", "accept-all"] {
+    for absent in ["<input", "<textarea"] {
         assert!(
             !html.contains(absent),
             "a Set is answered once, so {absent} has no business on the page:\n{html}"

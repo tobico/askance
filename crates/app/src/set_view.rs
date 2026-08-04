@@ -442,31 +442,6 @@ impl Filled {
     }
 }
 
-/// How one question stands when accept-all is pressed: what its fields hold,
-/// and the Option the agent recommended if it recommended one.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Considered {
-    filled: Filled,
-    recommended: Option<u32>,
-}
-
-/// Which questions accept-all fills, and with which Option: the position of
-/// every question that is both unanswered and carrying a Recommendation, paired
-/// with the Recommendation's number.
-///
-/// It fills nothing else. A question the human already answered keeps their
-/// answer, and one with no ★ stays open rather than being handed an arbitrary
-/// Option — which also makes a second press a no-op, since the first press
-/// answers exactly the questions it names.
-fn accepting(standing: &[Considered]) -> Vec<(usize, u32)> {
-    standing
-        .iter()
-        .enumerate()
-        .filter(|(_, question)| !question.filled.answered())
-        .filter_map(|(index, question)| Some((index, question.recommended?)))
-        .collect()
-}
-
 /// The Response a page full of fields adds up to.
 ///
 /// Every question gets an entry, in the order it was asked: an Answer when the
@@ -544,77 +519,37 @@ fn restorable(body: &str, labels: &[&str]) -> Option<Draft> {
     (drafted == labels).then_some(draft)
 }
 
-/// The browser's `localStorage`, or `None` when there is none to be had — a
-/// browser that blocks it, or one that has none at all.
-///
-/// Storage is a convenience the whole way down: `None` costs the human their
-/// drafts and nothing else, so nothing on this path is worth a panic.
-#[cfg(feature = "hydrate")]
-fn local_storage() -> Option<web_sys::Storage> {
-    web_sys::window()?.local_storage().ok().flatten()
-}
-
 /// The draft being held under this key, if there is one.
-#[cfg(feature = "hydrate")]
+///
+/// Under `ssr` there is nowhere for one to be held, so this is `None` and the
+/// server renders the Set as the agent sent it — which is what hydration then
+/// has to find waiting for it. The effects that keep a draft only ever run in a
+/// browser, so the server half never writes one either.
 fn stored_draft(key: &str) -> Option<String> {
-    local_storage()?.get_item(key).ok().flatten()
+    crate::device::read(key)
 }
 
 /// Write the draft out, replacing whatever was under the key.
-#[cfg(feature = "hydrate")]
 fn store_draft(key: &str, draft: &Draft) {
-    let Some(storage) = local_storage() else {
-        return;
-    };
     let Ok(body) = serde_json::to_string(draft) else {
         return;
     };
 
-    // Full, or refused: the draft is gone, and the page carries on regardless.
-    let _ = storage.set_item(key, &body);
+    crate::device::write(key, &body);
 }
 
 /// Drop the draft under this key.
-#[cfg(feature = "hydrate")]
 fn clear_draft(key: &str) {
-    if let Some(storage) = local_storage() {
-        let _ = storage.remove_item(key);
-    }
+    crate::device::forget(key);
 }
-
-// Under `ssr` there is no browser and so no draft: the server renders the Set as
-// the agent sent it, which is what hydration then has to find waiting for it.
-// The effects that keep a draft only ever run in a browser, so these three stand
-// in for storage the server half has no way to reach and no reason to.
-#[cfg(not(feature = "hydrate"))]
-fn stored_draft(_key: &str) -> Option<String> {
-    None
-}
-
-#[cfg(not(feature = "hydrate"))]
-fn store_draft(_key: &str, _draft: &Draft) {}
-
-#[cfg(not(feature = "hydrate"))]
-fn clear_draft(_key: &str) {}
 
 /// One question as the page holds on to it: the name it answers to, whether it
-/// offered Options, the Option the agent recommended, and the fields the human
-/// fills.
+/// offered Options, and the fields the human fills.
 #[derive(Debug, Clone)]
 struct Asked {
     label: String,
     multiple_choice: bool,
-    recommended: Option<u32>,
     fields: Fields,
-}
-
-/// The Option the agent recommended among these, if it recommended one. At most
-/// one Option per question may be the Recommendation, so the first ★ is it.
-fn recommendation(options: &[OptionView]) -> Option<u32> {
-    options
-        .iter()
-        .find(|option| option.recommended)
-        .map(|option| option.n)
 }
 
 /// The questions the warning before submit names: those the Response leaves
@@ -1590,20 +1525,49 @@ fn sheet(set: SetView) -> impl IntoView {
             })}
         // Between the Preface and the Questions: the Preface says what the
         // agent is asking about, and the Diff is the evidence for it.
-        {set
-            .diff
-            .map(|diff| {
-                view! {
-                    <section class="diff" id="diff">
-                        <h2 class="section-heading">"Diff"</h2>
-                        // The per-file anchors — `diff-1`, `diff-2`, … — are
-                        // stamped by the renderer, since this arrives already
-                        // rendered.
-                        <div class="diff-files" inner_html=diff.html></div>
-                    </section>
-                }
-            })}
+        {set.diff.map(diff_section)}
         {body}
+    }
+}
+
+/// The attached Diff, and the one setting that governs how it is read.
+///
+/// The wrap switch sits beside the heading rather than in a settings page
+/// somewhere, because this is the only place its answer is visible — and it
+/// governs every Diff, not this one, which is why it is remembered on the device
+/// instead of per Set.
+///
+/// Wrapping is a class and nothing more: the Diff arrives as HTML the server
+/// already rendered, so there is nothing here to render again and the stylesheet
+/// is the whole of the change. The server has no way to know what this device
+/// last chose, so the first paint is always unwrapped and settles a frame later
+/// — a reflow, and one the alternative costs a script in the document head to
+/// avoid.
+fn diff_section(diff: DiffView) -> impl IntoView {
+    let wrapped = RwSignal::new(false);
+
+    // The browser's alone, like the drafts: an effect never runs during SSR, so
+    // the server draws the Diff unwrapped and only an open page asks the device
+    // what it wanted.
+    Effect::new(move |_| wrapped.set(crate::device::wrapping()));
+
+    view! {
+        <section class=move || if wrapped.get() { "diff wrapped" } else { "diff" } id="diff">
+            <div class="section-head">
+                <h2 class="section-heading">"Diff"</h2>
+                <crate::switch::Switch
+                    label="Word wrap"
+                    on=wrapped
+                    flip=move |on| {
+                        wrapped.set(on);
+                        crate::device::set_wrapping(on);
+                    }
+                />
+            </div>
+            // The per-file anchors — `diff-1`, `diff-2`, … — are stamped by the
+            // renderer, since this arrives already rendered.
+            <div class="diff-files" inner_html=diff.html></div>
+        </section>
     }
 }
 
@@ -1738,11 +1702,6 @@ fn answerable(id: i64, questions: Vec<QuestionView>) -> impl IntoView {
         .map(|(index, asked)| question(index + 1, asked, &mut fields))
         .collect();
 
-    // Whether accept-all has anything it could ever do here. Read off the
-    // questions as they were drawn rather than by walking the Set again, and
-    // fixed for the life of the page: the Set does not change under it.
-    let recommended_anywhere = fields.iter().any(|asked| asked.recommended.is_some());
-
     let fields = StoredValue::new(fields);
     let comment = RwSignal::new(String::new());
 
@@ -1817,23 +1776,6 @@ fn answerable(id: i64, questions: Vec<QuestionView>) -> impl IntoView {
         }
     });
 
-    // Pressing it writes the same field the human's own tap would, so every
-    // Answer it fills can still be changed, and submit is still a separate act.
-    let accept_all = move |_| {
-        let standing: Vec<Considered> = fields
-            .read_value()
-            .iter()
-            .map(|asked| Considered {
-                filled: asked.fields.filled(&asked.label),
-                recommended: asked.recommended,
-            })
-            .collect();
-
-        for (index, n) in accepting(&standing) {
-            fields.read_value()[index].fields.selected.set(Some(n));
-        }
-    };
-
     let submit = Action::new(move |(id, response): &(i64, Response)| {
         let (id, response) = (*id, response.clone());
         async move { submit_response(id, response).await }
@@ -1898,36 +1840,20 @@ fn answerable(id: i64, questions: Vec<QuestionView>) -> impl IntoView {
     });
 
     view! {
-        // Above the accept-all rather than below it: the offer to accept every
-        // Recommendation is part of the Questions, so a jump to them arrives at
-        // it rather than past it.
         {questions_heading()}
-        // Above the questions rather than beside the submit: it changes what is
-        // drawn below it, and the human scrolls down through the result on the
-        // way to sending it.
-        {recommended_anywhere
-            .then(|| {
-                view! {
-                    <section class="accept-all">
-                        <button type="button" on:click=accept_all>
-                            "Accept all ★ Recommendations"
-                        </button>
-                        <p class="note">
-                            "Fills the questions you have not answered yet. You can still change any of them."
-                        </p>
-                    </section>
-                }
-            })}
         <ol class="questions">{asked}</ol>
         <section class="set-comment">
-            <label for="set-comment">"Anything about the Set as a whole"</label>
-            <textarea
-                id="set-comment"
-                name="set-comment"
-                rows="3"
-                prop:value=move || comment.get()
-                on:input:target=move |ev| comment.set(ev.target().value())
-            ></textarea>
+            <div class="grow" data-value=move || comment.get()>
+                <textarea
+                    id="set-comment"
+                    name="set-comment"
+                    rows="1"
+                    placeholder="Other comments"
+                    aria-label="Other comments"
+                    prop:value=move || comment.get()
+                    on:input:target=move |ev| comment.set(ev.target().value())
+                ></textarea>
+            </div>
         </section>
         <section class="submit">
             <button
@@ -2093,17 +2019,26 @@ fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
     collected.push(Asked {
         label: name.clone(),
         multiple_choice: has_options,
-        recommended: recommendation(&options),
         fields: live,
     });
 
-    // With no Options the free text *is* the answer; with them it is the note
-    // in the margin beside one.
-    let prompt = if has_options {
-        "Or in your own words"
-    } else {
-        "Your answer"
-    };
+    // With no Options the free text *is* the answer; with them it is whatever the
+    // human has to say, which may stand instead of an Option or beside one. Hence
+    // the neutral word: "Or in your own words" read as a choice between the two,
+    // which was never what it meant.
+    //
+    // Named for the question it belongs to, because five fields prompted alike is
+    // five fields nothing tells apart — which a screen reader has no way around at
+    // all, and which is worth a reminder of where you are even when you can see
+    // the whole page.
+    let prompt = format!(
+        "{name} — {}",
+        if has_options {
+            "Your thoughts"
+        } else {
+            "Your answer"
+        }
+    );
 
     let radios = has_options.then(|| {
         let offers: Vec<_> = options
@@ -2117,24 +2052,52 @@ fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
         <div class="ask">
             {asked_text(name, text_html)}
             {radios}
-            <label class="free-text" for=field.clone()>
-                {prompt}
-            </label>
-            <textarea
-                id=field.clone()
-                name=field
-                rows="2"
-                prop:value=move || live.free_text.get()
-                on:input:target=move |ev| live.free_text.set(ev.target().value())
-            ></textarea>
+            // The prompt is the placeholder rather than a label above the field:
+            // one line of small print per question, times five questions, was
+            // more of the page spent saying what a text box is for than reading
+            // the Questions. It is the `aria-label` as well, in the same words,
+            // because a placeholder is not a label — it is a hint the browser is
+            // free to leave unspoken, and a field with nothing else naming it
+            // would reach a screen reader unnamed.
+            //
+            // The wrapper carries the text a second time, where the stylesheet
+            // uses it to give the field its height — see `.grow`. It is the
+            // signal's own value, so a restored draft arrives at the right height
+            // rather than one line tall with the rest of it hidden.
+            <div class="grow" data-value=move || live.free_text.get()>
+                <textarea
+                    id=field.clone()
+                    name=field
+                    rows="1"
+                    placeholder=prompt.clone()
+                    aria-label=prompt
+                    prop:value=move || live.free_text.get()
+                    on:input:target=move |ev| live.free_text.set(ev.target().value())
+                ></textarea>
+            </div>
         </div>
     }
+}
+
+/// What a click on Option `n` leaves the Question holding, given what it held
+/// already: nothing, when the click landed on the Option that was already
+/// selected, and otherwise the Option clicked.
+///
+/// Clearing a Question is the one thing a radio group cannot do on its own — the
+/// browser has no gesture for un-picking one — and changing your mind about
+/// approving a Recommendation you have thought better of is exactly the case that
+/// wants it. A second click undoes the first, which is the only gesture there was
+/// left to give it.
+fn clicked(selected: Option<u32>, n: u32) -> Option<u32> {
+    (selected != Some(n)).then_some(n)
 }
 
 /// One Option on offer: a radio labelled by its number and text.
 ///
 /// The Recommendation is marked and never selected — nothing is selected on
-/// load, so an unread Recommendation cannot be submitted by accident.
+/// load, so an unread Recommendation cannot be submitted by accident. Clicking
+/// the selected Option clears it, which puts the Question back to unanswered and
+/// so back into the warning before submit.
 fn offered(group: String, option: OptionView, live: Fields) -> impl IntoView {
     let id = format!("{group}-{}", option.n);
     let n = option.n;
@@ -2164,7 +2127,20 @@ fn offered(group: String, option: OptionView, live: Fields) -> impl IntoView {
                     name=group
                     value=n.to_string()
                     prop:checked=move || live.selected.get() == Some(n)
+                    // Both, because they answer different gestures. An arrow key
+                    // moves the selection and fires a change without ever firing
+                    // a click; a click on the Option already selected is the
+                    // other way round — the browser fires no change, because as
+                    // far as it is concerned nothing changed. Space is a click
+                    // here too, which is what gives the keyboard the clearing.
+                    //
+                    // The click runs before the change, so it still sees what the
+                    // Question held before this gesture — which is the whole of
+                    // how a second click on the same Option is told from a first.
                     on:change=move |_| live.selected.set(Some(n))
+                    on:click=move |_| {
+                        live.selected.set(clicked(live.selected.get_untracked(), n));
+                    }
                 />
                 <span class="n">{n}</span>
                 <span class="option-text markdown" inner_html=option.text_html></span>
@@ -2435,8 +2411,8 @@ mod tests {
     use askance_schema::{Answer, Liveness, Response};
 
     use super::{
-        ARCHIVE_WARNING, AskView, Considered, DiffView, Draft, Filled, Mark, QuestionView, SetView,
-        Standing, Stands, Watched, accepting, anchor, answer_to, draft_key, drafted, lit, mark,
+        ARCHIVE_WARNING, AskView, DiffView, Draft, Filled, Mark, QuestionView, SetView, Standing,
+        Stands, Watched, anchor, answer_to, clicked, draft_key, drafted, lit, mark,
         nothing_answered, outline, restorable, shortened, spied, stands, submitted_when,
         unanswered,
     };
@@ -2494,18 +2470,6 @@ mod tests {
                 filled("Q2a", None, ""),
             ],
             comment: "back in an hour".to_owned(),
-        }
-    }
-
-    fn standing(
-        label: &str,
-        selected: Option<u32>,
-        free_text: &str,
-        recommended: Option<u32>,
-    ) -> Considered {
-        Considered {
-            filled: filled(label, selected, free_text),
-            recommended,
         }
     }
 
@@ -2593,6 +2557,31 @@ mod tests {
     }
 
     #[test]
+    fn clicking_the_selected_option_clears_the_question() {
+        assert_eq!(clicked(Some(2), 2), None);
+    }
+
+    #[test]
+    fn clicking_any_other_option_selects_it() {
+        assert_eq!(clicked(None, 2), Some(2), "the first click on a question");
+        assert_eq!(clicked(Some(1), 2), Some(2), "changing which one");
+    }
+
+    #[test]
+    fn a_cleared_question_is_open_again_and_warned_about() {
+        // Clearing is not a third state: it puts the Question back exactly where
+        // it was before anything was picked, warning and all.
+        let response = drafted(&[filled("Q1", clicked(Some(1), 1), "")], "");
+
+        assert!(response.answers[0].unanswered);
+        assert_eq!(
+            unanswered(&response, &["Q1".to_owned()]),
+            ["Q1"],
+            "an Option cleared is an Option not chosen, and the submit says so",
+        );
+    }
+
+    #[test]
     fn a_free_text_question_left_open_draws_no_warning() {
         let response = drafted(
             &[
@@ -2608,56 +2597,6 @@ mod tests {
             unanswered(&response, &choices),
             ["Q2"],
             "Q1 and Q3 offered no Options, so skipping them is not warned about",
-        );
-    }
-
-    #[test]
-    fn accept_all_fills_the_questions_nobody_has_touched() {
-        let questions = [
-            standing("Q1", None, "", Some(2)),
-            standing("Q2", Some(1), "", Some(2)),
-            standing("Q3", None, "the second one, but only for writes", Some(1)),
-            standing("Q4", None, "   ", Some(3)),
-        ];
-
-        assert_eq!(
-            accepting(&questions),
-            [(0, 2), (3, 3)],
-            "an Option or words is an answer and stands; whitespace is neither",
-        );
-    }
-
-    #[test]
-    fn a_question_with_no_recommendation_is_left_unanswered() {
-        let questions = [
-            standing("Q1", None, "", None),
-            standing("Q2", None, "", Some(1)),
-        ];
-
-        assert_eq!(
-            accepting(&questions),
-            [(1, 1)],
-            "with no ★ there is nothing to accept, and no Option to pick instead",
-        );
-    }
-
-    #[test]
-    fn pressing_accept_all_twice_does_nothing_the_second_time() {
-        let mut questions = vec![
-            standing("Q1", None, "", Some(2)),
-            standing("Q2", Some(1), "", Some(2)),
-            standing("Q3", None, "", None),
-        ];
-
-        let first = accepting(&questions);
-        assert_eq!(first, [(0, 2)]);
-        for (index, n) in first {
-            questions[index].filled.selected = Some(n);
-        }
-
-        assert!(
-            accepting(&questions).is_empty(),
-            "the first press answered everything it names, so a second finds nothing",
         );
     }
 
