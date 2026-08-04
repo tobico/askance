@@ -519,58 +519,29 @@ fn restorable(body: &str, labels: &[&str]) -> Option<Draft> {
     (drafted == labels).then_some(draft)
 }
 
-/// The browser's `localStorage`, or `None` when there is none to be had — a
-/// browser that blocks it, or one that has none at all.
-///
-/// Storage is a convenience the whole way down: `None` costs the human their
-/// drafts and nothing else, so nothing on this path is worth a panic.
-#[cfg(feature = "hydrate")]
-fn local_storage() -> Option<web_sys::Storage> {
-    web_sys::window()?.local_storage().ok().flatten()
-}
-
 /// The draft being held under this key, if there is one.
-#[cfg(feature = "hydrate")]
+///
+/// Under `ssr` there is nowhere for one to be held, so this is `None` and the
+/// server renders the Set as the agent sent it — which is what hydration then
+/// has to find waiting for it. The effects that keep a draft only ever run in a
+/// browser, so the server half never writes one either.
 fn stored_draft(key: &str) -> Option<String> {
-    local_storage()?.get_item(key).ok().flatten()
+    crate::device::read(key)
 }
 
 /// Write the draft out, replacing whatever was under the key.
-#[cfg(feature = "hydrate")]
 fn store_draft(key: &str, draft: &Draft) {
-    let Some(storage) = local_storage() else {
-        return;
-    };
     let Ok(body) = serde_json::to_string(draft) else {
         return;
     };
 
-    // Full, or refused: the draft is gone, and the page carries on regardless.
-    let _ = storage.set_item(key, &body);
+    crate::device::write(key, &body);
 }
 
 /// Drop the draft under this key.
-#[cfg(feature = "hydrate")]
 fn clear_draft(key: &str) {
-    if let Some(storage) = local_storage() {
-        let _ = storage.remove_item(key);
-    }
+    crate::device::forget(key);
 }
-
-// Under `ssr` there is no browser and so no draft: the server renders the Set as
-// the agent sent it, which is what hydration then has to find waiting for it.
-// The effects that keep a draft only ever run in a browser, so these three stand
-// in for storage the server half has no way to reach and no reason to.
-#[cfg(not(feature = "hydrate"))]
-fn stored_draft(_key: &str) -> Option<String> {
-    None
-}
-
-#[cfg(not(feature = "hydrate"))]
-fn store_draft(_key: &str, _draft: &Draft) {}
-
-#[cfg(not(feature = "hydrate"))]
-fn clear_draft(_key: &str) {}
 
 /// One question as the page holds on to it: the name it answers to, whether it
 /// offered Options, and the fields the human fills.
@@ -1554,20 +1525,49 @@ fn sheet(set: SetView) -> impl IntoView {
             })}
         // Between the Preface and the Questions: the Preface says what the
         // agent is asking about, and the Diff is the evidence for it.
-        {set
-            .diff
-            .map(|diff| {
-                view! {
-                    <section class="diff" id="diff">
-                        <h2 class="section-heading">"Diff"</h2>
-                        // The per-file anchors — `diff-1`, `diff-2`, … — are
-                        // stamped by the renderer, since this arrives already
-                        // rendered.
-                        <div class="diff-files" inner_html=diff.html></div>
-                    </section>
-                }
-            })}
+        {set.diff.map(diff_section)}
         {body}
+    }
+}
+
+/// The attached Diff, and the one setting that governs how it is read.
+///
+/// The wrap switch sits beside the heading rather than in a settings page
+/// somewhere, because this is the only place its answer is visible — and it
+/// governs every Diff, not this one, which is why it is remembered on the device
+/// instead of per Set.
+///
+/// Wrapping is a class and nothing more: the Diff arrives as HTML the server
+/// already rendered, so there is nothing here to render again and the stylesheet
+/// is the whole of the change. The server has no way to know what this device
+/// last chose, so the first paint is always unwrapped and settles a frame later
+/// — a reflow, and one the alternative costs a script in the document head to
+/// avoid.
+fn diff_section(diff: DiffView) -> impl IntoView {
+    let wrapped = RwSignal::new(false);
+
+    // The browser's alone, like the drafts: an effect never runs during SSR, so
+    // the server draws the Diff unwrapped and only an open page asks the device
+    // what it wanted.
+    Effect::new(move |_| wrapped.set(crate::device::wrapping()));
+
+    view! {
+        <section class=move || if wrapped.get() { "diff wrapped" } else { "diff" } id="diff">
+            <div class="section-head">
+                <h2 class="section-heading">"Diff"</h2>
+                <crate::switch::Switch
+                    label="Word wrap"
+                    on=wrapped
+                    flip=move |on| {
+                        wrapped.set(on);
+                        crate::device::set_wrapping(on);
+                    }
+                />
+            </div>
+            // The per-file anchors — `diff-1`, `diff-2`, … — are stamped by the
+            // renderer, since this arrives already rendered.
+            <div class="diff-files" inner_html=diff.html></div>
+        </section>
     }
 }
 

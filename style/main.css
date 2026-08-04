@@ -496,6 +496,98 @@ p.meta .branch {
   font-size: 0.8rem;
 }
 
+/* The one on/off control, wherever a device setting is offered: the words, and
+   the switch hard right so that two of them on different pages line up down the
+   same edge.
+
+   The checkbox is repainted rather than replaced — `appearance: none` takes the
+   browser's box away and leaves everything else about it, so the keyboard, the
+   label association and the focus ring all still belong to the browser. */
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.switch input {
+  appearance: none;
+  flex: none;
+  margin: 0;
+  /* The track. Sized in rem rather than em so that the switch is the same size
+     beside a heading as it is beside small print. */
+  width: 2.2rem;
+  height: 1.3rem;
+  padding: 0.15rem;
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: 1rem;
+  cursor: inherit;
+  /* The knob is the box's own text, laid out by the track: `flex` puts it at
+     whichever end `justify-content` says, and that is the whole animation. */
+  display: flex;
+  justify-content: flex-start;
+}
+
+.switch input::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  background: var(--ink-soft);
+  border-radius: 50%;
+}
+
+.switch input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  justify-content: flex-end;
+}
+
+.switch input:checked::before {
+  background: var(--paper);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .switch input {
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .switch input::before {
+    transition: background 0.15s ease;
+  }
+}
+
+.switch input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A switch waiting on something says where it stands and will not be flipped
+   again until it gets there — so it is dimmed rather than redrawn, and the
+   cursor says the wait is the reason. */
+.switch:has(input:disabled) {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.switch input:disabled {
+  cursor: default;
+}
+
+/* A section heading with a control on the other end of its line. The heading
+   keeps its own margin, so the row is only the arrangement. */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
 /* The quiet headings naming the page's sections, so a jump from the table of
    contents lands somewhere the reader can see they have arrived at. Under the
    title rather than beside it: they are signposts, not the ask. */
@@ -811,12 +903,21 @@ p.meta .branch {
    Neither cell is part of what a selection picks up, so a hunk copied off the
    page comes out as code to paste into an editor rather than as a patch. */
 
+/* Named on the file rather than measured twice, because the wrap rules below
+   have to indent by exactly the width of these two and a drift between them
+   would show as code that does not line up with itself. */
+.diff-file {
+  /* As many digits as this file's highest line number needs — set per file by
+     the renderer, since a forty-line file should not carry a column cut for a
+     long one — plus the gutter either side of them. */
+  --diff-number-width: calc(var(--diff-digits, 3) * 1ch + 1.2rem);
+  --diff-marker-width: calc(1ch + 0.5rem);
+  --diff-gutter: calc(var(--diff-number-width) + var(--diff-marker-width));
+}
+
 .diff-number {
   display: inline-block;
-  /* As many digits as this file's highest line number needs — set per file, since
-     a forty-line file should not carry a column cut for a long one — plus the
-     gutter either side of them. */
-  width: calc(var(--diff-digits, 3) * 1ch + 1.2rem);
+  width: var(--diff-number-width);
   padding: 0 0.6rem;
   text-align: right;
   color: var(--ink-soft);
@@ -825,7 +926,7 @@ p.meta .branch {
 
 .diff-line .marker {
   display: inline-block;
-  width: calc(1ch + 0.5rem);
+  width: var(--diff-marker-width);
   padding-right: 0.5rem;
   color: var(--ink-soft);
   user-select: none;
@@ -852,6 +953,43 @@ p.meta .branch {
 .diff-line.aside {
   color: var(--ink-soft);
   font-style: italic;
+}
+
+/* Word wrap, remembered per device and switched on beside the heading. It undoes
+   the three rules that hold a hunk on one line: the `pre`'s own `white-space`,
+   the box measured to the longest line, and — because a wrapped line has to
+   break somewhere — the browser's refusal to break inside a long word, which
+   here is a minified line or a URL that would otherwise still overflow.
+
+   Nothing about the colouring changes: the wash is on the line, and a line that
+   is three rows tall is washed three rows deep. */
+
+.diff.wrapped .diff-lines {
+  /* Nothing left to scroll to, so the box stops offering. */
+  overflow-x: visible;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff.wrapped .diff-lines > code {
+  width: auto;
+}
+
+/* Hung off the code column: the padding holds every row of the line clear of the
+   two cells, and the negative indent pulls the first row — the one those cells
+   are actually in — back out to the edge again. The remainder of a wrapped line
+   then starts under the code above it rather than under the line numbers. */
+.diff.wrapped .diff-line {
+  padding-left: var(--diff-gutter);
+  text-indent: calc(-1 * var(--diff-gutter));
+}
+
+/* `text-indent` is inherited and an inline-block is a block container of its own,
+   so without this the two cells would each pull their own contents out to the
+   left along with the line. */
+.diff.wrapped .diff-number,
+.diff.wrapped .diff-line .marker {
+  text-indent: 0;
 }
 
 /* Token colouring, on top of the +/- wash. The classes are syntect's scope

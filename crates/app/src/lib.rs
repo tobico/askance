@@ -12,9 +12,11 @@ use leptos_router::components::{Route, Router, Routes};
 use leptos_router::{ParamSegment, SsrMode, StaticSegment};
 
 pub mod archive;
+pub mod device;
 pub mod pending;
 pub mod push;
 pub mod set_view;
+pub mod switch;
 
 // The agent's markdown and the Diff are rendered before they leave the server,
 // so neither parser belongs to the browser half.
