@@ -15,6 +15,6 @@ picture of the delta pays off most.
 
 - [x] 01: Mermaid fence fallback — [details](01-mermaid-fence-fallback.md)
 - [x] 02: Diagram rendering — [details](02-diagram-rendering.md)
-- [ ] 03: Theme and fit — [details](03-theme-and-fit.md)
+- [x] 03: Theme and fit — [details](03-theme-and-fit.md)
 - [ ] 04: Semantic palette — [details](04-semantic-palette.md)
 - [ ] 05: Grammar guidance — [details](05-grammar-guidance.md)

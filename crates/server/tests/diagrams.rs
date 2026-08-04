@@ -9,6 +9,12 @@
 //! security level, and no pass of mermaid's own replacing a diagram that will not
 //! draw with a graphic saying so.
 //!
+//! The same goes for how a drawn Diagram looks: a browser is the only thing that
+//! can say whether it reads well, so what is checked here is that the decisions
+//! it reads well by are still written down — the theme taken from the
+//! stylesheet's own variables, the redraw when the colour scheme flips, and the
+//! two rules in the stylesheet that fit a diagram to a phone and hold it still.
+//!
 //! Which pages name them at all is `set_page.rs`'s business.
 
 use std::fs;
@@ -72,6 +78,38 @@ async fn served(path: &str) -> Vec<u8> {
     assert!(!body.is_empty(), "{path} came back empty");
 
     body.to_vec()
+}
+
+/// The stylesheet, which is where everything about a drawn Diagram that is not
+/// mermaid's business is decided.
+fn stylesheet() -> String {
+    fs::read_to_string(workspace_root().join("style/main.css")).unwrap()
+}
+
+/// The braces-matched block a selector or an at-rule opens, so a test can say
+/// what belongs inside one rather than anywhere in the file. Nested blocks come
+/// along with it, which is what makes this work on a media query.
+fn block(css: &str, opener: &str) -> String {
+    let from = css
+        .find(opener)
+        .unwrap_or_else(|| panic!("the stylesheet should have a `{opener}` rule"));
+    let inside = &css[from + opener.len()..];
+
+    let mut depth = 0usize;
+    for (at, c) in inside.char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return inside[..at].to_owned();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    panic!("`{opener}` is never closed");
 }
 
 /// The version `tools/update-mermaid.sh` pins, which is what the committed
@@ -141,5 +179,91 @@ fn the_renderer_lets_mermaid_draw_nothing_for_a_diagram_that_will_not_draw() {
     assert!(
         script.contains("suppressErrorRendering: true"),
         "the renderer should stop mermaid drawing its own error graphic",
+    );
+}
+
+#[test]
+fn the_renderer_themes_a_diagram_from_the_stylesheet_s_own_variables() {
+    let script = fs::read_to_string(assets().join("diagrams.js")).unwrap();
+
+    // `base` is the one mermaid theme that is all overrides: every other one
+    // brings a palette of its own, which is a second palette on the page.
+    assert!(
+        script.contains(r#"theme: "base""#),
+        "the renderer should draw on mermaid's base theme",
+    );
+
+    // And the overrides are read off the document rather than written out again
+    // here, so the diagram cannot drift from the page it sits on — including in
+    // the dark scheme, which the stylesheet is the only thing that knows about.
+    assert!(
+        script.contains("getComputedStyle(document.documentElement)"),
+        "the renderer should read its colours off the document",
+    );
+
+    let css = stylesheet();
+    for property in ["--ink", "--card", "--edge", "--hunk"] {
+        assert!(
+            script.contains(property),
+            "the renderer should theme from {property}",
+        );
+        assert!(
+            css.contains(&format!("{property}:")),
+            "{property} should be a variable the stylesheet defines",
+        );
+    }
+}
+
+#[test]
+fn the_renderer_redraws_a_diagram_when_the_colour_scheme_flips() {
+    let script = fs::read_to_string(assets().join("diagrams.js")).unwrap();
+
+    // The page themes by `prefers-color-scheme` alone, so a flip mid-session is
+    // the browser's to announce and not a reload. Mermaid takes its theme at
+    // init and bakes it into the SVG it hands back, so the only way to follow a
+    // flip is to draw the diagram again.
+    assert!(
+        script.contains("prefers-color-scheme") && script.contains("matchMedia"),
+        "the renderer should watch for the colour scheme flipping",
+    );
+
+    // Which needs the source the block was holding, and the block is gone by
+    // then — replaced by the drawing.
+    assert!(
+        script.contains("drawn.push") || script.contains("drawn = []"),
+        "the renderer should keep what it drew each diagram from",
+    );
+}
+
+#[test]
+fn a_drawn_diagram_fits_the_width_it_is_given() {
+    let svg = block(&stylesheet(), ".markdown .diagram svg");
+
+    // At a glance means the whole shape at once, so a diagram too wide for a
+    // phone scales down to fit rather than scrolling sideways inside a box —
+    // and never widens the page, which is the failure a viewport this narrow
+    // shows first.
+    assert!(
+        svg.contains("max-width: 100%"),
+        "a drawn diagram should scale down to its container: {svg}",
+    );
+    // The height follows the width, which it only does if the height mermaid
+    // wrote onto the SVG is overridden.
+    assert!(
+        svg.contains("height: auto"),
+        "a scaled diagram should keep its proportions: {svg}",
+    );
+}
+
+#[test]
+fn a_drawn_diagram_holds_still_for_anyone_who_asked_it_to() {
+    let reduced = block(&stylesheet(), "@media (prefers-reduced-motion: reduce)");
+
+    // A mermaid diagram can ask for animated edges, and the animation arrives
+    // inside the SVG in a stylesheet of mermaid's own — so this is the one place
+    // in the file where turning something off has to out-rank an author.
+    assert!(
+        reduced.contains(".diagram") && reduced.contains("animation: none !important"),
+        "a drawn diagram should not animate under reduced motion: {reduced}",
     );
 }

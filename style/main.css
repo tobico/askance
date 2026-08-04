@@ -909,6 +909,42 @@ p.meta .branch {
   font: inherit;
 }
 
+/* A Diagram that has rendered: the `div` `diagrams.js` puts in place of the
+   source block once mermaid has drawn it. Nothing is drawn around it — no wash
+   and no box, unlike the `pre` it replaced — because mermaid draws its own shapes
+   on this stylesheet's own palette, and a box around them would be a second box
+   inside the card. The room it takes is a fenced block's, so a Diagram and a code
+   block sit the same distance out of the prose around them. */
+.markdown .diagram {
+  margin: 1rem 0;
+}
+
+/* Whatever width mermaid measured the diagram at, it fits the width it is given
+   here. Mermaid writes the measurement onto the SVG as `width` and `height`
+   attributes, which are presentational and so out-ranked by any rule at all;
+   what it writes beside them is the `viewBox` that scales the drawing to
+   whatever the element ends up being. Fitting rather than scrolling inside a box:
+   a Diagram is for taking in at a glance, so the whole shape has to be visible
+   at once, and keeping one small enough to still be legible at phone width is
+   the authoring side's problem rather than something viewer chrome can fix. */
+.markdown .diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+/* A mermaid diagram can ask for animated edges, and the animation arrives inside
+   the SVG in a `style` element of mermaid's own — an author stylesheet like this
+   one, and a later one, so this is the one rule in the file that has to shout to
+   be heard. Everything else about a drawn diagram holds still on its own. */
+@media (prefers-reduced-motion: reduce) {
+  .markdown .diagram svg,
+  .markdown .diagram svg * {
+    animation: none !important;
+  }
+}
+
 /* A table wide enough to widen the page scrolls inside itself instead: `display:
    block` moves the scroll box onto the element and leaves the rows to lay
    themselves out in the table box it generates inside. */
