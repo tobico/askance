@@ -192,6 +192,24 @@ async fn set_page(pool: &SqlitePool, set: &QuestionSet) -> String {
     html
 }
 
+/// The set view of a Set the human closed unanswered: the third standing the
+/// page is drawn in, and the one with no Response behind it.
+async fn archived_set_page(pool: &SqlitePool, set: &QuestionSet) -> String {
+    let stored = store::insert_set(pool, set).await.unwrap();
+    let archiving = store::archive_set(pool, &store::Settlements::new(1), stored.id)
+        .await
+        .unwrap();
+    assert!(
+        matches!(archiving, store::Archiving::Archived(_)),
+        "a freshly stored Set archives unanswered: {archiving:?}"
+    );
+
+    let (status, html) = page(pool, &format!("/sets/{}", stored.id)).await;
+
+    assert_eq!(status, StatusCode::OK);
+    html
+}
+
 /// The set view of a Set that has already been answered, and the time its
 /// Response landed.
 ///
@@ -482,7 +500,7 @@ async fn a_set_with_no_preface_shows_no_preface_section() {
     let html = set_page(&pool, &set).await;
 
     assert!(
-        !html.contains(r#"<section class="preface">"#),
+        !html.contains(r#"class="preface""#),
         "an empty Preface is the same as none:\n{html}"
     );
 }
@@ -496,7 +514,7 @@ async fn the_attached_diff_is_rendered_per_file() {
     let html = set_page(&pool, &set).await;
 
     assert!(
-        html.contains(r#"<section class="diff">"#),
+        html.contains(r#"class="diff""#),
         "expected the diff section:\n{html}"
     );
     for path in ["src/limits.rs", "notes.txt"] {
@@ -529,7 +547,7 @@ async fn a_set_with_no_diff_shows_no_diff_section() {
     let html = set_page(&pool, &set).await;
 
     assert!(
-        !html.contains(r#"<section class="diff">"#),
+        !html.contains(r#"class="diff""#),
         "with no Diff attached there is no section to draw:\n{html}"
     );
 }
@@ -546,12 +564,25 @@ async fn an_answered_set_offers_nothing_to_press() {
         html.contains(r#"class="questions decided""#),
         "expected the answered Set's questions:\n{html}"
     );
-    for absent in ["<input", "<textarea", "<button", "accept-all"] {
+    for absent in ["<input", "<textarea", "accept-all"] {
         assert!(
             !html.contains(absent),
             "a Set is answered once, so {absent} has no business on the page:\n{html}"
         );
     }
+
+    // The nav's bar is a button, and the only one an answered Set has: it is a way
+    // around the record rather than anything that acts on it. Counted rather than
+    // excused, so a button that does act on the Set still fails this.
+    assert_eq!(
+        html.matches("<button").count(),
+        1,
+        "expected the nav's bar and nothing else to press:\n{html}"
+    );
+    assert!(
+        html.contains(r#"class="contents-bar""#),
+        "and that one button to be the nav's:\n{html}"
+    );
 }
 
 #[tokio::test]
@@ -712,6 +743,416 @@ async fn the_way_back_out_of_a_set_is_the_list_it_is_on() {
         answered.contains(r#"href="/archive""#) && answered.contains("← Archive"),
         "an answered Set is off the pending list and in the Archive:\n{answered}"
     );
+}
+
+#[tokio::test]
+async fn every_section_file_and_question_is_addressable_in_the_rendered_page() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let html = set_page(&pool, &set).await;
+
+    // The ids are in the page the server writes, so a hash deep-link lands
+    // before any script has run.
+    for id in ["preface", "diff", "diff-1", "diff-2", "q1", "q2", "q3"] {
+        assert!(
+            html.contains(&format!(r#"id="{id}""#)),
+            "expected #{id} anchored server-side:\n{html}"
+        );
+    }
+    assert!(
+        !html.contains(r#"id="q2a""#),
+        "a Sub-question scrolls with its parent and needs no anchor of its own:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn each_question_anchor_sits_on_the_question_it_names() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &full_grammar_set()).await;
+
+    let at = html.find(r#"id="q3""#).unwrap();
+    assert!(
+        html[at..].contains("Anything I should know before starting?"),
+        "expected #q3 to open the Question labelled Q3:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn the_preface_and_the_questions_are_named_by_headings_on_every_standing() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let waiting = set_page(&pool, &set).await;
+    let (answered, _) = answered_set_page(&pool, &set, &decided_every_way()).await;
+    let archived = archived_set_page(&pool, &set).await;
+
+    for (standing, html) in [
+        ("waiting", &waiting),
+        ("answered", &answered),
+        ("archived unanswered", &archived),
+    ] {
+        // Named so a jump from the table of contents lands somewhere the reader
+        // can see they have arrived at, and quiet enough not to shout over the
+        // title — the same heading the Diff already had.
+        for heading in ["Preface", "Questions", "Diff"] {
+            assert!(
+                html.contains(&format!(r#"class="section-heading">{heading}</h2>"#)),
+                "expected the {heading} heading on a {standing} Set:\n{html}"
+            );
+        }
+        for id in ["preface", "diff", "diff-1", "questions", "q1"] {
+            assert!(
+                html.contains(&format!(r#"id="{id}""#)),
+                "expected #{id} on a {standing} Set:\n{html}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_section_the_set_does_not_have_gets_no_heading_and_no_anchor() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.preface = Some("   \n".to_owned());
+    assert!(set.diff.is_none(), "and no Diff either");
+
+    let html = set_page(&pool, &set).await;
+
+    for absent in [r#"id="preface""#, r#"id="diff""#, r#"id="diff-1""#] {
+        assert!(
+            !html.contains(absent),
+            "there is no section for {absent} to anchor:\n{html}"
+        );
+    }
+    for heading in ["Preface", "Diff"] {
+        assert!(
+            !html.contains(&format!(r#"class="section-heading">{heading}</h2>"#)),
+            "with no {heading} there is no heading to draw:\n{html}"
+        );
+    }
+    assert!(
+        html.contains(r#"id="questions""#),
+        "the Questions are the one section every Set has:\n{html}"
+    );
+}
+
+/// The table of contents as the server writes it — which is what a reader has
+/// before any script has run, and what hydration then takes over.
+fn table_of_contents(html: &str) -> String {
+    let at = html
+        .find("<nav")
+        .unwrap_or_else(|| panic!("expected a table of contents in the page:\n{html}"));
+    let closes = html[at..]
+        .find("</nav>")
+        .unwrap_or_else(|| panic!("expected the nav to close:\n{html}"));
+
+    html[at..at + closes].to_owned()
+}
+
+#[tokio::test]
+async fn the_table_of_contents_mirrors_the_page_top_to_bottom() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    let jumps = positions(
+        &contents,
+        &[
+            r##"href="#preface""##,
+            r##"href="#diff""##,
+            r##"href="#diff-1""##,
+            r##"href="#diff-2""##,
+            r##"href="#questions""##,
+            r##"href="#q1""##,
+            r##"href="#q2""##,
+            r##"href="#q3""##,
+        ],
+    );
+    let mut ordered = jumps.clone();
+    ordered.sort_unstable();
+    assert_eq!(
+        jumps, ordered,
+        "the nav lists the sections in the order the page has them:\n{contents}"
+    );
+
+    assert!(
+        !contents.contains(r##"href="#q2a""##),
+        "a Sub-question scrolls into view with its parent, so it is not listed \
+         separately:\n{contents}"
+    );
+    assert!(
+        contents.contains("Where should the request counter live?"),
+        "a Question is listed by its label and its own words:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn the_contents_names_the_diff_files_in_diff_order() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    // The paths travel with the Set rather than being read back out of the
+    // rendered Diff, and the nth of them has to be what the nth fold shows —
+    // `#diff-1` is the file the Diff names first.
+    let first = positions(&contents, &[r##"href="#diff-1""##])[0];
+    let second = positions(&contents, &[r##"href="#diff-2""##])[0];
+
+    assert!(
+        contents[first..second].contains("src/limits.rs"),
+        "expected the Diff's first file under #diff-1:\n{contents}"
+    );
+    assert!(
+        contents[second..].contains("notes.txt"),
+        "expected the Diff's second file under #diff-2:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn the_contents_lists_only_the_sections_the_set_has() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.preface = Some("   \n".to_owned());
+    assert!(set.diff.is_none(), "and no Diff either");
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    for absent in [r##"href="#preface""##, r##"href="#diff""##] {
+        assert!(
+            !contents.contains(absent),
+            "there is no such section to jump to: {absent}\n{contents}"
+        );
+    }
+    assert!(
+        contents.contains(r##"href="#questions""##) && contents.contains(r##"href="#q1""##),
+        "the Questions are the one section every Set has:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn every_standing_gets_a_table_of_contents() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let waiting = set_page(&pool, &set).await;
+    let (answered, _) = answered_set_page(&pool, &set, &decided_every_way()).await;
+    let archived = archived_set_page(&pool, &set).await;
+
+    for (standing, html) in [
+        ("waiting", &waiting),
+        ("answered", &answered),
+        ("archived unanswered", &archived),
+    ] {
+        let contents = table_of_contents(html);
+
+        for jump in [
+            r##"href="#preface""##,
+            r##"href="#diff-1""##,
+            r##"href="#questions""##,
+            r##"href="#q1""##,
+        ] {
+            assert!(
+                contents.contains(jump),
+                "expected {jump} on a {standing} Set — a Set is read for what it \
+                 asked about however it stands:\n{contents}"
+            );
+        }
+    }
+}
+
+/// Where the nav says the reader is: the jump the highlighted line points at.
+///
+/// Read off the rendered nav rather than from a class list, because what the
+/// highlight is worth is which part of the page it names.
+fn highlighted(contents: &str) -> String {
+    let lit = contents
+        .find("contents-here")
+        .unwrap_or_else(|| panic!("expected a highlighted line in the nav:\n{contents}"));
+
+    // Back to the start of the line's own tag, since the class is written after
+    // the href it carries.
+    let opens = contents[..lit]
+        .rfind("<a ")
+        .unwrap_or_else(|| panic!("expected the highlight on a link:\n{contents}"));
+
+    let jump = r##"href="#"##;
+    let at = contents[opens..lit]
+        .find(jump)
+        .unwrap_or_else(|| panic!("expected the highlighted line to jump somewhere:\n{contents}"));
+
+    let from = opens + at + jump.len();
+    let closes = contents[from..].find('"').expect("an attribute closes");
+
+    contents[from..from + closes].to_owned()
+}
+
+#[tokio::test]
+async fn the_first_section_is_highlighted_before_any_script_has_run() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    assert_eq!(
+        highlighted(&contents),
+        "preface",
+        "a page nobody has scrolled reads as being at the top of it, so the nav \
+         the server writes is already right and the scroll-spy has nothing to \
+         correct when the wasm arrives",
+    );
+    assert_eq!(
+        contents.matches("contents-here").count(),
+        1,
+        "exactly one line is ever the highlight:\n{contents}"
+    );
+    assert_eq!(
+        contents.matches("contents-within").count(),
+        0,
+        "and the quiet mark is on the section the highlight is inside, so at the \
+         top of the page there is none:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn the_highlight_starts_on_whatever_section_the_set_starts_with() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.preface = None;
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    assert_eq!(
+        highlighted(&contents),
+        "diff",
+        "with no Preface the page opens on the Diff, and the first line of the \
+         nav is the Diff's",
+    );
+}
+
+/// The bar's own words: what the narrow-viewport reader sees before they open
+/// anything. Read as the rendered HTML of the bar's name rather than as text,
+/// because a Question's name is its label and its words in two faces — and
+/// because a reactive child arrives with hydration markers around it.
+fn bar_says(contents: &str) -> String {
+    let opens = r#"<span class="contents-bar-name"#;
+    let at = contents
+        .find(opens)
+        .unwrap_or_else(|| panic!("expected a bar naming the section in the nav:\n{contents}"));
+    let from = at + contents[at..].find('>').expect("the tag opens") + 1;
+    let closes = contents[from..]
+        .find("</span>")
+        .unwrap_or_else(|| panic!("expected the bar's name to close:\n{contents}"));
+
+    contents[from..from + closes].to_owned()
+}
+
+#[tokio::test]
+async fn the_bar_names_the_line_the_nav_has_highlighted() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    assert!(
+        bar_says(&contents).contains("Preface"),
+        "the bar reads out the line the nav has lit, and on a page nobody has \
+         scrolled that is the first of them:\n{contents}"
+    );
+    assert_eq!(
+        highlighted(&contents),
+        "preface",
+        "which is the same line the sidebar marks — one scroll-spy answers for both",
+    );
+}
+
+#[tokio::test]
+async fn the_bar_names_whatever_section_the_set_starts_with() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.preface = None;
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+    let says = bar_says(&contents);
+
+    assert!(
+        says.contains("Diff") && !says.contains("Preface"),
+        "with no Preface the page opens on the Diff, so that is what the bar \
+         names:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn the_bar_arrives_shut() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    assert!(
+        contents.contains(r#"aria-expanded="false""#),
+        "the list is down only once the reader asks for it:\n{contents}"
+    );
+    assert!(
+        !contents.contains("contents-open"),
+        "and nothing has opened it yet:\n{contents}"
+    );
+    assert!(
+        contents.contains(r##"href="#q1""##),
+        "the entries are in the page all the same — the same list the sidebar \
+         draws, so opening the bar has nothing to fetch and a hash link works \
+         before the wasm lands:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn the_bar_and_the_sidebar_are_the_one_nav_on_every_standing() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let waiting = set_page(&pool, &set).await;
+    let (answered, _) = answered_set_page(&pool, &set, &decided_every_way()).await;
+    let archived = archived_set_page(&pool, &set).await;
+
+    for (standing, html) in [
+        ("waiting", &waiting),
+        ("answered", &answered),
+        ("archived unanswered", &archived),
+    ] {
+        // One nav holding one bar and one list, so which of the bar and the
+        // sidebar the reader gets is the stylesheet's business at a width — and
+        // there is no second copy to fall out of step with the first.
+        assert_eq!(
+            html.matches("<nav").count(),
+            1,
+            "expected exactly one nav on a {standing} Set:\n{html}"
+        );
+        assert_eq!(
+            html.matches("contents-bar\"").count(),
+            1,
+            "expected exactly one bar on a {standing} Set:\n{html}"
+        );
+        assert_eq!(
+            html.matches(r#"class="contents-sections""#).count(),
+            1,
+            "and exactly one list for the two of them to share on a {standing} \
+             Set:\n{html}"
+        );
+    }
 }
 
 #[tokio::test]

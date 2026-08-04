@@ -323,13 +323,25 @@ async fn an_archived_sets_page_is_the_ask_kept_readable_with_nothing_to_press() 
             && html.contains("In Redis, shared across instances."),
         "expected the Questions and their Options still readable:\n{html}"
     );
-    for absent in ["<input", "<textarea", "<button", "accept-all"] {
+    for absent in ["<input", "<textarea", "accept-all"] {
         assert!(
             !html.contains(absent),
             "an archived Set can never be answered, so {absent} has no business \
              on the page:\n{html}"
         );
     }
+    // The nav's bar is a button, and the only one an archived Set has: a way
+    // around the record rather than anything that acts on it. Counted rather than
+    // excused, so a button that does act on the Set still fails this.
+    assert_eq!(
+        html.matches("<button").count(),
+        1,
+        "expected the nav's bar and nothing else to press:\n{html}"
+    );
+    assert!(
+        html.contains(r#"class="contents-bar""#),
+        "and that one button to be the nav's:\n{html}"
+    );
     assert!(
         !html.contains("the agent was told this one is still open"),
         "nobody was told anything: there was no Response to tell them with:\n{html}"

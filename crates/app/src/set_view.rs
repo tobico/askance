@@ -45,13 +45,29 @@ pub struct SetView {
     pub project: Option<String>,
     pub branch: Option<String>,
     pub preface_html: Option<String>,
-    pub diff_html: Option<String>,
+    pub diff: Option<DiffView>,
     pub questions: Vec<Question>,
 
     /// Where the Set stands. It decides whether this page is a form or a record,
     /// so it travels with the Set rather than being fetched once the page is
     /// already up.
     pub standing: Standing,
+}
+
+/// The Diff as the browser receives it: the HTML the server rendered, and the
+/// path of each file in it, in Diff order — `paths[0]` is what `#diff-1` shows.
+///
+/// The two travel together rather than as two fields on the Set, because they
+/// describe the same thing and the table of contents is built from both: the
+/// nav names the folds from the paths and jumps by their positions, so a nav
+/// out of step with the markup would jump to the wrong file. Reading the paths
+/// back out of the rendered HTML instead would mean shipping a parser to do it
+/// with, and would make the nav a description of the page rather than of the
+/// Set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiffView {
+    pub html: String,
+    pub paths: Vec<String>,
 }
 
 /// How a Set stands: still waiting on the human, answered, or closed unanswered.
@@ -132,7 +148,7 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
         // A Diff with no files in it is the same as none: the CLI attaches one
         // only when the tree is dirty, but an empty patch is not worth a
         // heading either.
-        diff_html: stored.set.diff.as_deref().and_then(crate::diff::to_html),
+        diff: stored.set.diff.as_deref().and_then(crate::diff::to_html),
         questions: stored.set.questions,
         standing,
     }))
@@ -512,6 +528,825 @@ fn unanswered(response: &Response, multiple_choice: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// The heading naming the Questions, and the anchor they are reached by.
+///
+/// The one section every Set has, so unlike the Preface and the Diff it is drawn
+/// unconditionally — and drawn the same way whether the Set is being answered or
+/// read back. The id sits on the heading rather than on the list, so a jump
+/// lands on the name of the thing rather than just above its first row.
+fn questions_heading() -> impl IntoView {
+    view! { <h2 class="section-heading" id="questions">"Questions"</h2> }
+}
+
+/// The id a Question is reached by: its label, lowercased — `Q3` becomes `q3`,
+/// which is also what a human writing the link by hand would type.
+///
+/// A label is the agent's own string, and an id cannot hold everything a string
+/// can, so anything an id will not take becomes a hyphen; a label made of
+/// nothing else falls back to the Question's position. Labels are distinct
+/// across a Set and in practice they are `Q1`, `Q2`, …, so the fallback is for
+/// the pathological Set rather than the ordinary one.
+///
+/// Sub-questions get none: one scrolls into view with its parent.
+fn anchor(label: &str, position: usize) -> String {
+    let id: String = label
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | '0'..='9' | '-' | '_' => ch,
+            _ => '-',
+        })
+        .collect();
+
+    let id = id.trim_matches('-');
+    if id.is_empty() {
+        format!("q{position}")
+    } else {
+        id.to_owned()
+    }
+}
+
+/// How much of a file's path the table of contents has room for, in characters.
+///
+/// A count rather than a measurement: the paths are monospaced, so characters
+/// are what the column is made of — and a cut made here can land on a directory
+/// boundary, where one made by the column would land wherever the pixels ran
+/// out. The stylesheet still clips what overruns, for the narrow end of the
+/// range the nav is drawn across; this is what keeps the ordinary path legible.
+const PATH_ROOM: usize = 24;
+
+/// A file's path as the table of contents shows it: whole when it fits, and
+/// otherwise cut from the *left* — `crates/app/src/set_view.rs` becomes
+/// `…/app/src/set_view.rs`.
+///
+/// From the left because the end of a path is the part being looked for: a
+/// column of `crates/app/src/…` names nothing. The cut lands on a directory
+/// boundary so what is left is still a path, and only cuts into the filename
+/// itself when the filename alone is longer than the line — at which point
+/// something has to give, and the extension is worth more than the stem.
+fn shortened(path: &str) -> String {
+    if path.chars().count() <= PATH_ROOM {
+        return path.to_owned();
+    }
+
+    // What is left once the leading `…/` has taken its two.
+    let room = PATH_ROOM - 2;
+
+    // The first boundary whose tail fits is the one that keeps the most of the
+    // path.
+    let boundary = path
+        .char_indices()
+        .filter(|(_, ch)| *ch == '/')
+        .map(|(at, ch)| at + ch.len_utf8())
+        .find(|&start| path[start..].chars().count() <= room);
+
+    match boundary {
+        Some(start) => format!("…/{}", &path[start..]),
+        None => {
+            let cut = path
+                .char_indices()
+                .nth(path.chars().count() - (room + 1))
+                .map_or(0, |(at, _)| at);
+            format!("…{}", &path[cut..])
+        }
+    }
+}
+
+/// One line of the table of contents under a section heading: a file of the
+/// Diff, or a Question.
+struct Entry {
+    /// The id it jumps to, without the `#`.
+    anchor: String,
+
+    /// The name a Question answers to, kept apart from the words beside it so
+    /// it can be styled as the fixed thing it is. A file has none — its path is
+    /// the whole of what it is called.
+    label: Option<String>,
+
+    /// What the line reads as, already cut down to what will fit if it is a
+    /// path. A Question's words are left whole and cut by the column.
+    text: String,
+
+    /// The whole of it, for the browser's own tooltip: the nav is narrow, and
+    /// this is where the truncated line can be read out in full.
+    whole: String,
+}
+
+/// One section of the page in the table of contents: the heading it jumps to,
+/// and whatever the section is made of.
+struct Section {
+    anchor: &'static str,
+    name: &'static str,
+    entries: Vec<Entry>,
+}
+
+/// The shape of the table of contents: the page's sections top to bottom, each
+/// with its own parts under it.
+///
+/// Built from the Set the page was drawn from rather than from the page, so a
+/// section the Set does not have is a section the nav does not list — and so
+/// the nav is in the HTML the server writes, which means it is there to be read
+/// before hydration and its links work as plain hash links until then.
+///
+/// Kept apart from the drawing of it because the scroll-spy watches the same
+/// list: the nav and the spy have to agree about what the page is made of, or
+/// the highlight ends up on a line that is not where the reader is.
+fn outline(set: &SetView) -> Vec<Section> {
+    let mut sections: Vec<Section> = Vec::new();
+
+    if set.preface_html.is_some() {
+        sections.push(Section {
+            anchor: "preface",
+            name: "Preface",
+            entries: Vec::new(),
+        });
+    }
+
+    if let Some(diff) = &set.diff {
+        sections.push(Section {
+            anchor: "diff",
+            name: "Diff",
+            entries: diff
+                .paths
+                .iter()
+                .enumerate()
+                .map(|(index, path)| Entry {
+                    // The renderer counts the folds from one, and these are the
+                    // same folds in the same order.
+                    anchor: format!("diff-{}", index + 1),
+                    label: None,
+                    text: shortened(path),
+                    whole: path.clone(),
+                })
+                .collect(),
+        });
+    }
+
+    // Unconditional, like the heading it points at: every Set has Questions.
+    sections.push(Section {
+        anchor: "questions",
+        name: "Questions",
+        entries: set
+            .questions
+            .iter()
+            .enumerate()
+            .map(|(index, question)| Entry {
+                anchor: anchor(question.name(), index + 1),
+                label: Some(question.name().to_owned()),
+                text: question.text.clone(),
+                whole: format!("{} {}", question.name(), question.text),
+            })
+            .collect(),
+    });
+
+    // Sub-questions are not listed: one scrolls into view with its parent, and
+    // a nav that listed them would be the page again rather than a way around
+    // it.
+    sections
+}
+
+/// One anchored part of the page as the nav has it: the id the scroll-spy
+/// watches, and the name to put on it.
+///
+/// The name travels with the id because two things read it out — the sidebar's
+/// own line, and the bar, which says nothing but the name of the line the
+/// highlight is on. Kept as one list rather than as a list of ids beside a list
+/// of names, so the bar cannot name a different part of the page than the one
+/// the spy is pointing at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Watched {
+    /// The id it jumps to, without the `#`.
+    anchor: String,
+
+    /// The name a Question answers to, kept apart from the words beside it. A
+    /// section and a file have none.
+    label: Option<String>,
+
+    /// What the line reads as: a section's name, a path already cut to what will
+    /// fit, or a Question's words.
+    text: String,
+
+    /// The class that sets those words — see [`face`].
+    kind: &'static str,
+}
+
+/// The class that sets one line's words: a Question's label and prose in the
+/// page's own face, a file's path in the Diff's, so that a path in the nav and
+/// the same path over its fold read as the same name.
+///
+/// Taken from whether there is a label because that is what tells the two apart:
+/// a file's path is the whole of what it is called.
+fn face(label: Option<&str>) -> &'static str {
+    if label.is_some() {
+        "contents-question"
+    } else {
+        "contents-path"
+    }
+}
+
+/// Every anchored part of the page, in page order — the ids the scroll-spy
+/// watches, and what [`lit`]'s answer counts along.
+///
+/// Each section's own heading and then whatever is under it, which is the order
+/// the page has them in. The two levels do not fight over the highlight because
+/// [`lit`] takes the *last* part to have begun: a file always begins after the
+/// Diff heading it is under, so the file wins for as long as the reader is in it,
+/// and the heading only holds the highlight in the gap above the first file.
+fn spied(sections: &[Section]) -> Vec<Watched> {
+    sections
+        .iter()
+        .flat_map(|section| {
+            let heading = Watched {
+                anchor: section.anchor.to_owned(),
+                label: None,
+                text: section.name.to_owned(),
+                kind: "contents-section",
+            };
+
+            std::iter::once(heading).chain(section.entries.iter().map(|entry| Watched {
+                anchor: entry.anchor.clone(),
+                label: entry.label.clone(),
+                text: entry.text.clone(),
+                kind: face(entry.label.as_deref()),
+            }))
+        })
+        .collect()
+}
+
+/// Where this id sits among the parts the spy watches, if it is one of them.
+fn spot(watched: &[Watched], anchor: &str) -> Option<usize> {
+    watched.iter().position(|watched| watched.anchor == anchor)
+}
+
+/// What one line of the nav answers for, as places along the watched list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Stands {
+    /// The part of the page it names. The line is *the* highlight while the
+    /// reader is exactly here.
+    at: usize,
+
+    /// The last place under it: its own, unless it is a section with files or
+    /// Questions beneath it, and then the last of those. While the reader is
+    /// anywhere in between, the line says so quietly and leaves the highlight to
+    /// whichever of its entries they are actually in — so a file lit up reads as
+    /// being within the Diff without the two competing for the same mark.
+    through: usize,
+}
+
+impl Stands {
+    /// One part of the page with nothing under it: a file, or a Question.
+    fn just(at: usize) -> Self {
+        Self { at, through: at }
+    }
+}
+
+/// How the highlight touches one line of the nav.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mark {
+    /// The reader is at this very part of the page: this line is the highlight.
+    At,
+
+    /// They are somewhere inside it — a section drawn over the file or Question
+    /// they are actually in. Said quietly, so that it never competes with the
+    /// line that says where they are.
+    Within,
+}
+
+impl Mark {
+    /// The class that draws it.
+    fn class(self) -> &'static str {
+        match self {
+            Mark::At => "contents-here",
+            Mark::Within => "contents-within",
+        }
+    }
+}
+
+/// Which mark a line standing for these places carries while the reader is at
+/// `here`, and none when they are elsewhere in the page.
+///
+/// The two are exclusive by construction rather than by being drawn carefully:
+/// there is one mark per line and the loud one wins, so a section at its own
+/// heading is never quietly marked as containing itself.
+fn mark(stands: Option<Stands>, here: usize) -> Option<Mark> {
+    let stands = stands?;
+
+    if stands.at == here {
+        Some(Mark::At)
+    } else if (stands.at..=stands.through).contains(&here) {
+        Some(Mark::Within)
+    } else {
+        None
+    }
+}
+
+/// What the line naming this section answers for: its own heading, reaching down
+/// through the last of whatever is under it.
+fn stands(watched: &[Watched], section: &Section) -> Option<Stands> {
+    let at = spot(watched, section.anchor)?;
+    let through = section
+        .entries
+        .last()
+        .and_then(|last| spot(watched, &last.anchor))
+        .unwrap_or(at);
+
+    Some(Stands { at, through })
+}
+
+/// Which of the spied parts of the page the highlight belongs on, given which of
+/// them have started above the reading line.
+///
+/// The last one to have started. Their tops run down the page in this order, so
+/// the last one to have passed the line is the one whose text is under it — and
+/// asking it this way rather than as "the one across the line" means the answer
+/// never depends on where the reader came from, only on where the page is now.
+///
+/// With none begun, the line is still above the first of them, which is the top
+/// of the page: that counts as being in the first section, so the first line is
+/// the lit one. It is also the answer before the spy has run at all, which is
+/// what the server writes into the nav.
+fn lit(started: &[bool]) -> usize {
+    started.iter().rposition(|&started| started).unwrap_or(0)
+}
+
+/// What every line of the nav shares: where the reader is, and the two things
+/// about how they got there that a line has to be able to change.
+///
+/// Passed about as one because all three travel together — a press on a line
+/// moves the highlight, pins it, and puts the bar's list away, and the alternative
+/// is threading three arguments through every one of these functions.
+#[derive(Debug, Clone, Copy)]
+struct Nav {
+    /// Where the highlight is, as a place in the watched list.
+    here: RwSignal<usize>,
+
+    /// Whether the highlight is being held where a jump put it. Not reactive:
+    /// nothing is drawn from it — it only decides whether the spy is the one
+    /// saying where the reader is.
+    pinned: StoredValue<bool>,
+
+    /// Whether the bar's list is down. Nothing on a wide viewport reads it: the
+    /// sidebar's list is always there, so the bar is the only thing this opens.
+    open: RwSignal<bool>,
+}
+
+/// The table of contents, drawn from the Set and following the reader down it.
+///
+/// One nav for both of the shapes it takes: the sidebar in the wide margin, and
+/// the bar with the list under it below that width. The same entries, the same
+/// scroll-spy, and the same list of links in the HTML either way — which of the
+/// two the reader gets is the stylesheet's answer to how wide their window is,
+/// and there is no second copy to fall out of step with the first.
+///
+/// `use<>`: the nav is built from the Set here and keeps nothing of it, so it
+/// outlives the borrow.
+fn contents(set: &SetView) -> impl IntoView + use<> {
+    let sections = outline(set);
+    let watched = spied(&sections);
+
+    let nav = Nav {
+        // It starts where a page nobody has scrolled puts it, so the nav the
+        // server writes is already right and the spy has nothing to correct when
+        // it arrives.
+        here: RwSignal::new(lit(&[])),
+        pinned: StoredValue::new(false),
+        // Shut: the bar names where the reader is, and the list is what they ask
+        // for on top of that.
+        open: RwSignal::new(false),
+    };
+
+    let sections: Vec<_> = sections
+        .into_iter()
+        .map(|section| {
+            let stands = stands(&watched, &section);
+
+            let entries = (!section.entries.is_empty()).then(|| {
+                let entries: Vec<_> = section
+                    .entries
+                    .into_iter()
+                    .map(|line| {
+                        let stands = spot(&watched, &line.anchor).map(Stands::just);
+                        entry(line, nav, stands)
+                    })
+                    .collect();
+                view! { <ol class="contents-entries">{entries}</ol> }
+            });
+
+            view! {
+                <li class="contents-section">
+                    {link(section.anchor.to_owned(), None, section.name.to_owned(), None, nav, stands)}
+                    {entries}
+                </li>
+            }
+        })
+        .collect();
+
+    let bar = bar(watched.clone(), nav);
+
+    // Both only ever the browser's doing: on the server the highlight stays where
+    // a page nobody has scrolled puts it, and a list nothing can open needs
+    // nothing to close it.
+    follow(watched, nav);
+    dismiss(nav);
+
+    view! {
+        <nav
+            // Reactive whole, like the lines below: hydration re-applies a fixed
+            // `class` and would drop whatever it found there.
+            class=move || {
+                if nav.open.get() { "contents contents-open" } else { "contents" }
+            }
+            aria-label="On this page"
+        >
+            {bar}
+            // What a tap away from the open list lands on. It is here rather than
+            // as a listener watching for presses elsewhere so that the tap hits
+            // *this* and nothing else: a reader taking the list back is not also
+            // choosing an Option or folding a file, and on a page whose whole
+            // purpose is answering carefully, a stray tap that answers something
+            // is not a small thing. Hidden from assistive tech, which has Escape
+            // and the button's own state instead.
+            {move || {
+                nav.open
+                    .get()
+                    .then(|| {
+                        view! {
+                            <div
+                                class="contents-backdrop"
+                                aria-hidden="true"
+                                on:click=move |_| nav.open.set(false)
+                            ></div>
+                        }
+                    })
+            }}
+            <ol class="contents-sections" id="contents-list">
+                {sections}
+            </ol>
+        </nav>
+    }
+}
+
+/// The bar: on a narrow viewport, the whole of the nav until it is tapped.
+///
+/// It says one thing — the name of the line the sidebar would have lit — so the
+/// reader knows where they are without a margin to put a list in, and tapping it
+/// brings the list itself down. Not drawn at all where the sidebar is, which is
+/// the stylesheet's doing: there is only ever one of the two on screen.
+///
+/// A button rather than a `details`, because the list it opens is the same `ol`
+/// the sidebar shows and a closed `details` would have to hide that from the wide
+/// reader too. The cost is that the bar does nothing until the wasm lands; the
+/// entries are hash links, so the list itself works from the moment it is open.
+fn bar(watched: Vec<Watched>, nav: Nav) -> impl IntoView {
+    let name = move || {
+        // A place the watched list does not have cannot happen — `here` only
+        // ever holds one of them — but the bar is not worth a panic.
+        let named = watched.get(nav.here.get())?;
+
+        Some(view! {
+            <span class=format!("contents-bar-name {}", named.kind)>
+                {named
+                    .label
+                    .clone()
+                    .map(|label| view! { <span class="contents-label">{label}</span> })}
+                {named.text.clone()}
+            </span>
+        })
+    };
+
+    view! {
+        <button
+            type="button"
+            class="contents-bar"
+            // The bar's own words are its name — "Preface, button" — and the nav
+            // around it says what a list of them is for.
+            aria-expanded=move || if nav.open.get() { "true" } else { "false" }
+            aria-controls="contents-list"
+            on:click=move |_| nav.open.update(|open| *open = !*open)
+        >
+            {name}
+            // Which way the list will go, and no part of what the bar is called.
+            <span class="contents-bar-mark" aria-hidden="true">
+                "▾"
+            </span>
+        </button>
+    }
+}
+
+/// One nested line of the nav.
+fn entry(entry: Entry, nav: Nav, stands: Option<Stands>) -> impl IntoView {
+    // Prefixed like every other class here: `question` on its own is the page's
+    // own Question card, and a nav line is not one.
+    let kind = face(entry.label.as_deref());
+
+    view! {
+        <li class=format!("contents-entry {kind}")>
+            {link(entry.anchor, entry.label, entry.text, Some(entry.whole), nav, stands)}
+        </li>
+    }
+}
+
+/// The jump itself: an anchor to the id, which works as a plain hash link with
+/// no script at all, and which script — once there is any — takes over so the
+/// jump can unfold what it lands on and leave the history alone.
+///
+/// It is also where the highlight shows, from what this line [`Stands`] for: the
+/// mark when the reader is at it, and a quieter one on a section while they are
+/// somewhere inside it.
+fn link(
+    anchor: String,
+    label: Option<String>,
+    text: String,
+    whole: Option<String>,
+    nav: Nav,
+    stands: Option<Stands>,
+) -> impl IntoView {
+    let target = anchor.clone();
+
+    let mark = move || mark(stands, nav.here.get());
+
+    view! {
+        <a
+            // The whole class in one reactive attribute rather than a fixed one
+            // with reactive flags beside it: hydration re-applies a fixed `class`
+            // and would wipe the mark the server wrote, leaving the nav blank
+            // until the reader scrolled.
+            class=move || match mark() {
+                Some(mark) => format!("contents-link {}", mark.class()),
+                None => "contents-link".to_owned(),
+            }
+            // The nav is a list of places in this page and the highlight says
+            // which one the reader is at, which is what `location` means. Only
+            // the one line carries it — the section around it is not where they
+            // are, it is what they are in.
+            aria-current=move || (mark() == Some(Mark::At)).then_some("location")
+            href=format!("#{anchor}")
+            title=whole
+            on:click=move |ev: leptos::ev::MouseEvent| {
+                // Only the plain click: a modified one is the reader asking
+                // their browser for a tab or a window, which is the browser's
+                // business and not ours.
+                if ev.ctrl_key() || ev.meta_key() || ev.shift_key() || ev.alt_key() {
+                    return;
+                }
+                ev.prevent_default();
+                // The highlight goes where the reader asked to be, and is held
+                // there until they scroll for themselves: the page cannot always
+                // bring a section to the top — the last Question has only the
+                // submit below it — and the spy would otherwise answer for
+                // wherever the scroll ran out instead of for what was pressed.
+                if let Some(stands) = stands {
+                    nav.here.set(stands.at);
+                    nav.pinned.set_value(true);
+                }
+                // The list has done what it was opened for. On a wide viewport
+                // there was no list to put away — the sidebar stays whatever this
+                // says.
+                nav.open.set(false);
+                jump_to(&target);
+            }
+        >
+            {label.map(|label| view! { <span class="contents-label">{label}</span> })}
+            {text}
+        </a>
+    }
+}
+
+/// Take the reader to the section, file or Question this id names.
+///
+/// A folded file is unfolded before the jump: landing on a closed fold is
+/// landing on nothing. The scroll is the browser's own, so how it moves is the
+/// stylesheet's business — which is where `prefers-reduced-motion` is honoured.
+///
+/// The URL is set with `replaceState` rather than by letting the link navigate:
+/// the reader gets a hash they can copy or reload into, but moving around a page
+/// is not somewhere to come *back* to, and twenty jumps should not bury the
+/// list this Set was opened from twenty presses of Back away.
+#[cfg(feature = "hydrate")]
+fn jump_to(anchor: &str) {
+    use wasm_bindgen::JsCast;
+
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(target) = window
+        .document()
+        .and_then(|document| document.get_element_by_id(anchor))
+    else {
+        return;
+    };
+
+    if let Some(fold) = target.dyn_ref::<web_sys::HtmlDetailsElement>() {
+        fold.set_open(true);
+    }
+
+    target.scroll_into_view();
+
+    if let Ok(history) = window.history() {
+        let _ = history.replace_state_with_url(
+            &wasm_bindgen::JsValue::NULL,
+            "",
+            Some(&format!("#{anchor}")),
+        );
+    }
+}
+
+// The server draws the nav but never presses it: the handler is what hydration
+// brings, and until then the link is a hash link the browser follows by itself.
+#[cfg(not(feature = "hydrate"))]
+fn jump_to(_anchor: &str) {}
+
+/// Where the reading line sits, written as the margins the browser is to put
+/// around the window before it decides what is in view.
+///
+/// The bottom one lifts the line to a tenth of the way down the window: what is
+/// under it is what the reader has in front of them, and a section is "started"
+/// once its top has passed it. The top one reaches far above the window so that
+/// a section long scrolled past still counts as started — [`lit`] wants the last
+/// section to have started, and one that stopped counting from up there was not
+/// going to be the last. Far enough for any page this UI draws; a section that
+/// did fall out from above cannot be the answer either.
+#[cfg(feature = "hydrate")]
+const READING_LINE: &str = "100000px 0px -90% 0px";
+
+/// The reader taking the scroll back off a jump: the ways of moving a page that
+/// are the human's own rather than something the page did to itself.
+///
+/// A wheel, a finger or a key, and `pointerdown` for the scrollbar being taken
+/// hold of. A press on the nav itself is a `pointerdown` too, which is harmless:
+/// the click that follows it pins the highlight again straight after.
+#[cfg(feature = "hydrate")]
+const BY_HAND: [&str; 3] = ["wheel", "pointerdown", "keydown"];
+
+/// Follow the reader down the page: keep `here` on the last of `anchors` to have
+/// started above the reading line, which is the one whose text they have in
+/// front of them.
+///
+/// An IntersectionObserver rather than a scroll handler: the browser is the one
+/// that knows where everything is, it works this out off the main thread, and it
+/// speaks up only when the answer changes. How the page got there does not come
+/// into it either, so a reader who asked for no motion gets the highlight an
+/// instant jump earns just as a smooth one does — and nothing here touches the
+/// URL, because where the reader has scrolled to is not a place they navigated.
+///
+/// A jump holds the highlight where it landed until the reader scrolls by hand,
+/// and letting go of it puts the highlight straight back on wherever the page
+/// actually is — which is why what has started is kept out here, where both the
+/// observer and the release can read it.
+///
+/// The observer is disconnected when the page goes and its callback dropped after
+/// that, in that order: an observer still watching a callback that had been freed
+/// is a panic waiting for the next scroll.
+#[cfg(feature = "hydrate")]
+fn follow(anchors: Vec<Watched>, nav: Nav) {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::closure::Closure;
+
+    // In an effect because it needs the page to be there to watch: on the server
+    // this never runs, and in the browser it runs once the sections it names are
+    // in the document.
+    Effect::new(move |_| {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let Some(document) = window.document() else {
+            return;
+        };
+
+        // Which of them have started, by their place in `anchors`. Kept because
+        // the browser reports only what has changed since it last spoke.
+        let started = Rc::new(RefCell::new(vec![false; anchors.len()]));
+
+        let watched = anchors.clone();
+        let crossed = Rc::clone(&started);
+        let crossings =
+            Closure::<dyn FnMut(js_sys::Array)>::new(move |crossings: js_sys::Array| {
+                let mut started = crossed.borrow_mut();
+
+                for crossing in crossings.iter() {
+                    let crossing: web_sys::IntersectionObserverEntry = crossing.unchecked_into();
+                    if let Some(at) = spot(&watched, &crossing.target().id()) {
+                        started[at] = crossing.is_intersecting();
+                    }
+                }
+
+                // Recorded either way, so that letting go of a pin has the truth to
+                // hand rather than having to wait for the next crossing.
+                if !nav.pinned.get_value() {
+                    nav.here.set(lit(&started));
+                }
+            });
+
+        let watch = web_sys::IntersectionObserverInit::new();
+        watch.set_root_margin(READING_LINE);
+
+        let Ok(observer) = web_sys::IntersectionObserver::new_with_options(
+            crossings.as_ref().unchecked_ref(),
+            &watch,
+        ) else {
+            return;
+        };
+
+        // A section the page does not have is skipped rather than fatal: the nav
+        // is drawn from the Set and so is this list, but a highlight is not worth
+        // dropping the rest of the page over.
+        for part in &anchors {
+            if let Some(section) = document.get_element_by_id(&part.anchor) {
+                observer.observe(&section);
+            }
+        }
+
+        // The reader taking over: the pin goes, and the highlight catches up to
+        // where the page is in the same breath, since nothing may cross the
+        // reading line for a while yet.
+        let by_hand = Closure::<dyn FnMut()>::new(move || {
+            if nav.pinned.get_value() {
+                nav.pinned.set_value(false);
+                nav.here.set(lit(&started.borrow()));
+            }
+        });
+
+        for moved in BY_HAND {
+            let _ =
+                window.add_event_listener_with_callback(moved, by_hand.as_ref().unchecked_ref());
+        }
+
+        // Held together so the disconnect and the removals below happen while the
+        // callbacks are still alive, and all of it is let go when the page is.
+        let watching = StoredValue::new_local((observer, crossings, by_hand));
+        on_cleanup(move || {
+            let _ = watching.try_with_value(|(observer, _, by_hand)| {
+                observer.disconnect();
+
+                if let Some(window) = web_sys::window() {
+                    for moved in BY_HAND {
+                        let _ = window.remove_event_listener_with_callback(
+                            moved,
+                            by_hand.as_ref().unchecked_ref(),
+                        );
+                    }
+                }
+            });
+        });
+    });
+}
+
+// No reader to follow on the server, and nothing to follow them with: the
+// highlight stays where a page nobody has scrolled puts it, which is the first
+// line of the nav.
+#[cfg(not(feature = "hydrate"))]
+fn follow(_anchors: Vec<Watched>, _nav: Nav) {}
+
+/// Put the bar's list away on Escape.
+///
+/// The other way out of it — tapping the page — is the backdrop's doing rather
+/// than a listener's, so that the tap taking the list back cannot also press
+/// something on the page underneath. This is the way out that needs no aim: a
+/// list drawn over the page has to be dismissible from the keyboard, and there is
+/// nothing to tab to that would do it.
+#[cfg(feature = "hydrate")]
+fn dismiss(nav: Nav) {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::closure::Closure;
+
+    Effect::new(move |_| {
+        let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+            return;
+        };
+
+        let escape =
+            Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
+                if ev.key() == "Escape" {
+                    nav.open.set(false);
+                }
+            });
+
+        let _ =
+            document.add_event_listener_with_callback("keydown", escape.as_ref().unchecked_ref());
+
+        // Removed while the closure is still alive, and let go when the page is: a
+        // listener holding a freed callback is a panic waiting for the next press.
+        let listening = StoredValue::new_local(escape);
+        on_cleanup(move || {
+            let _ = listening.try_with_value(|escape| {
+                if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+                    let _ = document.remove_event_listener_with_callback(
+                        "keydown",
+                        escape.as_ref().unchecked_ref(),
+                    );
+                }
+            });
+        });
+    });
+}
+
+// Nothing on the server can open the list, so nothing there has to close it.
+#[cfg(not(feature = "hydrate"))]
+fn dismiss(_nav: Nav) {}
+
 /// One Set, top to bottom: how it stands and its own material — what the agent
 /// asked about and the evidence for it — and then either the sheet to answer it
 /// on or the record of what became of it.
@@ -519,6 +1354,10 @@ fn unanswered(response: &Response, multiple_choice: &[String]) -> Vec<String> {
 /// The material above is the same however it stands: a settled Set is read for
 /// what was decided *and* for what the decision was about.
 fn sheet(set: SetView) -> impl IntoView {
+    // Built before the Set is taken apart below, since it is a description of
+    // the whole of it.
+    let contents = contents(&set);
+
     // A Set sent from outside a repo has neither, and an empty line of
     // provenance is worse than none.
     let provenance = (set.project.is_some() || set.branch.is_some()).then(|| {
@@ -579,19 +1418,40 @@ fn sheet(set: SetView) -> impl IntoView {
     view! {
         <A href=back attr:class="back">{out}</A>
         <h1>{set.title}</h1>
+        // After the title and before the rest: the page says what it is, then
+        // what is in it. It is taken out of the flow and put in the margin by
+        // the stylesheet, so where it sits here is a reading order rather than
+        // a position.
+        {contents}
         {provenance}
         {when}
         {standing}
-        {set.preface_html.map(|html| view! { <section class="preface" inner_html=html></section> })}
+        // Named and anchored like the Diff below it: the heading is what a jump
+        // from the table of contents lands on, and the id is what it jumps to.
+        // Both are in the page the server writes, so a hash deep-link works
+        // before any script has run.
+        {set
+            .preface_html
+            .map(|html| {
+                view! {
+                    <section class="preface" id="preface">
+                        <h2 class="section-heading">"Preface"</h2>
+                        <div class="preface-body" inner_html=html></div>
+                    </section>
+                }
+            })}
         // Between the Preface and the Questions: the Preface says what the
         // agent is asking about, and the Diff is the evidence for it.
         {set
-            .diff_html
-            .map(|html| {
+            .diff
+            .map(|diff| {
                 view! {
-                    <section class="diff">
-                        <h2>"Diff"</h2>
-                        <div class="diff-files" inner_html=html></div>
+                    <section class="diff" id="diff">
+                        <h2 class="section-heading">"Diff"</h2>
+                        // The per-file anchors — `diff-1`, `diff-2`, … — are
+                        // stamped by the renderer, since this arrives already
+                        // rendered.
+                        <div class="diff-files" inner_html=diff.html></div>
                     </section>
                 }
             })}
@@ -726,7 +1586,8 @@ fn answerable(id: i64, questions: Vec<Question>) -> impl IntoView {
     let mut fields: Vec<Asked> = Vec::new();
     let asked: Vec<_> = questions
         .into_iter()
-        .map(|asked| question(asked, &mut fields))
+        .enumerate()
+        .map(|(index, asked)| question(index + 1, asked, &mut fields))
         .collect();
 
     // Whether accept-all has anything it could ever do here. Read off the
@@ -889,6 +1750,10 @@ fn answerable(id: i64, questions: Vec<Question>) -> impl IntoView {
     });
 
     view! {
+        // Above the accept-all rather than below it: the offer to accept every
+        // Recommendation is part of the Questions, so a jump to them arrives at
+        // it rather than past it.
+        {questions_heading()}
         // Above the questions rather than beside the submit: it changes what is
         // drawn below it, and the human scrolls down through the result on the
         // way to sending it.
@@ -1008,9 +1873,14 @@ fn refusal(outcome: Option<Result<Submitted, ServerFnError>>) -> Option<AnyView>
 /// Each ask puts its fields on `fields` as it is drawn, so they come out in the
 /// order the Set asked them.
 ///
+/// `position` is the Question's place in the Set, counting from one — the name
+/// it falls back to when its label makes no id.
+///
 /// `use<>`: the view is built here and outlives the borrow of `fields`, which
 /// it does not hold on to.
-fn question(question: Question, fields: &mut Vec<Asked>) -> impl IntoView + use<> {
+fn question(position: usize, question: Question, fields: &mut Vec<Asked>) -> impl IntoView + use<> {
+    let id = anchor(question.name(), position);
+
     let own = ask(
         question.name().to_owned(),
         question.text.clone(),
@@ -1038,7 +1908,7 @@ fn question(question: Question, fields: &mut Vec<Asked>) -> impl IntoView + use<
         Some(view! { <ol class="subquestions">{subquestions}</ol> })
     };
 
-    view! { <li class="question">{own} {nested}</li> }
+    view! { <li class="question" id=id>{own} {nested}</li> }
 }
 
 /// A Question or a Sub-question — both are asked the same way: the name it
@@ -1229,7 +2099,8 @@ fn orphaned(questions: &[Question]) -> impl IntoView + use<> {
 fn settled(questions: &[Question], response: Option<Response>) -> impl IntoView + use<> {
     let outcomes: Vec<_> = questions
         .iter()
-        .map(|question| settled_question(question, response.as_ref()))
+        .enumerate()
+        .map(|(index, question)| settled_question(index + 1, question, response.as_ref()))
         .collect();
 
     let said = response.as_ref().and_then(nothing_answered);
@@ -1244,7 +2115,11 @@ fn settled(questions: &[Question], response: Option<Response>) -> impl IntoView 
         .map(str::to_owned);
 
     view! {
+        // Above the heading: what a Response resolved — or did not — is said at
+        // the head of the page, about the Set as a whole, not under the
+        // Questions.
         {said.map(|said| view! { <p class="counter-question">{said}</p> })}
+        {questions_heading()}
         <ol class="questions decided">{outcomes}</ol>
         {comment
             .map(|comment| {
@@ -1261,7 +2136,13 @@ fn settled(questions: &[Question], response: Option<Response>) -> impl IntoView 
 /// One settled Question, with its Sub-questions nested one level under it — the
 /// read counterpart of [`question`], and laid out the same way, because it is the
 /// same Set being looked at.
-fn settled_question(question: &Question, response: Option<&Response>) -> impl IntoView + use<> {
+fn settled_question(
+    position: usize,
+    question: &Question,
+    response: Option<&Response>,
+) -> impl IntoView + use<> {
+    let id = anchor(question.name(), position);
+
     let own = resolved(
         question.name().to_owned(),
         question.text.clone(),
@@ -1286,7 +2167,7 @@ fn settled_question(question: &Question, response: Option<&Response>) -> impl In
     let nested =
         (!subquestions.is_empty()).then(|| view! { <ol class="subquestions">{subquestions}</ol> });
 
-    view! { <li class="question">{own} {nested}</li> }
+    view! { <li class="question" id=id>{own} {nested}</li> }
 }
 
 /// A Question or a Sub-question as it was resolved: its text, every Option it
@@ -1397,12 +2278,43 @@ fn decided_option(option: &QuestionOption, selected: Option<u32>) -> impl IntoVi
 
 #[cfg(test)]
 mod tests {
-    use askance_schema::{Answer, Response};
+    use askance_schema::{Answer, Liveness, Question, Response};
 
     use super::{
-        ARCHIVE_WARNING, Considered, Draft, Filled, accepting, answer_to, draft_key, drafted,
-        nothing_answered, restorable, submitted_when, unanswered,
+        ARCHIVE_WARNING, Considered, DiffView, Draft, Filled, Mark, SetView, Standing, Stands,
+        Watched, accepting, anchor, answer_to, draft_key, drafted, lit, mark, nothing_answered,
+        outline, restorable, shortened, spied, stands, submitted_when, unanswered,
     };
+
+    fn asked(label: &str, text: &str) -> Question {
+        Question {
+            label: label.to_owned(),
+            text: text.to_owned(),
+            options: Vec::new(),
+            subquestions: Vec::new(),
+        }
+    }
+
+    /// A Set with every section a page can have: a Preface, a Diff of two files,
+    /// and two Questions.
+    fn every_section() -> SetView {
+        SetView {
+            id: 1,
+            title: "Rate limiting for the public API".to_owned(),
+            project: None,
+            branch: None,
+            preface_html: Some("<p>no rate limit</p>".to_owned()),
+            diff: Some(DiffView {
+                html: String::new(),
+                paths: vec!["src/limits.rs".to_owned(), "notes.txt".to_owned()],
+            }),
+            questions: vec![
+                asked("Q1", "Where should the request counter live?"),
+                asked("Q2", "How should a throttled client be told?"),
+            ],
+            standing: Standing::Waiting(Liveness::Waiting),
+        }
+    }
 
     fn filled(label: &str, selected: Option<u32>, free_text: &str) -> Filled {
         Filled {
@@ -1663,6 +2575,254 @@ mod tests {
             }
             .empty(),
             "a comment on its own is a draft: it is a whole counter-question",
+        );
+    }
+
+    #[test]
+    fn a_question_is_reached_by_its_label_lowercased() {
+        assert_eq!(anchor("Q3", 3), "q3");
+        assert_eq!(
+            anchor(" Q12 ", 12),
+            "q12",
+            "a padded label is still that one"
+        );
+    }
+
+    #[test]
+    fn a_label_an_id_cannot_hold_is_made_into_one() {
+        assert_eq!(
+            anchor("Q 7.a", 7),
+            "q-7-a",
+            "a label is the agent's own string, and an id takes less than one does",
+        );
+        assert_eq!(
+            anchor("...", 4),
+            "q4",
+            "a label that makes no id at all falls back to the Question's place in the Set",
+        );
+    }
+
+    #[test]
+    fn a_path_the_contents_has_room_for_is_shown_whole() {
+        assert_eq!(
+            shortened("crates/app/src/diff.rs"),
+            "crates/app/src/diff.rs"
+        );
+    }
+
+    #[test]
+    fn a_path_too_long_for_the_contents_keeps_its_filename() {
+        assert_eq!(
+            shortened("crates/app/src/set_view.rs"),
+            "…/app/src/set_view.rs",
+            "the end of a path is what is being looked for, so the cut takes \
+             from the front — and lands on a directory boundary, so what is \
+             left is still a path",
+        );
+        assert_eq!(
+            shortened("crates/server/tests/deeply/nested/set_page.rs"),
+            "…/nested/set_page.rs",
+            "as much of the path as the line has room for, not just the file",
+        );
+    }
+
+    #[test]
+    fn a_filename_longer_than_the_line_is_cut_into() {
+        assert_eq!(
+            shortened("assets/a-very-long-name-for-one-file.webmanifest"),
+            "…or-one-file.webmanifest",
+            "no boundary leaves a tail that fits, so the extension is kept \
+             over the start of the stem",
+        );
+    }
+
+    /// The ids of the watched parts of the page, in the order they are watched
+    /// in.
+    fn anchors(watched: &[Watched]) -> Vec<&str> {
+        watched
+            .iter()
+            .map(|watched| watched.anchor.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn the_spy_watches_every_anchored_part_of_the_page_in_page_order() {
+        assert_eq!(
+            anchors(&spied(&outline(&every_section()))),
+            [
+                "preface",
+                "diff",
+                "diff-1",
+                "diff-2",
+                "questions",
+                "q1",
+                "q2"
+            ],
+            "each section's own heading, then whatever is under it — which is \
+             the order the page has them in, and what the highlight moves along",
+        );
+    }
+
+    #[test]
+    fn a_section_the_set_does_not_have_is_not_watched() {
+        let mut set = every_section();
+        set.preface_html = None;
+        set.diff = None;
+
+        assert_eq!(
+            anchors(&spied(&outline(&set))),
+            ["questions", "q1", "q2"],
+            "the Questions are the one section every Set has",
+        );
+    }
+
+    #[test]
+    fn every_watched_part_of_the_page_carries_the_name_the_nav_gives_it() {
+        let watched = spied(&outline(&every_section()));
+
+        let said: Vec<_> = watched
+            .iter()
+            .map(|watched| (watched.label.as_deref(), watched.text.as_str()))
+            .collect();
+
+        assert_eq!(
+            said,
+            [
+                (None, "Preface"),
+                (None, "Diff"),
+                (None, "src/limits.rs"),
+                (None, "notes.txt"),
+                (None, "Questions"),
+                (Some("Q1"), "Where should the request counter live?"),
+                (Some("Q2"), "How should a throttled client be told?"),
+            ],
+            "the bar reads a line out by the same name the sidebar shows it \
+             under, because the two are one list — a section by its name, a file \
+             by its path, and a Question by its label and its words",
+        );
+    }
+
+    #[test]
+    fn a_watched_line_is_set_in_the_face_its_kind_of_name_wants() {
+        let watched = spied(&outline(&every_section()));
+
+        assert_eq!(
+            watched
+                .iter()
+                .map(|watched| watched.kind)
+                .collect::<Vec<_>>(),
+            [
+                "contents-section",
+                "contents-section",
+                "contents-path",
+                "contents-path",
+                "contents-section",
+                "contents-question",
+                "contents-question",
+            ],
+            "so a path in the bar is set as the Diff sets it, and the two read \
+             as the same name",
+        );
+    }
+
+    #[test]
+    fn a_path_the_bar_reads_out_is_cut_as_the_nav_cuts_it() {
+        let mut set = every_section();
+        set.diff = Some(DiffView {
+            html: String::new(),
+            paths: vec!["crates/app/src/set_view.rs".to_owned()],
+        });
+
+        let watched = spied(&outline(&set));
+
+        assert_eq!(
+            watched[2].text, "…/app/src/set_view.rs",
+            "the bar shows the same one line the sidebar does, cut the same way",
+        );
+    }
+
+    #[test]
+    fn the_highlight_is_the_last_part_of_the_page_to_have_begun() {
+        assert_eq!(
+            lit(&[true, true, true, false, false]),
+            2,
+            "the third is the one being read: the two before it are above the \
+             reader, and the two after have not begun",
+        );
+    }
+
+    #[test]
+    fn the_top_of_the_page_counts_as_being_in_the_first_section() {
+        assert_eq!(
+            lit(&[false, false, false]),
+            0,
+            "nothing has begun above the reading line, so the reader is at the \
+             top — which reads as the first section rather than as nowhere",
+        );
+        assert_eq!(
+            lit(&[]),
+            0,
+            "and the same before the spy has said anything at all, which is the \
+             page the server writes",
+        );
+    }
+
+    #[test]
+    fn a_section_reaches_down_through_whatever_is_under_it() {
+        let sections = outline(&every_section());
+        let watched = spied(&sections);
+
+        let places: Vec<_> = sections
+            .iter()
+            .map(|section| stands(&watched, section))
+            .collect();
+
+        assert_eq!(
+            places,
+            [
+                Some(Stands { at: 0, through: 0 }),
+                Some(Stands { at: 1, through: 3 }),
+                Some(Stands { at: 4, through: 6 }),
+            ],
+            "the Preface has nothing under it, while the Diff reaches through \
+             both its files and the Questions through both Questions — which is \
+             how a lit file marks the Diff it is in without taking the \
+             highlight from it",
+        );
+    }
+
+    #[test]
+    fn the_line_the_reader_is_at_is_marked_and_the_section_around_it_quietly() {
+        // The Diff of a Set whose Preface is watched first: its own heading, then
+        // its two files.
+        let diff = Stands { at: 1, through: 3 };
+
+        assert_eq!(
+            mark(Some(diff), 1),
+            Some(Mark::At),
+            "at the Diff's own heading, above its first file, the Diff is where \
+             the reader is",
+        );
+        assert_eq!(
+            mark(Some(diff), 2),
+            Some(Mark::Within),
+            "and once they are in one of its files, the file is the highlight \
+             and the Diff only says they are in it",
+        );
+        assert_eq!(mark(Some(diff), 3), Some(Mark::Within));
+        assert_eq!(
+            mark(Some(diff), 4),
+            None,
+            "past the last file the Diff is behind them and unmarked",
+        );
+        assert_eq!(mark(Some(diff), 0), None, "as it is before they reach it");
+
+        let file = Stands::just(2);
+        assert_eq!(mark(Some(file), 2), Some(Mark::At));
+        assert_eq!(
+            mark(Some(file), 3),
+            None,
+            "a file has nothing under it, so it is the highlight or it is nothing",
         );
     }
 

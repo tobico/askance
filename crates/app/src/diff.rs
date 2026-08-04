@@ -14,6 +14,8 @@ use std::sync::LazyLock;
 use syntect::html::{ClassStyle, line_tokens_to_classed_spans};
 use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
 
+use crate::set_view::DiffView;
+
 /// Prefixed so a scope named after some language's keyword cannot collide with
 /// the page's own class names.
 const TOKENS: ClassStyle = ClassStyle::SpacedPrefixed { prefix: "tok-" };
@@ -25,9 +27,22 @@ const TOKENS: ClassStyle = ClassStyle::SpacedPrefixed { prefix: "tok-" };
 /// ever gives us.
 static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_nonewlines);
 
+/// What the one section of a Diff git did not write is called — in the page and
+/// in the table of contents alike, since both name the same fold.
+const AS_IT_ARRIVED: &str = "The Diff, as it arrived";
+
 /// Render a unified diff to HTML, or `None` when there is nothing in it to
 /// show.
-pub fn to_html(diff: &str) -> Option<String> {
+///
+/// Each file's section is anchored by its position in the Diff — `diff-1`,
+/// `diff-2`, … — rather than by its path, which would have to be squeezed into
+/// an id and could collide once it was. A Set is immutable once sent, so a
+/// position is a name that holds for its lifetime.
+///
+/// The paths come back beside the HTML in that same order, so the table of
+/// contents can name the folds without reading them back out of the markup it
+/// was handed.
+pub fn to_html(diff: &str) -> Option<DiffView> {
     if diff.trim().is_empty() {
         return None;
     }
@@ -35,21 +50,29 @@ pub fn to_html(diff: &str) -> Option<String> {
     let files = files(diff);
 
     // Whatever this is, git did not write it — but it was attached to the Set as
-    // the Diff, so it gets shown as it arrived rather than swallowed.
+    // the Diff, so it gets shown as it arrived rather than swallowed. It is
+    // still the Diff's first and only section, so it is anchored as one, and
+    // named as one.
     if files.is_empty() {
-        let mut html = String::from(
-            r#"<details class="diff-file" open><summary><span class="diff-path">The Diff, as it arrived</span></summary><div class="diff-hunk"><pre class="diff-lines"><code>"#,
+        let mut html = format!(
+            r#"<details class="diff-file" id="diff-1" open><summary><span class="diff-path">{AS_IT_ARRIVED}</span></summary><div class="diff-hunk"><pre class="diff-lines"><code>"#
         );
         html.push_str(&escaped(diff));
         html.push_str("</code></pre></div></details>");
-        return Some(html);
+        return Some(DiffView {
+            html,
+            paths: vec![AS_IT_ARRIVED.to_owned()],
+        });
     }
 
     let mut html = String::new();
-    for file in &files {
-        file.render(&mut html);
+    for (position, file) in files.iter().enumerate() {
+        file.render(&mut html, position + 1);
     }
-    Some(html)
+    Some(DiffView {
+        html,
+        paths: files.iter().map(|file| file.path.clone()).collect(),
+    })
 }
 
 /// One file's worth of the Diff.
@@ -276,10 +299,14 @@ fn worktree_path(field: &str) -> Option<String> {
 }
 
 impl FileDiff {
-    fn render(&self, out: &mut String) {
+    /// `position` is this file's place in the Diff, counting from one: the name
+    /// the table of contents and a hash deep-link reach it by.
+    fn render(&self, out: &mut String, position: usize) {
         // Open, because a Diff is there to be read — but foldable, so a long
         // file can be got out of the way on a phone.
-        out.push_str(r#"<details class="diff-file" open><summary><span class="diff-path">"#);
+        out.push_str(&format!(
+            r#"<details class="diff-file" id="diff-{position}" open><summary><span class="diff-path">"#
+        ));
         out.push_str(&escaped(&self.path));
         out.push_str("</span>");
 
@@ -428,6 +455,17 @@ fn escaped(text: &str) -> String {
 mod tests {
     use super::{files, to_html};
 
+    /// The markup for a Diff that has something in it — what most of these
+    /// tests are looking at, the paths beside it being their own two tests.
+    fn rendered(diff: &str) -> String {
+        to_html(diff).unwrap().html
+    }
+
+    /// The path of each file the Diff renders, in the order it renders them.
+    fn paths(diff: &str) -> Vec<String> {
+        to_html(diff).unwrap().paths
+    }
+
     /// A tracked file edited and an untracked one added — what `askance ask`
     /// captures from a working tree mid-change.
     const MODIFIED_AND_NEW: &str = concat!(
@@ -452,7 +490,7 @@ mod tests {
 
     #[test]
     fn every_file_in_the_diff_gets_its_own_section() {
-        let html = to_html(MODIFIED_AND_NEW).unwrap();
+        let html = rendered(MODIFIED_AND_NEW);
 
         assert_eq!(
             html.matches(r#"class="diff-file""#).count(),
@@ -473,7 +511,7 @@ mod tests {
 
     #[test]
     fn added_removed_and_context_lines_are_told_apart() {
-        let html = to_html(MODIFIED_AND_NEW).unwrap();
+        let html = rendered(MODIFIED_AND_NEW);
 
         assert_eq!(
             html.matches(r#"diff-line add"#).count(),
@@ -499,7 +537,7 @@ mod tests {
 
     #[test]
     fn the_lines_of_a_file_add_up_to_its_tally() {
-        let html = to_html(MODIFIED_AND_NEW).unwrap();
+        let html = rendered(MODIFIED_AND_NEW);
 
         assert!(
             html.contains(">+1<"),
@@ -511,7 +549,7 @@ mod tests {
 
     #[test]
     fn a_recognised_file_type_is_highlighted_token_by_token() {
-        let html = to_html(MODIFIED_AND_NEW).unwrap();
+        let html = rendered(MODIFIED_AND_NEW);
 
         assert!(
             html.contains(r#"<span class="tok-"#),
@@ -530,7 +568,7 @@ mod tests {
             "+retries = 5\n",
         );
 
-        let html = to_html(diff).unwrap();
+        let html = rendered(diff);
 
         assert!(
             !html.contains("tok-"),
@@ -552,7 +590,7 @@ mod tests {
             "Binary files /dev/null and b/logo.png differ\n",
         );
 
-        let html = to_html(diff).unwrap();
+        let html = rendered(diff);
 
         assert!(html.contains(">logo.png<"), "{html}");
         assert!(
@@ -574,7 +612,7 @@ mod tests {
             "-\n",
         );
 
-        let html = to_html(diff).unwrap();
+        let html = rendered(diff);
 
         assert!(html.contains(">src/old.rs<"), "{html}");
         assert!(html.contains("deleted"), "{html}");
@@ -616,7 +654,7 @@ mod tests {
             "+<script>alert('pwned') & co</script>\n",
         );
 
-        let html = to_html(diff).unwrap();
+        let html = rendered(diff);
 
         assert!(
             !html.contains("<script>"),
@@ -638,9 +676,41 @@ mod tests {
             "\\ No newline at end of file\n",
         );
 
-        let html = to_html(diff).unwrap();
+        let html = rendered(diff);
 
         assert!(html.contains("No newline at end of file"), "{html}");
+    }
+
+    #[test]
+    fn each_file_is_anchored_by_its_position_in_the_diff() {
+        let html = rendered(MODIFIED_AND_NEW);
+
+        let first = html
+            .find(r#"id="diff-1""#)
+            .unwrap_or_else(|| panic!("expected the first file anchored:\n{html}"));
+        let second = html
+            .find(r#"id="diff-2""#)
+            .unwrap_or_else(|| panic!("expected the second file anchored:\n{html}"));
+
+        assert!(first < second, "the ids follow Diff order:\n{html}");
+        assert!(
+            html[first..second].contains(">src/lib.rs<"),
+            "expected diff-1 to be the first file the Diff names:\n{html}"
+        );
+        assert!(
+            html[second..].contains(">notes.txt<"),
+            "expected diff-2 to be the second:\n{html}"
+        );
+    }
+
+    #[test]
+    fn the_paths_come_back_in_the_order_the_files_render() {
+        assert_eq!(
+            paths(MODIFIED_AND_NEW),
+            ["src/lib.rs", "notes.txt"],
+            "the table of contents names the folds by these, so the nth path \
+             has to be what `diff-n` shows",
+        );
     }
 
     #[test]
@@ -650,12 +720,23 @@ mod tests {
 
     #[test]
     fn something_git_did_not_write_is_shown_as_it_arrived() {
-        let html = to_html("who knows what this is\n").unwrap();
+        let html = rendered("who knows what this is\n");
 
         assert!(
             html.contains("who knows what this is"),
             "the Diff is evidence, so an unreadable one is shown rather than \
              dropped:\n{html}"
+        );
+        assert!(
+            html.contains(r#"id="diff-1""#),
+            "it is still the Diff's one foldable section, so it is still \
+             addressable:\n{html}"
+        );
+        assert_eq!(
+            paths("who knows what this is\n"),
+            ["The Diff, as it arrived"],
+            "the one fold has no path to go by, so the nav calls it what the \
+             fold calls itself",
         );
     }
 }
