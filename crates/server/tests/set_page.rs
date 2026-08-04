@@ -99,10 +99,13 @@ fn full_grammar_set() -> QuestionSet {
     }
 }
 
-/// The same Set with its Questions written the way agents write them: a
-/// bulleted list carrying a code span, a fenced code block, and a GFM table on
-/// a Sub-question. The labels and the Options are untouched, so a Response
-/// resolving [`full_grammar_set`] resolves this too.
+/// The same Set written the way agents write it: Questions carrying a bulleted
+/// list with a code span in it, a fenced code block, and a GFM table on a
+/// Sub-question — and Options carrying markup of their own, one of them with a
+/// block an Option has no room for.
+///
+/// The labels and the Option numbers are untouched, so a Response resolving
+/// [`full_grammar_set`] resolves this too.
 fn marked_up_set() -> QuestionSet {
     let mut set = full_grammar_set();
 
@@ -110,10 +113,17 @@ fn marked_up_set() -> QuestionSet {
          - in-process, per instance\n\
          - in `redis`, shared across instances\n"
         .to_owned();
+    set.questions[0].options[0].text =
+        "In-process, per instance — see `Counter::local`.".to_owned();
+    set.questions[0].options[1].text = "In **Redis**, shared across instances.".to_owned();
     set.questions[1].text = "How should a throttled client be told to back off?\n\n\
          ```rust\n\
          fn allowance() -> u32 { 600 }\n\
          ```\n"
+        .to_owned();
+    set.questions[1].options[0].text = "A bare 429.\n\n\
+         - no headers\n\
+         - no body\n"
         .to_owned();
     set.questions[1].subquestions[0].text = "What should Retry-After say?\n\n\
          | header | seconds |\n\
@@ -497,6 +507,116 @@ async fn a_settled_sets_questions_are_rendered_the_way_the_form_rendered_them() 
             "a settled Set is read for what was asked, so its markdown is rendered too:\n{html}"
         );
     }
+}
+
+#[tokio::test]
+async fn an_options_markdown_is_rendered_inline_by_the_server() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    let quoted = option_row(&html, "Counter::local");
+    assert!(
+        quoted.contains("<code>Counter::local</code>"),
+        "expected the Option's code span rendered to HTML:\n{quoted}"
+    );
+    assert!(
+        html.contains("<strong>Redis</strong>"),
+        "expected the Option's emphasis rendered to HTML:\n{html}"
+    );
+
+    // The row is the tap target, and it is the label wrapping the radio that
+    // makes it one: the rendered text has to sit inside that label beside the
+    // radio it selects, still answering by number.
+    assert!(
+        quoted.contains("<label>")
+            && quoted.contains(r#"name="Q1-option""#)
+            && quoted.contains(r#"value="1""#),
+        "expected the Option's radio and its text in the one label:\n{quoted}"
+    );
+    assert!(
+        quoted.matches("<input").count() == 1,
+        "expected exactly the one radio in the row:\n{quoted}"
+    );
+}
+
+#[tokio::test]
+async fn block_markdown_in_an_option_is_flattened_into_its_row() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    // An Option is one line beside a radio, so a list inside its label would
+    // break the row apart — and the whole row is what the human taps.
+    assert!(
+        !html.contains("<li>no headers</li>"),
+        "an Option's list may not be drawn as one:\n{html}"
+    );
+
+    let row = option_row(&html, "A bare 429.");
+    assert!(
+        row.contains("no headers") && row.contains("no body"),
+        "flattened, not dropped: every word the agent wrote is still in the row:\n{row}"
+    );
+    assert!(
+        row.matches("<input").count() == 1 && row.contains(r#"name="Q2-option""#),
+        "expected the flattened Option still drawn as a single row:\n{row}"
+    );
+}
+
+#[tokio::test]
+async fn markdown_that_would_run_in_the_browser_does_not_reach_an_option() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.questions[0].options[0].text = "Careful now. <script>alert('pwned')</script> \
+         <img src=\"x\" onerror=\"alert('pwned')\"> \
+         [click me](javascript:alert('pwned'))"
+        .to_owned();
+
+    let html = set_page(&pool, &set).await;
+
+    assert!(html.contains("Careful now."), "expected the Option's words");
+    assert!(
+        html.contains("click me"),
+        "expected the link's words, which are all that is left of it:\n{html}"
+    );
+    assert!(
+        !html.contains("alert('pwned')"),
+        "the Option's script should have been sanitised away:\n{html}"
+    );
+    assert!(
+        !html.contains("onerror"),
+        "the Option's event handler should have been sanitised away:\n{html}"
+    );
+    assert!(
+        !html.contains("javascript:"),
+        "the Option's script link should have been sanitised away:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_settled_sets_options_read_with_their_markup_and_their_marks() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let (html, _) = answered_set_page(&pool, &marked_up_set(), &decided_every_way()).await;
+
+    // Q1: Option 1 was chosen and Option 2 carries the ★. Read back, each still
+    // has its number and its marks beside the text the agent wrote.
+    let chosen = option_row(&html, "<code>Counter::local</code>");
+    assert!(
+        chosen.contains(r#"class="n">1"#) && chosen.contains("chosen"),
+        "expected the chosen Option numbered and marked beside its markup:\n{chosen}"
+    );
+
+    let recommended = option_row(&html, "<strong>Redis</strong>");
+    assert!(
+        recommended.contains(r#"class="n">2"#) && recommended.contains("★"),
+        "expected the Recommendation numbered and starred beside its markup:\n{recommended}"
+    );
+    assert!(
+        !recommended.contains("chosen"),
+        "the Recommendation was not taken:\n{recommended}"
+    );
 }
 
 #[tokio::test]

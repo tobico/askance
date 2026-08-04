@@ -25,7 +25,7 @@
 //! permanently, and with nothing to press — except that there is no Response to
 //! show, because there never was one.
 
-use askance_schema::{Answer, Liveness, QuestionOption, Response};
+use askance_schema::{Answer, Liveness, Response};
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
@@ -35,10 +35,10 @@ use time::{OffsetDateTime, UtcOffset};
 
 /// One Question Set as the browser receives it.
 ///
-/// Everything the agent wrote as prose — the Preface, and every Question's and
-/// Sub-question's text — arrives as HTML rather than as its source, and so does
-/// the Diff: the server has the markdown parser and the diff highlighter, and
-/// this way the browser needs neither.
+/// Everything the agent wrote — the Preface, every Question's and Sub-question's
+/// text, and every Option's — arrives as HTML rather than as its source, and so
+/// does the Diff: the server has the markdown parser and the diff highlighter,
+/// and this way the browser needs neither.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetView {
     pub id: i64,
@@ -70,8 +70,8 @@ pub struct QuestionView {
 /// distinction between them is spent by the time it gets here: a Sub-question's
 /// name is its parent's label and its letter, resolved on the way out.
 ///
-/// The Options travel as the agent sent them — the form is built from their
-/// numbers and their Recommendation flags, and a Response answers by number.
+/// The form is built from the Options' numbers and their Recommendation flags,
+/// and a Response answers by number.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AskView {
     /// `Q7` for a Question, `Q7a` for a Sub-question.
@@ -80,7 +80,24 @@ pub struct AskView {
     /// The text as HTML, rendered and sanitized by the server on the way out.
     pub text_html: String,
 
-    pub options: Vec<QuestionOption>,
+    pub options: Vec<OptionView>,
+}
+
+/// One Option as the page draws it: the number a Response answers by, its text
+/// already rendered, and whether the agent recommended it.
+///
+/// Its text is inline markup and nothing blockier, because an Option is one line
+/// beside a radio and the whole row is the tap target: a paragraph or a list
+/// emitted inside that label would split the row in two.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OptionView {
+    pub n: u32,
+
+    /// The text as inline HTML, rendered and sanitized by the server on the way
+    /// out.
+    pub text_html: String,
+
+    pub recommended: bool,
 }
 
 /// The Set's Questions as the page needs them: named as a Response answers them,
@@ -99,14 +116,29 @@ fn viewed(questions: Vec<askance_schema::Question>) -> Vec<QuestionView> {
                 .map(|subquestion| AskView {
                     name: subquestion.name(&question),
                     text_html: crate::markdown::to_html(&subquestion.text),
-                    options: subquestion.options.clone(),
+                    options: offered_as(&subquestion.options),
                 })
                 .collect(),
             ask: AskView {
                 name: question.name().to_owned(),
                 text_html: crate::markdown::to_html(&question.text),
-                options: question.options,
+                options: offered_as(&question.options),
             },
+        })
+        .collect()
+}
+
+/// One question's Options as the page draws them, in the order the agent offered
+/// them. Rendered inline: a row beside a radio has room for markup and none for
+/// a block.
+#[cfg(feature = "ssr")]
+fn offered_as(options: &[askance_schema::QuestionOption]) -> Vec<OptionView> {
+    options
+        .iter()
+        .map(|option| OptionView {
+            n: option.n,
+            text_html: crate::markdown::to_inline_html(&option.text),
+            recommended: option.recommended,
         })
         .collect()
 }
@@ -549,7 +581,7 @@ struct Asked {
 
 /// The Option the agent recommended among these, if it recommended one. At most
 /// one Option per question may be the Recommendation, so the first ★ is it.
-fn recommendation(options: &[QuestionOption]) -> Option<u32> {
+fn recommendation(options: &[OptionView]) -> Option<u32> {
     options
         .iter()
         .find(|option| option.recommended)
@@ -1170,7 +1202,7 @@ fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
 ///
 /// The Recommendation is marked and never selected — nothing is selected on
 /// load, so an unread Recommendation cannot be submitted by accident.
-fn offered(group: String, option: QuestionOption, live: Fields) -> impl IntoView {
+fn offered(group: String, option: OptionView, live: Fields) -> impl IntoView {
     let id = format!("{group}-{}", option.n);
     let n = option.n;
     let class = if option.recommended {
@@ -1184,6 +1216,10 @@ fn offered(group: String, option: QuestionOption, live: Fields) -> impl IntoView
 
     // The label wraps the radio: the whole row becomes the tap target, and the
     // two are associated without a `for` to keep in step with the id.
+    //
+    // The text is filled in wholesale, and it is inline markup all the way down
+    // — anything blockier inside the label would end the row it is the tap
+    // target for, so the rendering flattened it on the way here.
     view! {
         <li class=class>
             <label>
@@ -1196,7 +1232,7 @@ fn offered(group: String, option: QuestionOption, live: Fields) -> impl IntoView
                     on:change=move |_| live.selected.set(Some(n))
                 />
                 <span class="n">{n}</span>
-                <span class="option-text">{option.text}</span>
+                <span class="option-text" inner_html=option.text_html></span>
                 {star}
             </label>
         </li>
@@ -1423,7 +1459,7 @@ fn resolved(asked: &AskView, response: Option<&Response>) -> impl IntoView + use
 /// The two marks are deliberately different things to read: the ★ is what was
 /// suggested, and "chosen" is what was decided, which on any given question may
 /// well not be the same Option.
-fn decided_option(option: &QuestionOption, selected: Option<u32>) -> impl IntoView + use<> {
+fn decided_option(option: &OptionView, selected: Option<u32>) -> impl IntoView + use<> {
     let chosen = selected == Some(option.n);
     let class = match (chosen, option.recommended) {
         (true, true) => "option chosen recommended",
@@ -1435,7 +1471,7 @@ fn decided_option(option: &QuestionOption, selected: Option<u32>) -> impl IntoVi
     view! {
         <li class=class>
             <span class="n">{option.n}</span>
-            <span class="option-text">{option.text.clone()}</span>
+            <span class="option-text" inner_html=option.text_html.clone()></span>
             {option
                 .recommended
                 .then(|| {

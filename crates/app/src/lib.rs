@@ -16,8 +16,8 @@ pub mod pending;
 pub mod push;
 pub mod set_view;
 
-// The Preface's markdown and the Diff are rendered before they leave the
-// server, so neither parser belongs to the browser half.
+// The agent's markdown and the Diff are rendered before they leave the server,
+// so neither parser belongs to the browser half.
 #[cfg(feature = "ssr")]
 mod diff;
 #[cfg(feature = "ssr")]
