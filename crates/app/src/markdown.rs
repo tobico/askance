@@ -22,11 +22,34 @@ fn dialect() -> Options {
     options
 }
 
+/// What a fence has to name to be a Diagram, and the class the block it becomes
+/// carries. One name for both, because the renderer that looks for the class is
+/// the same mermaid the agent wrote the fence for.
+pub const DIAGRAM: &str = "mermaid";
+
+/// How a Diagram's block opens: what [`block`] writes and what
+/// [`holds_diagram`] looks for.
+fn diagram_block() -> String {
+    format!("<pre class=\"{DIAGRAM}\">")
+}
+
+/// Whether this rendered HTML holds a Diagram — which is to say whether the page
+/// it goes into is one of the few that needs the client-side renderer.
+///
+/// Asked of the rendered HTML rather than of the markdown it came from, because
+/// the rendering is where the question was already settled: a fence became
+/// [`block`]'s `pre` or it did not, and reading the source a second time here
+/// would be a second answer to keep in step with the first.
+pub fn holds_diagram(html: &str) -> bool {
+    html.contains(&diagram_block())
+}
+
 /// Render `markdown` to HTML with anything that could act on the page removed.
 ///
 /// A fenced block naming a language it recognises is coloured by the same
-/// highlighter the Diff uses, which is the one thing here that puts markup of our
-/// own into the agent's prose — see [`sanitizer`] for what that costs.
+/// highlighter the Diff uses, and one naming [`DIAGRAM`] is held for the
+/// client-side renderer instead. Those are the one thing here that puts markup of
+/// our own into the agent's prose — see [`sanitizer`] for what that costs.
 pub fn to_html(markdown: &str) -> String {
     let mut rendered = String::new();
     html::push_html(
@@ -39,31 +62,43 @@ pub fn to_html(markdown: &str) -> String {
 
 /// What the agent's rendered markdown is cleaned by.
 ///
-/// Ammonia's defaults, widened by exactly one thing: `class` on a `span`,
-/// restricted to the handful of names the stylesheet colours. That is the whole
-/// of what the highlighter needs to survive, and the narrowest widening that lets
-/// it — a `span` could already come through, and every other class name syntect
-/// emits is dropped along with everything else ammonia does not recognise.
+/// Ammonia's defaults, widened by exactly two closed sets of class names: on a
+/// `span`, the handful the stylesheet colours; on a `pre`, [`DIAGRAM`] alone.
+/// That is the whole of what the highlighter and the Diagram renderer need to
+/// survive, and the narrowest widening that lets them — both tags could already
+/// come through, and every other class name, syntect's or the agent's, is dropped
+/// along with everything else ammonia does not recognise.
 ///
 /// `class` itself is deliberately not whitelisted as an attribute: ammonia panics
 /// if it is both, and the point is that the values are a closed set rather than
 /// anything the agent cares to write.
 fn sanitizer() -> ammonia::Builder<'static> {
     let mut sanitizer = ammonia::Builder::default();
-    sanitizer.allowed_classes(std::collections::HashMap::from([(
-        "span",
-        highlight::TOKEN_CLASSES.iter().copied().collect(),
-    )]));
+    sanitizer.allowed_classes(std::collections::HashMap::from([
+        ("span", highlight::TOKEN_CLASSES.iter().copied().collect()),
+        ("pre", std::collections::HashSet::from([DIAGRAM])),
+    ]));
 
     sanitizer
 }
 
-/// The same markdown with every fenced block that names a language it recognises
-/// replaced by the highlighter's own HTML.
+/// What a fenced block whose info string we act on is gathered for.
+enum Fence {
+    /// Coloured by the highlighter, as the language it named.
+    Coloured(&'static SyntaxReference),
+    /// Handed to the client-side renderer as a Diagram, and readable as its own
+    /// source wherever nothing renders it.
+    Diagram,
+}
+
+/// The same markdown with every fenced block we act on replaced by HTML of our
+/// own: the highlighter's, for one that names a language it recognises, and a
+/// `pre` the Diagram renderer will find, for one that names [`DIAGRAM`].
 ///
 /// A whole block at a time, so the parse state carries from line to line and a
-/// multi-line string is coloured as one — which is why the text is held back until
-/// the block closes rather than passed on as it arrives.
+/// multi-line string is coloured as one — and so a Diagram's source arrives at the
+/// renderer whole. Either way that is why the text is held back until the block
+/// closes rather than passed on as it arrives.
 ///
 /// Anything else is left exactly as it came: a fence with no language, one naming
 /// a language nothing here has, an indented block, or a block the highlighter
@@ -72,28 +107,16 @@ fn sanitizer() -> ammonia::Builder<'static> {
 fn coloured<'a>(events: impl Iterator<Item = Event<'a>>) -> Vec<Event<'a>> {
     let mut out: Vec<Event<'a>> = Vec::new();
 
-    // `Some` from a highlightable block's start to its end, gathering its lines.
-    let mut gathering: Option<(&'static SyntaxReference, String)> = None;
+    // `Some` from such a block's start to its end, gathering its lines.
+    let mut gathering: Option<(Fence, String)> = None;
 
     for event in events {
         if let Some((_, gathered)) = gathering.as_mut() {
             match event {
                 Event::Text(text) => gathered.push_str(&text),
                 Event::End(TagEnd::CodeBlock) => {
-                    let (syntax, code) = gathering.take().expect("just matched as gathering");
-                    match highlight::block(&code, syntax) {
-                        Some(marked) => {
-                            out.push(Event::Html(
-                                format!("<pre><code>{marked}</code></pre>").into(),
-                            ));
-                        }
-                        // The highlighter gave up part way. The block is still the
-                        // agent's words and still has to be shown, so it goes in
-                        // as the plain one it would always have been.
-                        None => out.push(Event::Html(
-                            format!("<pre><code>{}</code></pre>", highlight::escaped(&code)).into(),
-                        )),
-                    }
+                    let (fence, code) = gathering.take().expect("just matched as gathering");
+                    out.push(Event::Html(block(fence, &code).into()));
                 }
                 // A code block holds nothing but its own text.
                 _ => {}
@@ -102,17 +125,46 @@ fn coloured<'a>(events: impl Iterator<Item = Event<'a>>) -> Vec<Event<'a>> {
         }
 
         match &event {
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
-                match highlight::for_token(info) {
-                    Some(syntax) => gathering = Some((syntax, String::new())),
-                    None => out.push(event),
-                }
-            }
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => match asked_for(info) {
+                Some(fence) => gathering = Some((fence, String::new())),
+                None => out.push(event),
+            },
             _ => out.push(event),
         }
     }
 
     out
+}
+
+/// What a fence's info string asks for, or `None` for one asking for nothing we
+/// do — which leaves it the plain block pulldown-cmark wrote.
+///
+/// The Diagram first, since a language named `mermaid` is not one the highlighter
+/// has and never was: what the word means here is settled before any lookup.
+fn asked_for(info: &str) -> Option<Fence> {
+    if highlight::token(info) == DIAGRAM {
+        return Some(Fence::Diagram);
+    }
+
+    highlight::for_token(info).map(Fence::Coloured)
+}
+
+/// One gathered block as the HTML it was gathered to become.
+fn block(fence: Fence, code: &str) -> String {
+    match fence {
+        // Escaped, not coloured: the source is for mermaid to read, and for a
+        // human to read when mermaid never runs. Both want it as written.
+        Fence::Diagram => {
+            format!("{}{}</pre>", diagram_block(), highlight::escaped(code))
+        }
+        Fence::Coloured(syntax) => match highlight::block(code, syntax) {
+            Some(marked) => format!("<pre><code>{marked}</code></pre>"),
+            // The highlighter gave up part way. The block is still the agent's
+            // words and still has to be shown, so it goes in as the plain one it
+            // would always have been.
+            None => format!("<pre><code>{}</code></pre>", highlight::escaped(code)),
+        },
+    }
 }
 
 /// Render `markdown` as inline content: the emphasis, the code spans, the links
@@ -295,7 +347,7 @@ fn gap(inlined: &mut Vec<Event<'_>>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{to_html, to_inline_html, to_plain};
+    use super::{holds_diagram, to_html, to_inline_html, to_plain};
 
     #[test]
     fn prose_becomes_the_html_it_describes() {
@@ -347,6 +399,84 @@ mod tests {
         assert!(
             html.contains("&lt;script&gt;"),
             "expected the tag escaped and still readable:\n{html}"
+        );
+    }
+
+    #[test]
+    fn a_mermaid_fence_becomes_the_block_the_diagram_renderer_looks_for() {
+        let html = to_html("```mermaid\ngraph TD;\n  A-->B;\n```\n");
+
+        assert!(
+            html.contains("<pre class=\"mermaid\">"),
+            "the class is the whole of how the renderer finds it:\n{html}"
+        );
+        assert!(
+            html.contains("graph TD;\n  A--&gt;B;"),
+            "the source is intact, arrow and indentation and all:\n{html}"
+        );
+        assert!(
+            !html.contains("<code>"),
+            "a Diagram's source is the block's own text, not a code span:\n{html}"
+        );
+    }
+
+    #[test]
+    fn a_mermaid_fence_with_more_in_its_info_string_is_still_a_diagram() {
+        // Read the same way a language is: the first word names it, and whatever
+        // follows is the renderer's business.
+        let html = to_html("```mermaid title=flow\ngraph TD;\n```\n");
+
+        assert!(html.contains("<pre class=\"mermaid\">"), "{html}");
+    }
+
+    #[test]
+    fn markup_in_a_mermaid_fence_reaches_the_page_as_text() {
+        let html = to_html("```mermaid\ngraph TD;\n  A[<script>alert('pwned')</script>];\n```\n");
+
+        assert!(
+            !html.contains("<script"),
+            "a script in a Diagram's source must reach the page as text:\n{html}"
+        );
+        assert!(
+            html.contains("&lt;script&gt;"),
+            "expected the tag escaped and still readable:\n{html}"
+        );
+        assert!(
+            html.contains("<pre class=\"mermaid\">"),
+            "and the block it was smuggled into is still the Diagram's:\n{html}"
+        );
+    }
+
+    #[test]
+    fn rendered_markdown_says_whether_it_holds_a_diagram() {
+        assert!(holds_diagram(&to_html("```mermaid\ngraph TD;\n```\n")));
+        assert!(
+            !holds_diagram(&to_html(
+                "Nothing to draw.\n\n```rust\nfn allowance() {}\n```\n"
+            )),
+            "a page with no Diagram on it is the one that ships no renderer",
+        );
+    }
+
+    #[test]
+    fn a_diagram_block_written_out_as_html_is_one_the_page_holds() {
+        // `mermaid` on a `pre` is the one class the sanitizer lets through, so an
+        // agent that writes the block instead of the fence gets the same block —
+        // and this is asked of the block a browser would draw from rather than of
+        // how the agent arrived at it, so it says so.
+        let html = to_html("<pre class=\"mermaid\">graph TD;</pre>\n");
+
+        assert!(holds_diagram(&html), "{html}");
+    }
+
+    #[test]
+    fn the_diagram_class_is_the_only_one_a_pre_can_carry() {
+        let html = to_html("<pre class=\"evil\">careful</pre>\n");
+
+        assert!(html.contains("careful"), "the words stay:\n{html}");
+        assert!(
+            !html.contains("evil"),
+            "the widening is one value, not the `class` attribute:\n{html}"
         );
     }
 

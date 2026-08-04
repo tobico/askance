@@ -68,23 +68,28 @@ pub fn for_path(path: &str) -> Option<&'static SyntaxReference> {
     named(syntaxes.find_syntax_by_extension(token)?)
 }
 
+/// What a fence's info string names, which is its first word: a fence carries
+/// more than a language — `rust,ignore` and `js title=example` are both a name
+/// with something after it that is the renderer's business and not ours.
+///
+/// A fence with no info string at all comes back empty, which names nothing.
+pub fn token(info: &str) -> &str {
+    info.split(|ch: char| ch.is_whitespace() || ch == ',')
+        .next()
+        .unwrap_or("")
+        .trim()
+}
+
 /// The syntax a fence's info string names, or `None` when it names nothing we
 /// have.
 ///
-/// The first word of the info string, because a fence carries more than a
-/// language — `rust,ignore` and `js title=example` are both a language with
-/// something after it that is the renderer's business and not ours.
-///
-/// A fence with no language at all lands here as an empty token and comes back
-/// `None`: nothing guesses what unlabelled code is written in, because guessing
-/// wrong colours it as the wrong language rather than leaving it plain.
+/// A fence with no language at all lands here as an empty [`token`] and comes
+/// back `None`: nothing guesses what unlabelled code is written in, because
+/// guessing wrong colours it as the wrong language rather than leaving it plain.
 pub fn for_token(info: &str) -> Option<&'static SyntaxReference> {
     let syntaxes: &'static SyntaxSet = &SYNTAXES;
 
-    let token = info
-        .split(|ch: char| ch.is_whitespace() || ch == ',')
-        .next()?
-        .trim();
+    let token = token(info);
 
     if token.is_empty() {
         return None;
