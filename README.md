@@ -461,6 +461,46 @@ All of it is rendered on the server and sanitized on the way through, so a
 script or an event handler written into any of those fields is dropped rather
 than run, and no markdown parser reaches the browser.
 
+### Diagrams
+
+A ```` ```mermaid ```` fence in any of those three fields is a **Diagram**: the
+structural part of a Preface said as a picture, for the Set that is quicker to
+grasp as one. It is the one thing on the page mermaid draws rather than the
+server ([ADR 0002](docs/adr/0002-client-side-mermaid-rendering.md)), and the
+only reason there is any JavaScript of ours in the browser at all — a Set with
+no Diagram in it ships none.
+
+It is therefore also the one thing on the page that can fail to render, so it
+degrades rather than breaking: a fence mermaid cannot parse, a bundle that never
+arrived, and a browser running no JS all leave the fenced source exactly as the
+agent wrote it, and never an error graphic. Write a diagram whose source reads
+as text, because sometimes it is read as text.
+
+Three node classes are themed for marking a delta — which is what a Diagram at
+a code approval gate is usually for. Tag a node `new`, `modified` or `removed`
+and it takes the matching colour from the Diff's own palette, in the light
+scheme and the dark one alike, so the picture rhymes with the Diff underneath
+it. An untagged node keeps the base theme, which is what makes a marked one
+read as marked:
+
+````yaml
+preface: |
+  The counter moves out of the process, the throttle goes away, and the
+  endpoint gains a limiter in front of it.
+
+  ```mermaid
+  flowchart LR
+    api[POST /v1/messages] --> limiter[Rate limiter]
+    limiter --> handler[Handler]
+    limiter --> counter[(Redis counter)]
+    handler --> throttle[In-process throttle]
+
+    class limiter,counter new
+    class api modified
+    class throttle removed
+  ```
+````
+
 ### Response
 
 One entry per Question **and** Sub-question in the Set — for the example

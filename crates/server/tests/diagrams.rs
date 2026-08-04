@@ -236,6 +236,60 @@ fn the_renderer_redraws_a_diagram_when_the_colour_scheme_flips() {
 }
 
 #[test]
+fn a_tagged_node_is_marked_in_the_diff_s_own_colours() {
+    let script = fs::read_to_string(assets().join("diagrams.js")).unwrap();
+    let css = stylesheet();
+
+    // The three classes an agent puts on a node, and the pair of variables each
+    // one spends: the wash behind the node and the saturated ink around it,
+    // which is the Diff's own pattern for a line it added or removed.
+    // `modified` is the one the Diff has no colour for — it marks lines, and a
+    // changed line there is an added one beside a removed one — so it takes the
+    // page's "look at this" wash, outlined in the accent.
+    for (class, wash, edge) in [
+        ("new", "--added-wash", "--added"),
+        ("modified", "--marked", "--accent"),
+        ("removed", "--removed-wash", "--removed"),
+    ] {
+        let mark = script
+            .lines()
+            .find(|line| line.contains(&format!("\"{class}\"")))
+            .unwrap_or_else(|| panic!("the renderer should mark a `{class}` node"));
+
+        assert!(
+            mark.contains(wash) && mark.contains(edge),
+            "a `{class}` node should be marked in {wash} and {edge}: {mark}",
+        );
+
+        // And in whichever scheme the page is in: the stylesheet gives each of
+        // these names a value twice, once per scheme, and the renderer spends
+        // whichever one won rather than a colour of its own.
+        for property in [wash, edge] {
+            assert!(
+                css.matches(&format!("{property}:")).count() >= 2,
+                "{property} should be a variable the stylesheet defines in both schemes",
+            );
+        }
+    }
+
+    // Handed to mermaid as CSS of its own rather than written in the stylesheet:
+    // mermaid namespaces everything it is given under the drawing's id, and an
+    // id out-ranks anything the stylesheet could say about a node from outside.
+    assert!(
+        script.contains("themeCSS"),
+        "the marks should reach mermaid as its own CSS",
+    );
+
+    // Which leaves a node nobody tagged exactly as the theme drew it: every
+    // selector here is qualified by the class it marks, so an untagged node
+    // matches none of them.
+    assert!(
+        script.contains(".node.${"),
+        "a mark should select the class it marks rather than every node",
+    );
+}
+
+#[test]
 fn a_drawn_diagram_fits_the_width_it_is_given() {
     let svg = block(&stylesheet(), ".markdown .diagram svg");
 

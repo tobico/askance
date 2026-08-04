@@ -73,6 +73,46 @@
     });
   }
 
+  // The three classes an agent can put on a node to say what it did to the thing
+  // the node stands for, in the colours the Diff below marks the same three
+  // things in — so the picture and the patch read as one account of the delta
+  // rather than two.
+  //
+  // Handed to mermaid as CSS of its own rather than written in the stylesheet
+  // beside every other rule about the page, for a reason that is entirely
+  // mermaid's: what it is given it namespaces under the id of the drawing it is
+  // drawing — `.node.new rect` becomes `#diagram-0-1 .node.new rect` — and an id
+  // out-ranks any selector a stylesheet could write about a node from outside.
+  // The colours are still the stylesheet's; only the rules that spend them are
+  // here.
+  //
+  // Each mark is the Diff's own pattern for a line: the wash behind it and the
+  // saturated ink at its edge. `modified` is the one the Diff has no colour of
+  // its own for — it marks lines, and a changed line there is an added one
+  // beside a removed one — so it takes the wash that means "look at this",
+  // outlined in the accent to tell it from a note, which is filled the same way.
+  function marks(ink) {
+    // What the base theme fills and outlines, because which of them a node is
+    // drawn as is the diagram's business and not this script's.
+    const shapes = ["rect", "circle", "ellipse", "polygon", "path"];
+
+    const mark = (name, wash, edge) => {
+      const selector = shapes
+        .map((shape) => `.node.${name} ${shape}`)
+        .join(", ");
+
+      return `${selector} { fill: ${wash}; stroke: ${edge}; }`;
+    };
+
+    // Nothing about a node nobody tagged: every selector above is qualified by
+    // the class it marks, so an untagged one is left to the theme.
+    return [
+      mark("new", ink("--added-wash"), ink("--added")),
+      mark("modified", ink("--marked"), ink("--accent")),
+      mark("removed", ink("--removed-wash"), ink("--removed")),
+    ].join("\n");
+  }
+
   // What mermaid should draw with, read off the document every time it is asked
   // for rather than written out here. The stylesheet is the only thing that knows
   // what colour the page is — it has two schemes and picks between them by media
@@ -91,6 +131,7 @@
 
     return {
       theme: "base",
+      themeCSS: marks(ink),
       themeVariables: {
         darkMode: dark.matches,
 
