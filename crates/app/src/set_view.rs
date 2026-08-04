@@ -671,7 +671,12 @@ fn sheet(set: SetView) -> impl IntoView {
         {provenance}
         {when}
         {standing}
-        {set.preface_html.map(|html| view! { <section class="preface" inner_html=html></section> })}
+        // Marked as rendered markdown as well as the Preface, so the agent's
+        // headings, tables and code get the same rules there as they get inside
+        // a Question — the box around them is all that is the Preface's own.
+        {set
+            .preface_html
+            .map(|html| view! { <section class="preface markdown" inner_html=html></section> })}
         // Between the Preface and the Questions: the Preface says what the
         // agent is asking about, and the Diff is the evidence for it.
         {set
@@ -1219,7 +1224,9 @@ fn offered(group: String, option: OptionView, live: Fields) -> impl IntoView {
     //
     // The text is filled in wholesale, and it is inline markup all the way down
     // — anything blockier inside the label would end the row it is the tap
-    // target for, so the rendering flattened it on the way here.
+    // target for, so the rendering flattened it on the way here. It is marked as
+    // rendered markdown all the same: what did survive, a code span above all,
+    // is drawn as it is everywhere else.
     view! {
         <li class=class>
             <label>
@@ -1232,7 +1239,7 @@ fn offered(group: String, option: OptionView, live: Fields) -> impl IntoView {
                     on:change=move |_| live.selected.set(Some(n))
                 />
                 <span class="n">{n}</span>
-                <span class="option-text" inner_html=option.text_html></span>
+                <span class="option-text markdown" inner_html=option.text_html></span>
                 {star}
             </label>
         </li>
@@ -1471,7 +1478,7 @@ fn decided_option(option: &OptionView, selected: Option<u32>) -> impl IntoView +
     view! {
         <li class=class>
             <span class="n">{option.n}</span>
-            <span class="option-text" inner_html=option.text_html.clone()></span>
+            <span class="option-text markdown" inner_html=option.text_html.clone()></span>
             {option
                 .recommended
                 .then(|| {

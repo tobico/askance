@@ -619,6 +619,27 @@ async fn a_settled_sets_options_read_with_their_markup_and_their_marks() {
     );
 }
 
+/// Every place the server renders the agent's markdown hangs off the one class,
+/// so a heading, a table or a fenced block is drawn the same way wherever it was
+/// written. Without this each place grows a copy of the rules, and they drift.
+#[tokio::test]
+async fn rendered_markdown_is_marked_for_one_set_of_styles_wherever_it_appears() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    for marked in [
+        r#"<section class="preface markdown""#,
+        r#"<div class="markdown""#,
+        r#"<span class="option-text markdown""#,
+    ] {
+        assert!(
+            html.contains(marked),
+            "expected rendered markdown marked by `{marked}`:\n{html}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn the_recommendation_is_marked_but_nothing_is_preselected() {
     let (_dir, pool) = fresh_pool().await;
@@ -745,7 +766,7 @@ async fn a_set_with_no_preface_shows_no_preface_section() {
     let html = set_page(&pool, &set).await;
 
     assert!(
-        !html.contains(r#"<section class="preface">"#),
+        !html.contains(r#"class="preface"#),
         "an empty Preface is the same as none:\n{html}"
     );
 }

@@ -242,22 +242,175 @@ h1 + .meta .branch {
   font-family: ui-monospace, SFMono-Regular, monospace;
 }
 
+/* The agent's markdown, rendered by the server and drawn the same way wherever
+   it landed: a Preface, a Question, a Sub-question, an Option. One set of rules,
+   because a table is a table and a heading is a heading whichever of those the
+   agent wrote it in — and because a second copy of them drifts from the first.
+   Only the box around the text belongs to the place showing it.
+
+   Every block the markdown dialect can produce is styled here: one left out is
+   the agent's words drawn as whatever the reset happened to leave behind. */
+
+.markdown {
+  /* Agents write URLs and identifiers no line break fits around. */
+  overflow-wrap: break-word;
+}
+
+/* The blocks space themselves and the box around them holds the padding, so
+   however blocky the text is it still sits flush inside its box. */
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre,
+.markdown blockquote,
+.markdown table {
+  margin: 0.75rem 0;
+}
+
+/* Prose inside a card, not sections of the document: the agent's headings stay
+   under the page's own, so a `#` in a Question cannot outrank the title of the
+   Set it is asked in. Two sizes, because six would claim a hierarchy this much
+   text does not have — the deeper levels quieten instead. */
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.markdown h1,
+.markdown h2 {
+  font-size: 1.1rem;
+}
+
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  color: var(--ink-soft);
+}
+
+/* The Set's own outline clears its markers, and `list-style` inherits — a list
+   the agent wrote has to get them back. Named rather than reverted: the browser
+   picks a marker by how deep the list is nested, and inside a Question that
+   counts the Set's own outline too, so the same list would come out disced in a
+   Preface and circled in a Question. */
+.markdown ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+
+.markdown ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+
+/* A level in, a marker in, as the browser's own lists do it. */
+.markdown ul ul {
+  list-style: circle;
+}
+
+.markdown ul ul ul {
+  list-style: square;
+}
+
+/* A nested list is part of the line it hangs under, not a block after it. */
+.markdown li > ul,
+.markdown li > ol {
+  margin: 0.25rem 0;
+}
+
+.markdown code {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.9em;
+}
+
+/* A fenced block, washed and boxed like the Diff's hunks so it reads as code
+   rather than as prose that happens to be monospaced. The outline is what draws
+   the box in the dark scheme, where the wash and the card it sits on are a
+   shade apart. The scroll is the box's, never the page's: a long line moves
+   inside it. The size is set here rather than left to the monospace default,
+   which is a browser quirk shorter than the rest of the page by a point or
+   two. */
+.markdown pre {
+  padding: 0.6rem 0.7rem;
+  overflow-x: auto;
+  background: var(--hunk);
+  border: 1px solid var(--edge);
+  border-radius: 0.4rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  tab-size: 4;
+}
+
+/* The block is already the code; the span inside adds nothing to it. */
+.markdown pre code {
+  font: inherit;
+}
+
+/* A table wide enough to widen the page scrolls inside itself instead: `display:
+   block` moves the scroll box onto the element and leaves the rows to lay
+   themselves out in the table box it generates inside. */
+.markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.markdown th,
+.markdown td {
+  padding: 0.3rem 0.55rem;
+  text-align: left;
+  border: 1px solid var(--edge);
+}
+
+.markdown th {
+  font-weight: 600;
+  background: var(--hunk);
+}
+
+/* Quoted the way a Sub-question is nested: a rule beside the words rather than
+   an indent deep enough to squeeze them on a phone. */
+.markdown blockquote {
+  padding-left: 0.85rem;
+  color: var(--ink-soft);
+  border-left: 2px solid var(--edge);
+}
+
+.markdown hr {
+  margin: 1.25rem 0;
+  border: 0;
+  border-top: 1px solid var(--edge);
+}
+
+/* Nothing the agent embeds reaches past the column it was written into. */
+.markdown img {
+  max-width: 100%;
+}
+
+/* The block rhythm is between the blocks, so the outer edges are the box's to
+   set. Last, and by a pseudo-class, to outrank every margin above. */
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
 .preface {
-  padding: 0.25rem 1rem;
+  padding: 1rem;
   margin-bottom: 1.5rem;
   background: var(--card);
   border: 1px solid var(--edge);
   border-radius: 0.6rem;
-  overflow-wrap: break-word;
-}
-
-.preface pre {
-  overflow-x: auto;
-}
-
-.preface code {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.9em;
 }
 
 /* The Diff: one foldable section per file, each scrolling sideways on its own so
@@ -540,43 +693,17 @@ h1 + .meta .branch {
   color: var(--accent);
 }
 
-/* A Question's text is the agent's markdown, rendered by the server. It is boxed
-   so that filling it in wholesale cannot swallow the label beside it — and the
-   box is dissolved again here, so the first paragraph runs on from the label the
-   way the question's one line always has, and anything blockier than a paragraph
-   starts below it. */
+/* A Question's text is the agent's markdown, rendered by the server and styled
+   with every other place that shows it. It is boxed so that filling it in
+   wholesale cannot swallow the label beside it — and the box is dissolved again
+   here, so the first paragraph runs on from the label the way the question's one
+   line always has, and anything blockier than a paragraph starts below it. */
 .ask .text .markdown {
   display: contents;
 }
 
 .ask .text .markdown > p:first-child {
   display: inline;
-}
-
-.ask .text .markdown > p {
-  margin: 0 0 0.5rem;
-}
-
-.ask .text .markdown > :last-child {
-  margin-bottom: 0;
-}
-
-/* The Set's own outline clears its markers, and `list-style` inherits — a list
-   the agent wrote has to get them back. */
-.ask .text .markdown ul,
-.ask .text .markdown ol {
-  list-style: revert;
-  margin: 0.5rem 0;
-  padding-left: 1.5rem;
-}
-
-.ask .text .markdown code {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.9em;
-}
-
-.ask .text .markdown pre {
-  overflow-x: auto;
 }
 
 .options {
