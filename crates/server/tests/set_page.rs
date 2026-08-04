@@ -564,12 +564,25 @@ async fn an_answered_set_offers_nothing_to_press() {
         html.contains(r#"class="questions decided""#),
         "expected the answered Set's questions:\n{html}"
     );
-    for absent in ["<input", "<textarea", "<button", "accept-all"] {
+    for absent in ["<input", "<textarea", "accept-all"] {
         assert!(
             !html.contains(absent),
             "a Set is answered once, so {absent} has no business on the page:\n{html}"
         );
     }
+
+    // The nav's bar is a button, and the only one an answered Set has: it is a way
+    // around the record rather than anything that acts on it. Counted rather than
+    // excused, so a button that does act on the Set still fails this.
+    assert_eq!(
+        html.matches("<button").count(),
+        1,
+        "expected the nav's bar and nothing else to press:\n{html}"
+    );
+    assert!(
+        html.contains(r#"class="contents-bar""#),
+        "and that one button to be the nav's:\n{html}"
+    );
 }
 
 #[tokio::test]
@@ -1025,6 +1038,121 @@ async fn the_highlight_starts_on_whatever_section_the_set_starts_with() {
         "with no Preface the page opens on the Diff, and the first line of the \
          nav is the Diff's",
     );
+}
+
+/// The bar's own words: what the narrow-viewport reader sees before they open
+/// anything. Read as the rendered HTML of the bar's name rather than as text,
+/// because a Question's name is its label and its words in two faces — and
+/// because a reactive child arrives with hydration markers around it.
+fn bar_says(contents: &str) -> String {
+    let opens = r#"<span class="contents-bar-name"#;
+    let at = contents
+        .find(opens)
+        .unwrap_or_else(|| panic!("expected a bar naming the section in the nav:\n{contents}"));
+    let from = at + contents[at..].find('>').expect("the tag opens") + 1;
+    let closes = contents[from..]
+        .find("</span>")
+        .unwrap_or_else(|| panic!("expected the bar's name to close:\n{contents}"));
+
+    contents[from..from + closes].to_owned()
+}
+
+#[tokio::test]
+async fn the_bar_names_the_line_the_nav_has_highlighted() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    assert!(
+        bar_says(&contents).contains("Preface"),
+        "the bar reads out the line the nav has lit, and on a page nobody has \
+         scrolled that is the first of them:\n{contents}"
+    );
+    assert_eq!(
+        highlighted(&contents),
+        "preface",
+        "which is the same line the sidebar marks — one scroll-spy answers for both",
+    );
+}
+
+#[tokio::test]
+async fn the_bar_names_whatever_section_the_set_starts_with() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.preface = None;
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+    let says = bar_says(&contents);
+
+    assert!(
+        says.contains("Diff") && !says.contains("Preface"),
+        "with no Preface the page opens on the Diff, so that is what the bar \
+         names:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn the_bar_arrives_shut() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    assert!(
+        contents.contains(r#"aria-expanded="false""#),
+        "the list is down only once the reader asks for it:\n{contents}"
+    );
+    assert!(
+        !contents.contains("contents-open"),
+        "and nothing has opened it yet:\n{contents}"
+    );
+    assert!(
+        contents.contains(r##"href="#q1""##),
+        "the entries are in the page all the same — the same list the sidebar \
+         draws, so opening the bar has nothing to fetch and a hash link works \
+         before the wasm lands:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn the_bar_and_the_sidebar_are_the_one_nav_on_every_standing() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let waiting = set_page(&pool, &set).await;
+    let (answered, _) = answered_set_page(&pool, &set, &decided_every_way()).await;
+    let archived = archived_set_page(&pool, &set).await;
+
+    for (standing, html) in [
+        ("waiting", &waiting),
+        ("answered", &answered),
+        ("archived unanswered", &archived),
+    ] {
+        // One nav holding one bar and one list, so which of the bar and the
+        // sidebar the reader gets is the stylesheet's business at a width — and
+        // there is no second copy to fall out of step with the first.
+        assert_eq!(
+            html.matches("<nav").count(),
+            1,
+            "expected exactly one nav on a {standing} Set:\n{html}"
+        );
+        assert_eq!(
+            html.matches("contents-bar\"").count(),
+            1,
+            "expected exactly one bar on a {standing} Set:\n{html}"
+        );
+        assert_eq!(
+            html.matches(r#"class="contents-sections""#).count(),
+            1,
+            "and exactly one list for the two of them to share on a {standing} \
+             Set:\n{html}"
+        );
+    }
 }
 
 #[tokio::test]

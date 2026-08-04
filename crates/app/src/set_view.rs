@@ -706,6 +706,45 @@ fn outline(set: &SetView) -> Vec<Section> {
     sections
 }
 
+/// One anchored part of the page as the nav has it: the id the scroll-spy
+/// watches, and the name to put on it.
+///
+/// The name travels with the id because two things read it out — the sidebar's
+/// own line, and the bar, which says nothing but the name of the line the
+/// highlight is on. Kept as one list rather than as a list of ids beside a list
+/// of names, so the bar cannot name a different part of the page than the one
+/// the spy is pointing at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Watched {
+    /// The id it jumps to, without the `#`.
+    anchor: String,
+
+    /// The name a Question answers to, kept apart from the words beside it. A
+    /// section and a file have none.
+    label: Option<String>,
+
+    /// What the line reads as: a section's name, a path already cut to what will
+    /// fit, or a Question's words.
+    text: String,
+
+    /// The class that sets those words — see [`face`].
+    kind: &'static str,
+}
+
+/// The class that sets one line's words: a Question's label and prose in the
+/// page's own face, a file's path in the Diff's, so that a path in the nav and
+/// the same path over its fold read as the same name.
+///
+/// Taken from whether there is a label because that is what tells the two apart:
+/// a file's path is the whole of what it is called.
+fn face(label: Option<&str>) -> &'static str {
+    if label.is_some() {
+        "contents-question"
+    } else {
+        "contents-path"
+    }
+}
+
 /// Every anchored part of the page, in page order — the ids the scroll-spy
 /// watches, and what [`lit`]'s answer counts along.
 ///
@@ -714,19 +753,30 @@ fn outline(set: &SetView) -> Vec<Section> {
 /// [`lit`] takes the *last* part to have begun: a file always begins after the
 /// Diff heading it is under, so the file wins for as long as the reader is in it,
 /// and the heading only holds the highlight in the gap above the first file.
-fn spied(sections: &[Section]) -> Vec<String> {
+fn spied(sections: &[Section]) -> Vec<Watched> {
     sections
         .iter()
         .flat_map(|section| {
-            std::iter::once(section.anchor.to_owned())
-                .chain(section.entries.iter().map(|entry| entry.anchor.clone()))
+            let heading = Watched {
+                anchor: section.anchor.to_owned(),
+                label: None,
+                text: section.name.to_owned(),
+                kind: "contents-section",
+            };
+
+            std::iter::once(heading).chain(section.entries.iter().map(|entry| Watched {
+                anchor: entry.anchor.clone(),
+                label: entry.label.clone(),
+                text: entry.text.clone(),
+                kind: face(entry.label.as_deref()),
+            }))
         })
         .collect()
 }
 
 /// Where this id sits among the parts the spy watches, if it is one of them.
-fn spot(watched: &[String], anchor: &str) -> Option<usize> {
-    watched.iter().position(|watched| watched == anchor)
+fn spot(watched: &[Watched], anchor: &str) -> Option<usize> {
+    watched.iter().position(|watched| watched.anchor == anchor)
 }
 
 /// What one line of the nav answers for, as places along the watched list.
@@ -793,7 +843,7 @@ fn mark(stands: Option<Stands>, here: usize) -> Option<Mark> {
 
 /// What the line naming this section answers for: its own heading, reaching down
 /// through the last of whatever is under it.
-fn stands(watched: &[String], section: &Section) -> Option<Stands> {
+fn stands(watched: &[Watched], section: &Section) -> Option<Stands> {
     let at = spot(watched, section.anchor)?;
     let through = section
         .entries
@@ -820,7 +870,34 @@ fn lit(started: &[bool]) -> usize {
     started.iter().rposition(|&started| started).unwrap_or(0)
 }
 
+/// What every line of the nav shares: where the reader is, and the two things
+/// about how they got there that a line has to be able to change.
+///
+/// Passed about as one because all three travel together — a press on a line
+/// moves the highlight, pins it, and puts the bar's list away, and the alternative
+/// is threading three arguments through every one of these functions.
+#[derive(Debug, Clone, Copy)]
+struct Nav {
+    /// Where the highlight is, as a place in the watched list.
+    here: RwSignal<usize>,
+
+    /// Whether the highlight is being held where a jump put it. Not reactive:
+    /// nothing is drawn from it — it only decides whether the spy is the one
+    /// saying where the reader is.
+    pinned: StoredValue<bool>,
+
+    /// Whether the bar's list is down. Nothing on a wide viewport reads it: the
+    /// sidebar's list is always there, so the bar is the only thing this opens.
+    open: RwSignal<bool>,
+}
+
 /// The table of contents, drawn from the Set and following the reader down it.
+///
+/// One nav for both of the shapes it takes: the sidebar in the wide margin, and
+/// the bar with the list under it below that width. The same entries, the same
+/// scroll-spy, and the same list of links in the HTML either way — which of the
+/// two the reader gets is the stylesheet's answer to how wide their window is,
+/// and there is no second copy to fall out of step with the first.
 ///
 /// `use<>`: the nav is built from the Set here and keeps nothing of it, so it
 /// outlives the borrow.
@@ -828,15 +905,16 @@ fn contents(set: &SetView) -> impl IntoView + use<> {
     let sections = outline(set);
     let watched = spied(&sections);
 
-    // Where the highlight is, as a place in `watched`. It starts where a page
-    // nobody has scrolled puts it, so the nav the server writes is already
-    // right and the spy has nothing to correct when it arrives.
-    let here = RwSignal::new(lit(&[]));
-
-    // Whether the highlight is being held where a jump put it. Not reactive:
-    // nothing is drawn from it — it only decides whether the spy is the one
-    // saying where the reader is.
-    let pinned = StoredValue::new(false);
+    let nav = Nav {
+        // It starts where a page nobody has scrolled puts it, so the nav the
+        // server writes is already right and the spy has nothing to correct when
+        // it arrives.
+        here: RwSignal::new(lit(&[])),
+        pinned: StoredValue::new(false),
+        // Shut: the bar names where the reader is, and the list is what they ask
+        // for on top of that.
+        open: RwSignal::new(false),
+    };
 
     let sections: Vec<_> = sections
         .into_iter()
@@ -849,7 +927,7 @@ fn contents(set: &SetView) -> impl IntoView + use<> {
                     .into_iter()
                     .map(|line| {
                         let stands = spot(&watched, &line.anchor).map(Stands::just);
-                        entry(line, here, pinned, stands)
+                        entry(line, nav, stands)
                     })
                     .collect();
                 view! { <ol class="contents-entries">{entries}</ol> }
@@ -857,59 +935,114 @@ fn contents(set: &SetView) -> impl IntoView + use<> {
 
             view! {
                 <li class="contents-section">
-                    {link(
-                        section.anchor.to_owned(),
-                        None,
-                        section.name.to_owned(),
-                        None,
-                        here,
-                        pinned,
-                        stands,
-                    )}
+                    {link(section.anchor.to_owned(), None, section.name.to_owned(), None, nav, stands)}
                     {entries}
                 </li>
             }
         })
         .collect();
 
-    // Only ever the browser's doing: on the server the highlight stays where a
-    // page nobody has scrolled puts it.
-    follow(watched, here, pinned);
+    let bar = bar(watched.clone(), nav);
+
+    // Both only ever the browser's doing: on the server the highlight stays where
+    // a page nobody has scrolled puts it, and a list nothing can open needs
+    // nothing to close it.
+    follow(watched, nav);
+    dismiss(nav);
 
     view! {
-        <nav class="contents" aria-label="On this page">
-            <ol class="contents-sections">{sections}</ol>
+        <nav
+            // Reactive whole, like the lines below: hydration re-applies a fixed
+            // `class` and would drop whatever it found there.
+            class=move || {
+                if nav.open.get() { "contents contents-open" } else { "contents" }
+            }
+            aria-label="On this page"
+        >
+            {bar}
+            // What a tap away from the open list lands on. It is here rather than
+            // as a listener watching for presses elsewhere so that the tap hits
+            // *this* and nothing else: a reader taking the list back is not also
+            // choosing an Option or folding a file, and on a page whose whole
+            // purpose is answering carefully, a stray tap that answers something
+            // is not a small thing. Hidden from assistive tech, which has Escape
+            // and the button's own state instead.
+            {move || {
+                nav.open
+                    .get()
+                    .then(|| {
+                        view! {
+                            <div
+                                class="contents-backdrop"
+                                aria-hidden="true"
+                                on:click=move |_| nav.open.set(false)
+                            ></div>
+                        }
+                    })
+            }}
+            <ol class="contents-sections" id="contents-list">
+                {sections}
+            </ol>
         </nav>
     }
 }
 
-/// One nested line of the nav.
-fn entry(
-    entry: Entry,
-    here: RwSignal<usize>,
-    pinned: StoredValue<bool>,
-    stands: Option<Stands>,
-) -> impl IntoView {
-    // A file's path is set in the same face the Diff sets it in, so the two
-    // read as the same name. Prefixed like every other class here: `question`
-    // on its own is the page's own Question card, and a nav line is not one.
-    let kind = if entry.label.is_some() {
-        "contents-question"
-    } else {
-        "contents-path"
+/// The bar: on a narrow viewport, the whole of the nav until it is tapped.
+///
+/// It says one thing — the name of the line the sidebar would have lit — so the
+/// reader knows where they are without a margin to put a list in, and tapping it
+/// brings the list itself down. Not drawn at all where the sidebar is, which is
+/// the stylesheet's doing: there is only ever one of the two on screen.
+///
+/// A button rather than a `details`, because the list it opens is the same `ol`
+/// the sidebar shows and a closed `details` would have to hide that from the wide
+/// reader too. The cost is that the bar does nothing until the wasm lands; the
+/// entries are hash links, so the list itself works from the moment it is open.
+fn bar(watched: Vec<Watched>, nav: Nav) -> impl IntoView {
+    let name = move || {
+        // A place the watched list does not have cannot happen — `here` only
+        // ever holds one of them — but the bar is not worth a panic.
+        let named = watched.get(nav.here.get())?;
+
+        Some(view! {
+            <span class=format!("contents-bar-name {}", named.kind)>
+                {named
+                    .label
+                    .clone()
+                    .map(|label| view! { <span class="contents-label">{label}</span> })}
+                {named.text.clone()}
+            </span>
+        })
     };
 
     view! {
+        <button
+            type="button"
+            class="contents-bar"
+            // The bar's own words are its name — "Preface, button" — and the nav
+            // around it says what a list of them is for.
+            aria-expanded=move || if nav.open.get() { "true" } else { "false" }
+            aria-controls="contents-list"
+            on:click=move |_| nav.open.update(|open| *open = !*open)
+        >
+            {name}
+            // Which way the list will go, and no part of what the bar is called.
+            <span class="contents-bar-mark" aria-hidden="true">
+                "▾"
+            </span>
+        </button>
+    }
+}
+
+/// One nested line of the nav.
+fn entry(entry: Entry, nav: Nav, stands: Option<Stands>) -> impl IntoView {
+    // Prefixed like every other class here: `question` on its own is the page's
+    // own Question card, and a nav line is not one.
+    let kind = face(entry.label.as_deref());
+
+    view! {
         <li class=format!("contents-entry {kind}")>
-            {link(
-                entry.anchor,
-                entry.label,
-                entry.text,
-                Some(entry.whole),
-                here,
-                pinned,
-                stands,
-            )}
+            {link(entry.anchor, entry.label, entry.text, Some(entry.whole), nav, stands)}
         </li>
     }
 }
@@ -926,13 +1059,12 @@ fn link(
     label: Option<String>,
     text: String,
     whole: Option<String>,
-    here: RwSignal<usize>,
-    pinned: StoredValue<bool>,
+    nav: Nav,
     stands: Option<Stands>,
 ) -> impl IntoView {
     let target = anchor.clone();
 
-    let mark = move || mark(stands, here.get());
+    let mark = move || mark(stands, nav.here.get());
 
     view! {
         <a
@@ -965,9 +1097,13 @@ fn link(
                 // submit below it — and the spy would otherwise answer for
                 // wherever the scroll ran out instead of for what was pressed.
                 if let Some(stands) = stands {
-                    here.set(stands.at);
-                    pinned.set_value(true);
+                    nav.here.set(stands.at);
+                    nav.pinned.set_value(true);
                 }
+                // The list has done what it was opened for. On a wide viewport
+                // there was no list to put away — the sidebar stays whatever this
+                // says.
+                nav.open.set(false);
                 jump_to(&target);
             }
         >
@@ -1063,7 +1199,7 @@ const BY_HAND: [&str; 3] = ["wheel", "pointerdown", "keydown"];
 /// that, in that order: an observer still watching a callback that had been freed
 /// is a panic waiting for the next scroll.
 #[cfg(feature = "hydrate")]
-fn follow(anchors: Vec<String>, here: RwSignal<usize>, pinned: StoredValue<bool>) {
+fn follow(anchors: Vec<Watched>, nav: Nav) {
     use std::cell::RefCell;
     use std::rc::Rc;
     use wasm_bindgen::JsCast;
@@ -1099,8 +1235,8 @@ fn follow(anchors: Vec<String>, here: RwSignal<usize>, pinned: StoredValue<bool>
 
                 // Recorded either way, so that letting go of a pin has the truth to
                 // hand rather than having to wait for the next crossing.
-                if !pinned.get_value() {
-                    here.set(lit(&started));
+                if !nav.pinned.get_value() {
+                    nav.here.set(lit(&started));
                 }
             });
 
@@ -1117,8 +1253,8 @@ fn follow(anchors: Vec<String>, here: RwSignal<usize>, pinned: StoredValue<bool>
         // A section the page does not have is skipped rather than fatal: the nav
         // is drawn from the Set and so is this list, but a highlight is not worth
         // dropping the rest of the page over.
-        for anchor in &anchors {
-            if let Some(section) = document.get_element_by_id(anchor) {
+        for part in &anchors {
+            if let Some(section) = document.get_element_by_id(&part.anchor) {
                 observer.observe(&section);
             }
         }
@@ -1127,9 +1263,9 @@ fn follow(anchors: Vec<String>, here: RwSignal<usize>, pinned: StoredValue<bool>
         // where the page is in the same breath, since nothing may cross the
         // reading line for a while yet.
         let by_hand = Closure::<dyn FnMut()>::new(move || {
-            if pinned.get_value() {
-                pinned.set_value(false);
-                here.set(lit(&started.borrow()));
+            if nav.pinned.get_value() {
+                nav.pinned.set_value(false);
+                nav.here.set(lit(&started.borrow()));
             }
         });
 
@@ -1162,7 +1298,54 @@ fn follow(anchors: Vec<String>, here: RwSignal<usize>, pinned: StoredValue<bool>
 // highlight stays where a page nobody has scrolled puts it, which is the first
 // line of the nav.
 #[cfg(not(feature = "hydrate"))]
-fn follow(_anchors: Vec<String>, _here: RwSignal<usize>, _pinned: StoredValue<bool>) {}
+fn follow(_anchors: Vec<Watched>, _nav: Nav) {}
+
+/// Put the bar's list away on Escape.
+///
+/// The other way out of it — tapping the page — is the backdrop's doing rather
+/// than a listener's, so that the tap taking the list back cannot also press
+/// something on the page underneath. This is the way out that needs no aim: a
+/// list drawn over the page has to be dismissible from the keyboard, and there is
+/// nothing to tab to that would do it.
+#[cfg(feature = "hydrate")]
+fn dismiss(nav: Nav) {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::closure::Closure;
+
+    Effect::new(move |_| {
+        let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+            return;
+        };
+
+        let escape =
+            Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
+                if ev.key() == "Escape" {
+                    nav.open.set(false);
+                }
+            });
+
+        let _ =
+            document.add_event_listener_with_callback("keydown", escape.as_ref().unchecked_ref());
+
+        // Removed while the closure is still alive, and let go when the page is: a
+        // listener holding a freed callback is a panic waiting for the next press.
+        let listening = StoredValue::new_local(escape);
+        on_cleanup(move || {
+            let _ = listening.try_with_value(|escape| {
+                if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+                    let _ = document.remove_event_listener_with_callback(
+                        "keydown",
+                        escape.as_ref().unchecked_ref(),
+                    );
+                }
+            });
+        });
+    });
+}
+
+// Nothing on the server can open the list, so nothing there has to close it.
+#[cfg(not(feature = "hydrate"))]
+fn dismiss(_nav: Nav) {}
 
 /// One Set, top to bottom: how it stands and its own material — what the agent
 /// asked about and the evidence for it — and then either the sheet to answer it
@@ -2099,8 +2282,8 @@ mod tests {
 
     use super::{
         ARCHIVE_WARNING, Considered, DiffView, Draft, Filled, Mark, SetView, Standing, Stands,
-        accepting, anchor, answer_to, draft_key, drafted, lit, mark, nothing_answered, outline,
-        restorable, shortened, spied, stands, submitted_when, unanswered,
+        Watched, accepting, anchor, answer_to, draft_key, drafted, lit, mark, nothing_answered,
+        outline, restorable, shortened, spied, stands, submitted_when, unanswered,
     };
 
     fn asked(label: &str, text: &str) -> Question {
@@ -2453,10 +2636,19 @@ mod tests {
         );
     }
 
+    /// The ids of the watched parts of the page, in the order they are watched
+    /// in.
+    fn anchors(watched: &[Watched]) -> Vec<&str> {
+        watched
+            .iter()
+            .map(|watched| watched.anchor.as_str())
+            .collect()
+    }
+
     #[test]
     fn the_spy_watches_every_anchored_part_of_the_page_in_page_order() {
         assert_eq!(
-            spied(&outline(&every_section())),
+            anchors(&spied(&outline(&every_section()))),
             [
                 "preface",
                 "diff",
@@ -2478,9 +2670,74 @@ mod tests {
         set.diff = None;
 
         assert_eq!(
-            spied(&outline(&set)),
+            anchors(&spied(&outline(&set))),
             ["questions", "q1", "q2"],
             "the Questions are the one section every Set has",
+        );
+    }
+
+    #[test]
+    fn every_watched_part_of_the_page_carries_the_name_the_nav_gives_it() {
+        let watched = spied(&outline(&every_section()));
+
+        let said: Vec<_> = watched
+            .iter()
+            .map(|watched| (watched.label.as_deref(), watched.text.as_str()))
+            .collect();
+
+        assert_eq!(
+            said,
+            [
+                (None, "Preface"),
+                (None, "Diff"),
+                (None, "src/limits.rs"),
+                (None, "notes.txt"),
+                (None, "Questions"),
+                (Some("Q1"), "Where should the request counter live?"),
+                (Some("Q2"), "How should a throttled client be told?"),
+            ],
+            "the bar reads a line out by the same name the sidebar shows it \
+             under, because the two are one list — a section by its name, a file \
+             by its path, and a Question by its label and its words",
+        );
+    }
+
+    #[test]
+    fn a_watched_line_is_set_in_the_face_its_kind_of_name_wants() {
+        let watched = spied(&outline(&every_section()));
+
+        assert_eq!(
+            watched
+                .iter()
+                .map(|watched| watched.kind)
+                .collect::<Vec<_>>(),
+            [
+                "contents-section",
+                "contents-section",
+                "contents-path",
+                "contents-path",
+                "contents-section",
+                "contents-question",
+                "contents-question",
+            ],
+            "so a path in the bar is set as the Diff sets it, and the two read \
+             as the same name",
+        );
+    }
+
+    #[test]
+    fn a_path_the_bar_reads_out_is_cut_as_the_nav_cuts_it() {
+        let mut set = every_section();
+        set.diff = Some(DiffView {
+            html: String::new(),
+            paths: vec!["crates/app/src/set_view.rs".to_owned()],
+        });
+
+        let watched = spied(&outline(&set));
+
+        assert_eq!(
+            watched[2].text, "…/app/src/set_view.rs",
+            "the bar shows the same one line the sidebar does, cut the same way",
         );
     }
 

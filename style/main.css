@@ -257,26 +257,152 @@ p.meta .branch {
   font-family: ui-monospace, SFMono-Regular, monospace;
 }
 
-/* The table of contents: the page's sections, top to bottom, in the margin the
-   content column was already leaving empty — so the column stays exactly where
-   it was and nothing below the nav has moved.
+/* The table of contents, in the two shapes the one nav takes: the sidebar, in the
+   margin the content column was already leaving empty, and — where there is no
+   such margin — a bar across the top with the list folded into it.
+
+   The two blocks below are complements of one another about the same width, so
+   exactly one of them ever applies and the reader always has exactly one of the
+   two. `(width < 64rem)` and `(min-width: 64rem)` meet with no gap and no
+   overlap between them, which is the whole of why that is true: move the
+   breakpoint in one and it has to move in the other. */
+
+/* The bar. It names the line the sidebar would have lit — the section, file or
+   Question the reader is in — and the list comes down under it when it is
+   pressed. */
+@media (width < 64rem) {
+  /* Sticky rather than fixed: the bar sits where it is read, under the title,
+     and pins itself to the top edge as the page goes up under it. Nothing is
+     covered on arrival that way, and there is no room to make for it.
+
+     Out past the column's padding on both sides, so that once it is pinned the
+     page passes behind the bar rather than beside it. */
+  .contents {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin: 0 -1rem 1.25rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+
+  /* A full-width line of its own, with the name given whatever room the mark
+     beside it does not want. Tall enough to be a thumb's target, and above the
+     backdrop so that pressing it again is still how the list is put away. */
+  .contents-bar {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.6rem 1rem;
+    font: inherit;
+    color: var(--ink);
+    background: var(--card);
+    border: 0;
+    border-bottom: 1px solid var(--edge);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  /* One line, whatever it is naming: a Question's words run to whatever the bar
+     has and are cut there, the same as they are in the sidebar. */
+  .contents-bar-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-weight: 600;
+  }
+
+  /* A path in the bar is set as the Diff sets it, so the two read as the same
+     name — the sidebar's own rule for the same reason. */
+  .contents-bar-name.contents-path {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 0.85rem;
+  }
+
+  .contents-bar-mark {
+    flex: none;
+    color: var(--ink-soft);
+  }
+
+  /* What a tap away from the open list lands on, so that it lands on nothing
+     else. Over the whole window and a wash darker, which is also what says the
+     list is in front of the page rather than part of it. */
+  .contents-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgb(0 0 0 / 20%);
+  }
+
+  /* Shut, the list is not drawn at all: the bar is the whole of the nav until it
+     is asked for. */
+  .contents-sections {
+    display: none;
+  }
+
+  /* Open, it hangs off the bar over the page rather than pushing it down — a
+     list that moved the page under it would have taken the reader somewhere
+     before they chose anywhere. Long lists scroll inside it. */
+  .contents-open .contents-sections {
+    display: block;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    /* Over the backdrop it is being held in front of the page by. */
+    z-index: 1;
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 0.6rem 1rem 0.8rem;
+    background: var(--card);
+    border-bottom: 1px solid var(--edge);
+  }
+
+  /* Room to be hit with a thumb: the sidebar's lines are a pointer's target and
+     can sit as close together as they read well at, and these cannot.
+
+     Reached through the nav so that it outweighs the shared rule below rather
+     than racing it: the two would otherwise be of equal specificity, and the one
+     further down the file — that one — would win. */
+  .contents .contents-link {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+  }
+
+  /* Where a jump lands. By the time the scroll ends the bar is pinned across the
+     top, so a heading brought exactly to the top edge is the one thing the bar
+     is covering — the anchors keep the bar's height clear of themselves, plus a
+     little air. Every part of the page the nav jumps to, and only under this
+     width: where the bar does not exist there is nothing to land clear of. */
+  .preface,
+  .diff,
+  #questions,
+  .diff-file,
+  .question {
+    scroll-margin-top: 3.5rem;
+  }
+}
+
+/* The sidebar: the page's sections, top to bottom, in the margin — so the column
+   stays exactly where it was and nothing below the nav has moved.
 
    Out of the flow entirely, and positioned from the middle of the viewport,
    which is what the column is centred on. Fixed rather than sticky: there is
    nothing above it in the margin to scroll past, so it is in the same place on
-   arrival as it is a page down.
-
-   Drawn only once the viewport is wide enough to hold both. Narrower than that
-   there is no margin to put it in, and the phone's own way in is its own
-   thing. */
-
-.contents {
-  display: none;
-}
+   arrival as it is a page down. */
 
 @media (min-width: 64rem) {
+  /* There is no bar here: the list is in the margin already, and a bar naming
+     the line beside it would be saying the same thing twice. */
+  .contents-bar {
+    display: none;
+  }
+
   .contents {
-    display: block;
     position: fixed;
     top: 1.25rem;
     /* The column is 46rem at its widest and centred, so its edge is 23rem from
