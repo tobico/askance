@@ -123,6 +123,10 @@ pub fn router_with_ui(pool: SqlitePool, leptos_options: LeptosOptions) -> Router
     let context_waits = waits.clone();
     let shell_options = leptos_options.clone();
 
+    // What the bundles are under, as a path prefix to match. Shared rather than
+    // cloned per request: it is the same string for the life of the server.
+    let pkg_dir: std::sync::Arc<str> = format!("/{}/", leptos_options.site_pkg_dir).into();
+
     let ui = Router::new()
         .leptos_routes_with_context(
             &leptos_options,
@@ -135,9 +139,55 @@ pub fn router_with_ui(pool: SqlitePool, leptos_options: LeptosOptions) -> Router
             move || shell(shell_options.clone()),
         )
         .fallback(leptos_axum::file_and_error_handler(shell))
+        .layer(axum::middleware::from_fn(move |request, next| {
+            let pkg_dir = pkg_dir.clone();
+            async move { cached(&pkg_dir, request, next).await }
+        }))
         .with_state(leptos_options);
 
     api(pool, settlements, waits).merge(ui)
+}
+
+/// How long a bundle under `site-pkg-dir` may be kept: a year, which is as long
+/// as the specification lets anyone ask for, and unconditionally, since a hashed
+/// name is never reused. `hash-files` is what earns this — see the workspace's
+/// Leptos metadata.
+const KEEP: &str = "public, max-age=31536000, immutable";
+
+/// What everything else gets: kept, but never used without asking the server
+/// first. A page has to be revalidated because it *names* the hashed bundles —
+/// serving a stale one hands the browser the previous build's wasm and the
+/// hydration panic that comes with it. The service worker and the manifest have
+/// stable names for their own reasons and so cannot be kept either.
+const ASK: &str = "no-cache";
+
+/// Say how long each response may be reused for.
+///
+/// Nothing here set a `Cache-Control` before this, which left it to each
+/// browser's guess — and a browser guessing that a bundle under a stable name is
+/// still fresh is a browser that runs the last build's wasm against this build's
+/// HTML. Both halves of that are answered: the bundles are named by content and
+/// kept forever, and everything that names them is revalidated every time.
+///
+/// A handler that has said its own answer keeps it.
+async fn cached(
+    pkg_dir: &str,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::header::CACHE_CONTROL;
+
+    let hashed = request.uri().path().starts_with(pkg_dir);
+
+    let mut response = next.run(request).await;
+
+    let headers = response.headers_mut();
+    if !headers.contains_key(CACHE_CONTROL) {
+        let policy = if hashed { KEEP } else { ASK };
+        headers.insert(CACHE_CONTROL, policy.try_into().expect("a valid header"));
+    }
+
+    response
 }
 
 /// Open the database and serve until the process is stopped.
@@ -178,5 +228,11 @@ pub fn leptos_options() -> LeptosOptions {
     LeptosOptions::builder()
         .output_name("askance")
         .site_root("target/site")
+        // Matching the workspace's `hash-files`, since what this is falling back
+        // to is exactly what `cargo leptos build` left behind: without it the
+        // page would name a `pkg/askance.wasm` that no build writes any more.
+        // The file itself is found beside the binary, which is where cargo-leptos
+        // puts it.
+        .hash_files(true)
         .build()
 }

@@ -62,15 +62,28 @@ rustPlatform.buildRustPackage {
     install -m755 target/release/askance-server $out/bin/askance-server
     install -m755 target/release/askance $out/bin/askance
 
+    # What `hash-files` wrote: which build each bundle under `site/pkg` came
+    # from, which is the only way the server can name them. cargo-leptos leaves
+    # it beside the binary it built, and it is kept beside the site it describes.
+    install -m644 target/release/hash.txt $out/share/askance/hash.txt
+
     # The server takes its Leptos options from the environment only when
     # `LEPTOS_OUTPUT_NAME` is set, and otherwise falls back to a *relative*
     # `target/site` — so without this it would serve no wasm and no CSS from
     # anywhere but a working tree. The runtime configuration proper —
     # `ASKANCE_LISTEN`, `ASKANCE_DATABASE` — stays the caller's to set.
+    #
+    # `LEPTOS_HASH_FILES` is the other half of the workspace's `hash-files`: the
+    # bundles in the site root are named by content, and a server that did not
+    # know it would write the plain names, which nothing there answers to. The
+    # hash file is named absolutely because Leptos looks for it beside the
+    # binary, and that is a directory for binaries.
     wrapProgram $out/bin/askance-server \
       --set LEPTOS_OUTPUT_NAME askance \
       --set LEPTOS_SITE_ROOT $out/share/askance/site \
-      --set LEPTOS_SITE_PKG_DIR pkg
+      --set LEPTOS_SITE_PKG_DIR pkg \
+      --set LEPTOS_HASH_FILES true \
+      --set LEPTOS_HASH_FILE_NAME $out/share/askance/hash.txt
 
     # The CLI shells out to git for the project, the branch and the Diff.
     wrapProgram $out/bin/askance \

@@ -140,3 +140,10 @@ reload-port = 3001
 lib-features = ["hydrate"]
 lib-default-features = false
 bin-features = []
+# Content-hashed bundle names, written to `hash.txt` beside the binary and read
+# back by the shell. The wasm and the HTML that hydrates it have to come from
+# the same build: a browser holding a cached `askance.wasm` from an older one
+# panics out of hydration and leaves a dead page, which is what an unhashed
+# name under a stable URL invites. A new build is a new URL, so the two can no
+# longer be mixed, and the cache is free to keep the old one forever.
+hash-files = true
