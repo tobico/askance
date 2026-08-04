@@ -1205,80 +1205,119 @@ fn follow(anchors: Vec<Watched>, nav: Nav) {
     use wasm_bindgen::JsCast;
     use wasm_bindgen::closure::Closure;
 
+    // What the watching is made of once it has begun. Held together so that the
+    // disconnect and the removals happen while the callbacks the observer and the
+    // window hold are still alive, and so that all of it is let go at once.
+    type Watching = (
+        web_sys::IntersectionObserver,
+        Closure<dyn FnMut(js_sys::Array)>,
+        Closure<dyn FnMut()>,
+    );
+
     // In an effect because it needs the page to be there to watch: on the server
-    // this never runs, and in the browser it runs once the sections it names are
-    // in the document.
+    // this never runs, and in the browser it runs once the nav is being drawn.
     Effect::new(move |_| {
-        let Some(window) = web_sys::window() else {
-            return;
-        };
-        let Some(document) = window.document() else {
-            return;
-        };
+        // What the frame below leaves behind, and nothing until it has run — or
+        // ever, if the page goes first.
+        let watching = StoredValue::new_local(None::<Watching>);
 
-        // Which of them have started, by their place in `anchors`. Kept because
-        // the browser reports only what has changed since it last spoke.
-        let started = Rc::new(RefCell::new(vec![false; anchors.len()]));
+        let anchors = anchors.clone();
 
-        let watched = anchors.clone();
-        let crossed = Rc::clone(&started);
-        let crossings =
-            Closure::<dyn FnMut(js_sys::Array)>::new(move |crossings: js_sys::Array| {
-                let mut started = crossed.borrow_mut();
+        // A frame later rather than now, because "the nav is being drawn" is not
+        // yet "the page is in the document": a Set the reader walked to from
+        // another page arrives through a Suspense, which builds the whole sheet
+        // away from the document and only then puts it in — and this effect runs
+        // in between. Asking the document for the sections at that moment finds
+        // none of them, which is a spy that watches nothing and a highlight that
+        // never leaves the first line until the page is loaded again. By the next
+        // frame the browser has the page, however the reader came to it.
+        let begin = move || {
+            let Some(window) = web_sys::window() else {
+                return;
+            };
+            let Some(document) = window.document() else {
+                return;
+            };
 
-                for crossing in crossings.iter() {
-                    let crossing: web_sys::IntersectionObserverEntry = crossing.unchecked_into();
-                    if let Some(at) = spot(&watched, &crossing.target().id()) {
-                        started[at] = crossing.is_intersecting();
+            // Which of them have started, by their place in `anchors`. Kept because
+            // the browser reports only what has changed since it last spoke.
+            let started = Rc::new(RefCell::new(vec![false; anchors.len()]));
+
+            let watched = anchors.clone();
+            let crossed = Rc::clone(&started);
+            let crossings =
+                Closure::<dyn FnMut(js_sys::Array)>::new(move |crossings: js_sys::Array| {
+                    let mut started = crossed.borrow_mut();
+
+                    for crossing in crossings.iter() {
+                        let crossing: web_sys::IntersectionObserverEntry =
+                            crossing.unchecked_into();
+                        if let Some(at) = spot(&watched, &crossing.target().id()) {
+                            started[at] = crossing.is_intersecting();
+                        }
                     }
-                }
 
-                // Recorded either way, so that letting go of a pin has the truth to
-                // hand rather than having to wait for the next crossing.
-                if !nav.pinned.get_value() {
-                    nav.here.set(lit(&started));
+                    // Recorded either way, so that letting go of a pin has the truth to
+                    // hand rather than having to wait for the next crossing.
+                    if !nav.pinned.get_value() {
+                        nav.here.set(lit(&started));
+                    }
+                });
+
+            let watch = web_sys::IntersectionObserverInit::new();
+            watch.set_root_margin(READING_LINE);
+
+            let Ok(observer) = web_sys::IntersectionObserver::new_with_options(
+                crossings.as_ref().unchecked_ref(),
+                &watch,
+            ) else {
+                return;
+            };
+
+            // A section the page does not have is skipped rather than fatal: the nav
+            // is drawn from the Set and so is this list, but a highlight is not worth
+            // dropping the rest of the page over.
+            for part in &anchors {
+                if let Some(section) = document.get_element_by_id(&part.anchor) {
+                    observer.observe(&section);
+                }
+            }
+
+            // The reader taking over: the pin goes, and the highlight catches up to
+            // where the page is in the same breath, since nothing may cross the
+            // reading line for a while yet.
+            let by_hand = Closure::<dyn FnMut()>::new(move || {
+                if nav.pinned.get_value() {
+                    nav.pinned.set_value(false);
+                    nav.here.set(lit(&started.borrow()));
                 }
             });
 
-        let watch = web_sys::IntersectionObserverInit::new();
-        watch.set_root_margin(READING_LINE);
+            for moved in BY_HAND {
+                let _ = window
+                    .add_event_listener_with_callback(moved, by_hand.as_ref().unchecked_ref());
+            }
 
-        let Ok(observer) = web_sys::IntersectionObserver::new_with_options(
-            crossings.as_ref().unchecked_ref(),
-            &watch,
-        ) else {
+            // Left where the cleanup below can find it. A page that went while the
+            // frame was pending never gets here: the frame is canceled first.
+            let _ = watching.try_set_value(Some((observer, crossings, by_hand)));
+        };
+
+        let Ok(frame) = request_animation_frame_with_handle(begin) else {
             return;
         };
 
-        // A section the page does not have is skipped rather than fatal: the nav
-        // is drawn from the Set and so is this list, but a highlight is not worth
-        // dropping the rest of the page over.
-        for part in &anchors {
-            if let Some(section) = document.get_element_by_id(&part.anchor) {
-                observer.observe(&section);
-            }
-        }
-
-        // The reader taking over: the pin goes, and the highlight catches up to
-        // where the page is in the same breath, since nothing may cross the
-        // reading line for a while yet.
-        let by_hand = Closure::<dyn FnMut()>::new(move || {
-            if nav.pinned.get_value() {
-                nav.pinned.set_value(false);
-                nav.here.set(lit(&started.borrow()));
-            }
-        });
-
-        for moved in BY_HAND {
-            let _ =
-                window.add_event_listener_with_callback(moved, by_hand.as_ref().unchecked_ref());
-        }
-
-        // Held together so the disconnect and the removals below happen while the
-        // callbacks are still alive, and all of it is let go when the page is.
-        let watching = StoredValue::new_local((observer, crossings, by_hand));
         on_cleanup(move || {
-            let _ = watching.try_with_value(|(observer, _, by_hand)| {
+            // Canceled whether or not it has run: a frame that already fired is
+            // no longer there to cancel, and one that has not must not begin
+            // watching for a page that has gone.
+            frame.cancel();
+
+            let _ = watching.try_with_value(|watching| {
+                let Some((observer, _, by_hand)) = watching else {
+                    return;
+                };
+
                 observer.disconnect();
 
                 if let Some(window) = web_sys::window() {
