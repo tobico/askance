@@ -18,6 +18,6 @@ hash deep-links work server-rendered, before any script.
 ## Tasks
 
 - [x] 01: Anchors and section headings — [details](01-anchors-and-headings.md)
-- [ ] 02: Desktop sidebar with click-to-jump — [details](02-desktop-sidebar.md)
+- [x] 02: Desktop sidebar with click-to-jump — [details](02-desktop-sidebar.md)
 - [ ] 03: Scroll-spy highlight — [details](03-scroll-spy.md)
 - [ ] 04: Mobile bar with dropdown — [details](04-mobile-bar.md)

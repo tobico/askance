@@ -827,6 +827,135 @@ async fn a_section_the_set_does_not_have_gets_no_heading_and_no_anchor() {
     );
 }
 
+/// The table of contents as the server writes it — which is what a reader has
+/// before any script has run, and what hydration then takes over.
+fn table_of_contents(html: &str) -> String {
+    let at = html
+        .find("<nav")
+        .unwrap_or_else(|| panic!("expected a table of contents in the page:\n{html}"));
+    let closes = html[at..]
+        .find("</nav>")
+        .unwrap_or_else(|| panic!("expected the nav to close:\n{html}"));
+
+    html[at..at + closes].to_owned()
+}
+
+#[tokio::test]
+async fn the_table_of_contents_mirrors_the_page_top_to_bottom() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    let jumps = positions(
+        &contents,
+        &[
+            r##"href="#preface""##,
+            r##"href="#diff""##,
+            r##"href="#diff-1""##,
+            r##"href="#diff-2""##,
+            r##"href="#questions""##,
+            r##"href="#q1""##,
+            r##"href="#q2""##,
+            r##"href="#q3""##,
+        ],
+    );
+    let mut ordered = jumps.clone();
+    ordered.sort_unstable();
+    assert_eq!(
+        jumps, ordered,
+        "the nav lists the sections in the order the page has them:\n{contents}"
+    );
+
+    assert!(
+        !contents.contains(r##"href="#q2a""##),
+        "a Sub-question scrolls into view with its parent, so it is not listed \
+         separately:\n{contents}"
+    );
+    assert!(
+        contents.contains("Where should the request counter live?"),
+        "a Question is listed by its label and its own words:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn the_contents_names_the_diff_files_in_diff_order() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    // The paths travel with the Set rather than being read back out of the
+    // rendered Diff, and the nth of them has to be what the nth fold shows —
+    // `#diff-1` is the file the Diff names first.
+    let first = positions(&contents, &[r##"href="#diff-1""##])[0];
+    let second = positions(&contents, &[r##"href="#diff-2""##])[0];
+
+    assert!(
+        contents[first..second].contains("src/limits.rs"),
+        "expected the Diff's first file under #diff-1:\n{contents}"
+    );
+    assert!(
+        contents[second..].contains("notes.txt"),
+        "expected the Diff's second file under #diff-2:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn the_contents_lists_only_the_sections_the_set_has() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.preface = Some("   \n".to_owned());
+    assert!(set.diff.is_none(), "and no Diff either");
+
+    let contents = table_of_contents(&set_page(&pool, &set).await);
+
+    for absent in [r##"href="#preface""##, r##"href="#diff""##] {
+        assert!(
+            !contents.contains(absent),
+            "there is no such section to jump to: {absent}\n{contents}"
+        );
+    }
+    assert!(
+        contents.contains(r##"href="#questions""##) && contents.contains(r##"href="#q1""##),
+        "the Questions are the one section every Set has:\n{contents}"
+    );
+}
+
+#[tokio::test]
+async fn every_standing_gets_a_table_of_contents() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.diff = Some(modified_and_untracked_diff());
+
+    let waiting = set_page(&pool, &set).await;
+    let (answered, _) = answered_set_page(&pool, &set, &decided_every_way()).await;
+    let archived = archived_set_page(&pool, &set).await;
+
+    for (standing, html) in [
+        ("waiting", &waiting),
+        ("answered", &answered),
+        ("archived unanswered", &archived),
+    ] {
+        let contents = table_of_contents(html);
+
+        for jump in [
+            r##"href="#preface""##,
+            r##"href="#diff-1""##,
+            r##"href="#questions""##,
+            r##"href="#q1""##,
+        ] {
+            assert!(
+                contents.contains(jump),
+                "expected {jump} on a {standing} Set — a Set is read for what it \
+                 asked about however it stands:\n{contents}"
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn a_set_that_does_not_exist_says_so() {
     let (_dir, pool) = fresh_pool().await;

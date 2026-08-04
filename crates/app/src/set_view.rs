@@ -45,13 +45,29 @@ pub struct SetView {
     pub project: Option<String>,
     pub branch: Option<String>,
     pub preface_html: Option<String>,
-    pub diff_html: Option<String>,
+    pub diff: Option<DiffView>,
     pub questions: Vec<Question>,
 
     /// Where the Set stands. It decides whether this page is a form or a record,
     /// so it travels with the Set rather than being fetched once the page is
     /// already up.
     pub standing: Standing,
+}
+
+/// The Diff as the browser receives it: the HTML the server rendered, and the
+/// path of each file in it, in Diff order — `paths[0]` is what `#diff-1` shows.
+///
+/// The two travel together rather than as two fields on the Set, because they
+/// describe the same thing and the table of contents is built from both: the
+/// nav names the folds from the paths and jumps by their positions, so a nav
+/// out of step with the markup would jump to the wrong file. Reading the paths
+/// back out of the rendered HTML instead would mean shipping a parser to do it
+/// with, and would make the nav a description of the page rather than of the
+/// Set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiffView {
+    pub html: String,
+    pub paths: Vec<String>,
 }
 
 /// How a Set stands: still waiting on the human, answered, or closed unanswered.
@@ -132,7 +148,7 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
         // A Diff with no files in it is the same as none: the CLI attaches one
         // only when the tree is dirty, but an empty patch is not worth a
         // heading either.
-        diff_html: stored.set.diff.as_deref().and_then(crate::diff::to_html),
+        diff: stored.set.diff.as_deref().and_then(crate::diff::to_html),
         questions: stored.set.questions,
         standing,
     }))
@@ -551,6 +567,260 @@ fn anchor(label: &str, position: usize) -> String {
     }
 }
 
+/// How much of a file's path the table of contents has room for, in characters.
+///
+/// A count rather than a measurement: the paths are monospaced, so characters
+/// are what the column is made of — and a cut made here can land on a directory
+/// boundary, where one made by the column would land wherever the pixels ran
+/// out. The stylesheet still clips what overruns, for the narrow end of the
+/// range the nav is drawn across; this is what keeps the ordinary path legible.
+const PATH_ROOM: usize = 24;
+
+/// A file's path as the table of contents shows it: whole when it fits, and
+/// otherwise cut from the *left* — `crates/app/src/set_view.rs` becomes
+/// `…/app/src/set_view.rs`.
+///
+/// From the left because the end of a path is the part being looked for: a
+/// column of `crates/app/src/…` names nothing. The cut lands on a directory
+/// boundary so what is left is still a path, and only cuts into the filename
+/// itself when the filename alone is longer than the line — at which point
+/// something has to give, and the extension is worth more than the stem.
+fn shortened(path: &str) -> String {
+    if path.chars().count() <= PATH_ROOM {
+        return path.to_owned();
+    }
+
+    // What is left once the leading `…/` has taken its two.
+    let room = PATH_ROOM - 2;
+
+    // The first boundary whose tail fits is the one that keeps the most of the
+    // path.
+    let boundary = path
+        .char_indices()
+        .filter(|(_, ch)| *ch == '/')
+        .map(|(at, ch)| at + ch.len_utf8())
+        .find(|&start| path[start..].chars().count() <= room);
+
+    match boundary {
+        Some(start) => format!("…/{}", &path[start..]),
+        None => {
+            let cut = path
+                .char_indices()
+                .nth(path.chars().count() - (room + 1))
+                .map_or(0, |(at, _)| at);
+            format!("…{}", &path[cut..])
+        }
+    }
+}
+
+/// One line of the table of contents under a section heading: a file of the
+/// Diff, or a Question.
+struct Entry {
+    /// The id it jumps to, without the `#`.
+    anchor: String,
+
+    /// The name a Question answers to, kept apart from the words beside it so
+    /// it can be styled as the fixed thing it is. A file has none — its path is
+    /// the whole of what it is called.
+    label: Option<String>,
+
+    /// What the line reads as, already cut down to what will fit if it is a
+    /// path. A Question's words are left whole and cut by the column.
+    text: String,
+
+    /// The whole of it, for the browser's own tooltip: the nav is narrow, and
+    /// this is where the truncated line can be read out in full.
+    whole: String,
+}
+
+/// One section of the page in the table of contents: the heading it jumps to,
+/// and whatever the section is made of.
+struct Section {
+    anchor: &'static str,
+    name: &'static str,
+    entries: Vec<Entry>,
+}
+
+/// The table of contents: the page's sections top to bottom, each with its own
+/// parts nested under it.
+///
+/// Built from the Set the page was drawn from rather than from the page, so a
+/// section the Set does not have is a section the nav does not list — and so
+/// the nav is in the HTML the server writes, which means it is there to be read
+/// before hydration and its links work as plain hash links until then.
+///
+/// `use<>`: the nav is built from the Set here and keeps nothing of it, so it
+/// outlives the borrow.
+fn contents(set: &SetView) -> impl IntoView + use<> {
+    let mut sections: Vec<Section> = Vec::new();
+
+    if set.preface_html.is_some() {
+        sections.push(Section {
+            anchor: "preface",
+            name: "Preface",
+            entries: Vec::new(),
+        });
+    }
+
+    if let Some(diff) = &set.diff {
+        sections.push(Section {
+            anchor: "diff",
+            name: "Diff",
+            entries: diff
+                .paths
+                .iter()
+                .enumerate()
+                .map(|(index, path)| Entry {
+                    // The renderer counts the folds from one, and these are the
+                    // same folds in the same order.
+                    anchor: format!("diff-{}", index + 1),
+                    label: None,
+                    text: shortened(path),
+                    whole: path.clone(),
+                })
+                .collect(),
+        });
+    }
+
+    // Unconditional, like the heading it points at: every Set has Questions.
+    sections.push(Section {
+        anchor: "questions",
+        name: "Questions",
+        entries: set
+            .questions
+            .iter()
+            .enumerate()
+            .map(|(index, question)| Entry {
+                anchor: anchor(question.name(), index + 1),
+                label: Some(question.name().to_owned()),
+                text: question.text.clone(),
+                whole: format!("{} {}", question.name(), question.text),
+            })
+            .collect(),
+    });
+
+    // Sub-questions are not listed: one scrolls into view with its parent, and
+    // a nav that listed them would be the page again rather than a way around
+    // it.
+    let sections: Vec<_> = sections
+        .into_iter()
+        .map(|section| {
+            let entries = (!section.entries.is_empty()).then(|| {
+                let entries: Vec<_> = section.entries.into_iter().map(entry).collect();
+                view! { <ol class="contents-entries">{entries}</ol> }
+            });
+
+            view! {
+                <li class="contents-section">
+                    {link(section.anchor.to_owned(), None, section.name.to_owned(), None)}
+                    {entries}
+                </li>
+            }
+        })
+        .collect();
+
+    view! {
+        <nav class="contents" aria-label="On this page">
+            <ol class="contents-sections">{sections}</ol>
+        </nav>
+    }
+}
+
+/// One nested line of the nav.
+fn entry(entry: Entry) -> impl IntoView {
+    // A file's path is set in the same face the Diff sets it in, so the two
+    // read as the same name. Prefixed like every other class here: `question`
+    // on its own is the page's own Question card, and a nav line is not one.
+    let kind = if entry.label.is_some() {
+        "contents-question"
+    } else {
+        "contents-path"
+    };
+
+    view! {
+        <li class=format!("contents-entry {kind}")>
+            {link(entry.anchor, entry.label, entry.text, Some(entry.whole))}
+        </li>
+    }
+}
+
+/// The jump itself: an anchor to the id, which works as a plain hash link with
+/// no script at all, and which script — once there is any — takes over so the
+/// jump can unfold what it lands on and leave the history alone.
+fn link(
+    anchor: String,
+    label: Option<String>,
+    text: String,
+    whole: Option<String>,
+) -> impl IntoView {
+    let target = anchor.clone();
+
+    view! {
+        <a
+            class="contents-link"
+            href=format!("#{anchor}")
+            title=whole
+            on:click=move |ev: leptos::ev::MouseEvent| {
+                // Only the plain click: a modified one is the reader asking
+                // their browser for a tab or a window, which is the browser's
+                // business and not ours.
+                if ev.ctrl_key() || ev.meta_key() || ev.shift_key() || ev.alt_key() {
+                    return;
+                }
+                ev.prevent_default();
+                jump_to(&target);
+            }
+        >
+            {label.map(|label| view! { <span class="contents-label">{label}</span> })}
+            {text}
+        </a>
+    }
+}
+
+/// Take the reader to the section, file or Question this id names.
+///
+/// A folded file is unfolded before the jump: landing on a closed fold is
+/// landing on nothing. The scroll is the browser's own, so how it moves is the
+/// stylesheet's business — which is where `prefers-reduced-motion` is honoured.
+///
+/// The URL is set with `replaceState` rather than by letting the link navigate:
+/// the reader gets a hash they can copy or reload into, but moving around a page
+/// is not somewhere to come *back* to, and twenty jumps should not bury the
+/// list this Set was opened from twenty presses of Back away.
+#[cfg(feature = "hydrate")]
+fn jump_to(anchor: &str) {
+    use wasm_bindgen::JsCast;
+
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(target) = window
+        .document()
+        .and_then(|document| document.get_element_by_id(anchor))
+    else {
+        return;
+    };
+
+    if let Some(fold) = target.dyn_ref::<web_sys::HtmlDetailsElement>() {
+        fold.set_open(true);
+    }
+
+    target.scroll_into_view();
+
+    if let Ok(history) = window.history() {
+        let _ = history.replace_state_with_url(
+            &wasm_bindgen::JsValue::NULL,
+            "",
+            Some(&format!("#{anchor}")),
+        );
+    }
+}
+
+// The server draws the nav but never presses it: the handler is what hydration
+// brings, and until then the link is a hash link the browser follows by itself.
+#[cfg(not(feature = "hydrate"))]
+fn jump_to(_anchor: &str) {}
+
 /// One Set, top to bottom: how it stands and its own material — what the agent
 /// asked about and the evidence for it — and then either the sheet to answer it
 /// on or the record of what became of it.
@@ -558,6 +828,10 @@ fn anchor(label: &str, position: usize) -> String {
 /// The material above is the same however it stands: a settled Set is read for
 /// what was decided *and* for what the decision was about.
 fn sheet(set: SetView) -> impl IntoView {
+    // Built before the Set is taken apart below, since it is a description of
+    // the whole of it.
+    let contents = contents(&set);
+
     // A Set sent from outside a repo has neither, and an empty line of
     // provenance is worse than none.
     let provenance = (set.project.is_some() || set.branch.is_some()).then(|| {
@@ -618,6 +892,11 @@ fn sheet(set: SetView) -> impl IntoView {
     view! {
         <A href=back attr:class="back">{out}</A>
         <h1>{set.title}</h1>
+        // After the title and before the rest: the page says what it is, then
+        // what is in it. It is taken out of the flow and put in the margin by
+        // the stylesheet, so where it sits here is a reading order rather than
+        // a position.
+        {contents}
         {provenance}
         {when}
         {standing}
@@ -638,15 +917,15 @@ fn sheet(set: SetView) -> impl IntoView {
         // Between the Preface and the Questions: the Preface says what the
         // agent is asking about, and the Diff is the evidence for it.
         {set
-            .diff_html
-            .map(|html| {
+            .diff
+            .map(|diff| {
                 view! {
                     <section class="diff" id="diff">
                         <h2 class="section-heading">"Diff"</h2>
                         // The per-file anchors — `diff-1`, `diff-2`, … — are
                         // stamped by the renderer, since this arrives already
                         // rendered.
-                        <div class="diff-files" inner_html=html></div>
+                        <div class="diff-files" inner_html=diff.html></div>
                     </section>
                 }
             })}
@@ -1477,7 +1756,7 @@ mod tests {
 
     use super::{
         ARCHIVE_WARNING, Considered, Draft, Filled, accepting, anchor, answer_to, draft_key,
-        drafted, nothing_answered, restorable, submitted_when, unanswered,
+        drafted, nothing_answered, restorable, shortened, submitted_when, unanswered,
     };
 
     fn filled(label: &str, selected: Option<u32>, free_text: &str) -> Filled {
@@ -1763,6 +2042,40 @@ mod tests {
             anchor("...", 4),
             "q4",
             "a label that makes no id at all falls back to the Question's place in the Set",
+        );
+    }
+
+    #[test]
+    fn a_path_the_contents_has_room_for_is_shown_whole() {
+        assert_eq!(
+            shortened("crates/app/src/diff.rs"),
+            "crates/app/src/diff.rs"
+        );
+    }
+
+    #[test]
+    fn a_path_too_long_for_the_contents_keeps_its_filename() {
+        assert_eq!(
+            shortened("crates/app/src/set_view.rs"),
+            "…/app/src/set_view.rs",
+            "the end of a path is what is being looked for, so the cut takes \
+             from the front — and lands on a directory boundary, so what is \
+             left is still a path",
+        );
+        assert_eq!(
+            shortened("crates/server/tests/deeply/nested/set_page.rs"),
+            "…/nested/set_page.rs",
+            "as much of the path as the line has room for, not just the file",
+        );
+    }
+
+    #[test]
+    fn a_filename_longer_than_the_line_is_cut_into() {
+        assert_eq!(
+            shortened("assets/a-very-long-name-for-one-file.webmanifest"),
+            "…or-one-file.webmanifest",
+            "no boundary leaves a tail that fits, so the extension is kept \
+             over the start of the stem",
         );
     }
 

@@ -93,8 +93,12 @@ wasm-bindgen-futures = "0.4"
 # `Storage`, because drafts live in `localStorage` and leptos enables
 # `StorageEvent` but not `Storage` itself; `navigator.serviceWorker` to register
 # the worker with; and the push manager that hangs off the registration, with
-# the notification permission that governs it.
+# the notification permission that governs it. `History` and
+# `HtmlDetailsElement` are the table of contents': a jump records where it
+# landed without adding a way back, and unfolds a folded file before it lands.
 web-sys = { version = "0.3", features = [
+    "History",
+    "HtmlDetailsElement",
     "Navigator",
     "Notification",
     "NotificationPermission",

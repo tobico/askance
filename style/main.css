@@ -55,6 +55,16 @@
   box-sizing: border-box;
 }
 
+/* The table of contents jumps by scrolling the page, and this is where how it
+   moves is decided — the jump itself just asks the browser to bring the section
+   into view. Anyone who has asked for less motion keeps the instant jump, which
+   is the default and so needs no rule of its own. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
 body {
   margin: 0;
   background: var(--paper);
@@ -224,7 +234,12 @@ textarea {
 /* The set view: one long column, read top to bottom and answered on the way
    down. */
 
-h1 + .meta {
+/* The set page's provenance line, told from the list rows' by the element it is
+   rather than by what it follows: the table of contents comes between it and the
+   title, and where the nav sits in the markup is not something this line should
+   depend on. */
+
+p.meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem 0.75rem;
@@ -233,13 +248,105 @@ h1 + .meta {
   color: var(--ink-soft);
 }
 
-h1 + .meta .project {
+p.meta .project {
   color: var(--accent);
   font-weight: 500;
 }
 
-h1 + .meta .branch {
+p.meta .branch {
   font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+/* The table of contents: the page's sections, top to bottom, in the margin the
+   content column was already leaving empty — so the column stays exactly where
+   it was and nothing below the nav has moved.
+
+   Out of the flow entirely, and positioned from the middle of the viewport,
+   which is what the column is centred on. Fixed rather than sticky: there is
+   nothing above it in the margin to scroll past, so it is in the same place on
+   arrival as it is a page down.
+
+   Drawn only once the viewport is wide enough to hold both. Narrower than that
+   there is no margin to put it in, and the phone's own way in is its own
+   thing. */
+
+.contents {
+  display: none;
+}
+
+@media (min-width: 64rem) {
+  .contents {
+    display: block;
+    position: fixed;
+    top: 1.25rem;
+    /* The column is 46rem at its widest and centred, so its edge is 23rem from
+       the middle; the nav stops a gap short of it. */
+    right: calc(50% + 24rem);
+    /* Whatever the margin has spare, up to what a path wants — and a margin of
+       its own at the window's edge. */
+    width: min(14rem, calc(50vw - 25rem));
+    /* A Set with forty questions scrolls its nav rather than running off the
+       bottom of the window. */
+    max-height: calc(100vh - 2.5rem);
+    overflow-y: auto;
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+}
+
+.contents ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contents-section + .contents-section {
+  margin-top: 0.7rem;
+}
+
+/* Indented against a rule, so a file or a Question reads as part of the section
+   above it rather than as another section. */
+.contents-entries {
+  margin-top: 0.2rem;
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--edge);
+}
+
+.contents-link {
+  display: block;
+  padding: 0.15rem 0;
+  color: var(--ink-soft);
+  text-decoration: none;
+  /* One line each: the nav is a way around the page, not the page. What runs
+     past the column is cut — a path has already been cut to its filename by the
+     time it gets here, so what is lost is the tail of a Question's words. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contents-section > .contents-link {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.contents-link:hover,
+.contents-link:focus-visible {
+  color: var(--accent);
+}
+
+/* The Question's label, in the face the page sets it in, so the eye can run
+   down the labels alone. */
+.contents-label {
+  margin-right: 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-weight: 600;
+}
+
+/* A path, set as the Diff sets it, so the two read as the same name. */
+.contents-path .contents-link {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.8rem;
 }
 
 /* The quiet headings naming the page's sections, so a jump from the table of
