@@ -30,6 +30,7 @@ leptos_axum = { workspace = true, optional = true }
 pulldown-cmark = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
 syntect = { workspace = true, optional = true }
+two-face = { workspace = true, optional = true }
 
 [features]
 hydrate = [
@@ -46,6 +47,7 @@ ssr = [
     "dep:pulldown-cmark",
     "dep:sqlx",
     "dep:syntect",
+    "dep:two-face",
     "leptos/ssr",
     "leptos_meta/ssr",
     "leptos_router/ssr",

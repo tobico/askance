@@ -25,7 +25,12 @@ const TOKENS: ClassStyle = ClassStyle::SpacedPrefixed { prefix: "tok-" };
 ///
 /// The no-newlines set is the one for line-at-a-time input, which is all a diff
 /// ever gives us.
-static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_nonewlines);
+///
+/// `two-face`'s set rather than syntect's own, which is Sublime Text's default
+/// packages and so has no TypeScript, TOML or Nix in it — the languages this
+/// machine's repositories are largely written in, and every one of them came out
+/// unhighlighted. See the dependency's note in the workspace manifest.
+static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_no_newlines);
 
 /// What the one section of a Diff git did not write is called — in the page and
 /// in the table of contents alike, since both name the same fold.
@@ -54,8 +59,10 @@ pub fn to_html(diff: &str) -> Option<DiffView> {
     // still the Diff's first and only section, so it is anchored as one, and
     // named as one.
     if files.is_empty() {
+        // Marked as verbatim, because it has none of the line cells that hold a
+        // hunk's text off the left edge and so needs the inset put on it.
         let mut html = format!(
-            r#"<details class="diff-file" id="diff-1" open><summary><span class="diff-path">{AS_IT_ARRIVED}</span></summary><div class="diff-hunk"><pre class="diff-lines"><code>"#
+            r#"<details class="diff-file" id="diff-1" open><summary><span class="diff-path">{AS_IT_ARRIVED}</span></summary><div class="diff-hunk"><pre class="diff-lines diff-verbatim"><code>"#
         );
         html.push_str(&escaped(diff));
         html.push_str("</code></pre></div></details>");
@@ -102,6 +109,16 @@ struct Hunk {
 struct Line {
     kind: Kind,
 
+    /// Where the line sits in the file the change leaves behind, or `None` for
+    /// one that is not in it — a removed line, or something git said about the
+    /// lines rather than one of them.
+    ///
+    /// Only the new side is numbered. A unified diff carries an old number too,
+    /// and the two diverge the moment a file gains or loses a line, but a second
+    /// column costs the width twice over on a phone and the number worth having
+    /// is the one you would go to in the editor.
+    number: Option<usize>,
+
     /// The line's content, with the diff's leading marker taken off.
     text: String,
 }
@@ -119,8 +136,10 @@ enum Kind {
 
 impl Kind {
     /// How the line is styled, and the marker it keeps. The marker stays in the
-    /// page so the lines are told apart by more than colour, and so a copied
-    /// hunk is still a patch.
+    /// page so the lines are told apart by more than colour — but the stylesheet
+    /// takes it out of the selection, along with the line numbers, so a hunk
+    /// copied off the page comes out as code to paste into an editor rather than
+    /// as a patch.
     fn marked(self) -> (&'static str, &'static str) {
         match self {
             Kind::Added => ("add", "+"),
@@ -143,6 +162,10 @@ fn files(diff: &str) -> Vec<FileDiff> {
     // What the open hunk still owes, from each side. Zero on both means the
     // hunk is finished and the next line is a header again.
     let (mut old_left, mut new_left) = (0usize, 0usize);
+
+    // The number the next line of the new side will carry, counting on from
+    // where the open hunk's header said the new side starts.
+    let mut numbering = 0usize;
 
     // Carried from the `---` line to the `+++` one: for a deleted file the new
     // side is `/dev/null`, and the old path is the only name it has.
@@ -181,8 +204,19 @@ fn files(diff: &str) -> Vec<FileDiff> {
                     _ => line.get(1..).unwrap_or_default().to_owned(),
                 };
 
+                // Only what survives into the new file takes a number, and takes
+                // the next one.
+                let number = match kind {
+                    Kind::Added | Kind::Context => {
+                        let number = numbering;
+                        numbering += 1;
+                        Some(number)
+                    }
+                    Kind::Removed | Kind::Aside => None,
+                };
+
                 if let Some(hunk) = file.hunks.last_mut() {
-                    hunk.lines.push(Line { kind, text });
+                    hunk.lines.push(Line { kind, number, text });
                 }
                 continue;
             }
@@ -208,8 +242,9 @@ fn files(diff: &str) -> Vec<FileDiff> {
         };
 
         if line.starts_with("@@") {
-            let (old, new) = span(line);
-            (old_left, new_left) = (old, new);
+            let span = span(line);
+            (old_left, new_left) = (span.old, span.new);
+            numbering = span.start;
             file.hunks.push(Hunk {
                 header: line.to_owned(),
                 lines: Vec::new(),
@@ -247,26 +282,45 @@ fn content(line: &str) -> Option<Kind> {
     }
 }
 
-/// How many lines a hunk header promises from each side: `@@ -1,3 +2,4 @@` is
-/// three and four. A count left off means one.
-fn span(header: &str) -> (usize, usize) {
-    let mut counts = header
+/// What a hunk header says about the lines beneath it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Span {
+    /// How many lines the old side contributes.
+    old: usize,
+
+    /// How many the new side does.
+    new: usize,
+
+    /// The number of the new side's first line — where the gutter starts
+    /// counting.
+    start: usize,
+}
+
+/// What a hunk header promises: `@@ -1,3 +2,4 @@` is three lines from the old
+/// side and four from the new, the new side's first being line 2. A count left
+/// off means one.
+///
+/// A hunk header can carry the enclosing function's name after the second `@@`,
+/// and a word of that could begin with `-` or `+` — so only the first two
+/// sign-prefixed fields are read, which are the two ranges.
+fn span(header: &str) -> Span {
+    let mut ranges = header
         .split_whitespace()
         .filter_map(|field| {
             let field = field
                 .strip_prefix('-')
                 .or_else(|| field.strip_prefix('+'))?;
             Some(match field.split_once(',') {
-                Some((_, count)) => count.parse().unwrap_or(1),
-                None => 1,
+                Some((start, count)) => (start.parse().unwrap_or(1), count.parse().unwrap_or(1)),
+                None => (field.parse().unwrap_or(1), 1),
             })
         })
         .take(2);
 
-    (
-        counts.next().unwrap_or_default(),
-        counts.next().unwrap_or_default(),
-    )
+    let (_, old) = ranges.next().unwrap_or_default();
+    let (start, new) = ranges.next().unwrap_or_default();
+
+    Span { old, new, start }
 }
 
 /// The path from a `diff --git a/<path> b/<path>` line.
@@ -304,8 +358,13 @@ impl FileDiff {
     fn render(&self, out: &mut String, position: usize) {
         // Open, because a Diff is there to be read — but foldable, so a long
         // file can be got out of the way on a phone.
+        //
+        // The number column is sized here rather than in the stylesheet, because
+        // how wide it has to be is a property of this file and not of the page: a
+        // forty-line file would otherwise carry a column cut for five digits.
+        let digits = self.digits();
         out.push_str(&format!(
-            r#"<details class="diff-file" id="diff-{position}" open><summary><span class="diff-path">"#
+            r#"<details class="diff-file" id="diff-{position}" style="--diff-digits: {digits}" open><summary><span class="diff-path">"#
         ));
         out.push_str(&escaped(&self.path));
         out.push_str("</span>");
@@ -338,6 +397,23 @@ impl FileDiff {
         }
 
         out.push_str("</details>");
+    }
+
+    /// How many digits the number column has to hold: those of the highest line
+    /// number in the file.
+    ///
+    /// At least one, so a file with nothing numbered — a binary one, or a mode
+    /// change — still yields a width rather than a column of no width at all.
+    fn digits(&self) -> usize {
+        let highest = self
+            .hunks
+            .iter()
+            .flat_map(|hunk| &hunk.lines)
+            .filter_map(|line| line.number)
+            .max()
+            .unwrap_or_default();
+
+        highest.to_string().len()
     }
 
     /// How many lines this file gains and loses.
@@ -375,9 +451,19 @@ impl Line {
         let (class, marker) = self.kind.marked();
 
         out.push_str(&format!(r#"<span class="diff-line {class}">"#));
-        if !marker.is_empty() {
-            out.push_str(&format!(r#"<span class="marker">{marker}</span>"#));
+
+        // Always the column, even where there is no number to put in it: an
+        // empty cell is what keeps a removed line's code in line with the code
+        // above and below it.
+        out.push_str(r#"<span class="diff-number">"#);
+        if let Some(number) = self.number {
+            out.push_str(&number.to_string());
         }
+        out.push_str("</span>");
+
+        // The marker's cell goes in on the same terms, so git's aside about the
+        // lines starts where the lines themselves do.
+        out.push_str(&format!(r#"<span class="marker">{marker}</span>"#));
 
         match syntax
             .filter(|_| self.kind != Kind::Aside)
@@ -530,7 +616,7 @@ mod tests {
         );
 
         // The markers stay in the page: colour is not the only thing telling an
-        // addition from a removal, and a copied hunk is still a patch.
+        // addition from a removal.
         assert!(html.contains(r#"<span class="marker">+</span>"#), "{html}");
         assert!(html.contains(r#"<span class="marker">-</span>"#), "{html}");
     }
@@ -554,6 +640,125 @@ mod tests {
         assert!(
             html.contains(r#"<span class="tok-"#),
             "expected the Rust file's tokens highlighted:\n{html}"
+        );
+    }
+
+    /// One file, two hunks, the second far enough down the file to need two
+    /// digits — which is what the number column is sized by.
+    const TWO_HUNKS: &str = concat!(
+        "diff --git a/src/lib.rs b/src/lib.rs\n",
+        "--- a/src/lib.rs\n",
+        "+++ b/src/lib.rs\n",
+        "@@ -1,2 +1,2 @@\n",
+        "-first\n",
+        "+FIRST\n",
+        " second\n",
+        "@@ -40,2 +40,3 @@\n",
+        " fortieth\n",
+        "+added\n",
+        " forty-first\n",
+    );
+
+    /// The numbers each line of a hunk carries, in order.
+    fn numbers(diff: &str, file: usize, hunk: usize) -> Vec<Option<usize>> {
+        files(diff)[file].hunks[hunk]
+            .lines
+            .iter()
+            .map(|line| line.number)
+            .collect()
+    }
+
+    #[test]
+    fn every_line_is_numbered_from_where_its_hunk_header_says_the_file_starts() {
+        assert_eq!(
+            numbers(MODIFIED_AND_NEW, 0, 0),
+            [Some(1), None, Some(2), Some(3)],
+            "`@@ -1,4 +1,4 @@` starts the new side at line 1, and only the lines \
+             that are in the new side count on from it",
+        );
+        assert_eq!(
+            numbers(MODIFIED_AND_NEW, 1, 0),
+            [Some(1), Some(2)],
+            "a new file's lines are numbered from one like any others",
+        );
+    }
+
+    #[test]
+    fn a_removed_line_is_left_unnumbered() {
+        assert_eq!(
+            numbers(TWO_HUNKS, 0, 0),
+            [None, Some(1), Some(2)],
+            "a removed line is not in the file the change leaves behind, so it \
+             has no number there to show",
+        );
+
+        let html = rendered(TWO_HUNKS);
+
+        assert!(
+            html.contains(r#"<span class="diff-line del"><span class="diff-number"></span>"#),
+            "the column is still there and simply empty, so the code of a \
+             removed line stays in line with the code around it:\n{html}",
+        );
+    }
+
+    #[test]
+    fn a_later_hunk_numbers_from_its_own_start_and_not_from_the_last_one() {
+        assert_eq!(
+            numbers(TWO_HUNKS, 0, 1),
+            [Some(40), Some(41), Some(42)],
+            "the lines between two hunks are not in the Diff, so the second \
+             hunk picks up the numbering from its own header",
+        );
+    }
+
+    #[test]
+    fn the_number_column_is_cut_for_the_files_highest_line() {
+        assert!(
+            rendered(TWO_HUNKS).contains("--diff-digits: 2"),
+            "line 42 is the highest, so two digits is the whole width the \
+             column needs:\n{}",
+            rendered(TWO_HUNKS),
+        );
+        assert!(
+            rendered(MODIFIED_AND_NEW).contains("--diff-digits: 1"),
+            "a four-line file should not carry a column cut for a long one:\n{}",
+            rendered(MODIFIED_AND_NEW),
+        );
+    }
+
+    #[test]
+    fn typescript_is_highlighted_like_any_other_language() {
+        // The syntaxes syntect bundles are Sublime Text's defaults, which have no
+        // TypeScript in them — so this went unhighlighted while Rust beside it
+        // did not, which is what `two-face` is here to fix.
+        let diff = concat!(
+            "diff --git a/src/api.ts b/src/api.ts\n",
+            "--- a/src/api.ts\n",
+            "+++ b/src/api.ts\n",
+            "@@ -1,2 +1,2 @@\n",
+            " interface Reply { ok: boolean }\n",
+            "-export const send = (url: string) => fetch(url);\n",
+            "+export const send = async (url: string) => fetch(url);\n",
+            "diff --git a/src/App.tsx b/src/App.tsx\n",
+            "--- a/src/App.tsx\n",
+            "+++ b/src/App.tsx\n",
+            "@@ -1 +1 @@\n",
+            "-export const App = () => <h1>hi</h1>;\n",
+            "+export const App = () => <h2>hi</h2>;\n",
+        );
+
+        let html = rendered(diff);
+
+        let first = html.find(r#"id="diff-1""#).unwrap();
+        let second = html.find(r#"id="diff-2""#).unwrap();
+
+        assert!(
+            html[first..second].contains(r#"<span class="tok-"#),
+            "expected the .ts file's tokens highlighted:\n{html}",
+        );
+        assert!(
+            html[second..].contains(r#"<span class="tok-"#),
+            "expected the .tsx file's tokens highlighted:\n{html}",
         );
     }
 
@@ -731,6 +936,11 @@ mod tests {
             html.contains(r#"id="diff-1""#),
             "it is still the Diff's one foldable section, so it is still \
              addressable:\n{html}"
+        );
+        assert!(
+            html.contains("diff-verbatim"),
+            "having no line cells to hold its text off the edge, it has to say \
+             so and be inset by the stylesheet instead:\n{html}"
         );
         assert_eq!(
             paths("who knows what this is\n"),

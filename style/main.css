@@ -779,19 +779,54 @@ p.meta .branch {
   tab-size: 4;
 }
 
+/* The lines are wrapped in a box as wide as the longest of them, which is what
+   gives the line below a scrolled width to fill. Without it each line measured
+   itself against the *visible* width instead — `code` is inline, so the `pre` was
+   the containing block — and the wash behind a short line stopped at the right
+   edge of the viewport and got left behind as soon as the hunk was scrolled. */
+.diff-lines > code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+}
+
 /* Each line is a block of its own so its background reaches the full scrolled
    width, not just as far as its text. */
 .diff-line {
   display: block;
-  width: max-content;
-  min-width: 100%;
   padding-right: 0.8rem;
+}
+
+/* The Diff git did not write has no line cells to hold its text off the edge, so
+   the inset is the block's own. */
+.diff-verbatim > code {
+  padding: 0.3rem 0.8rem;
+}
+
+/* The number column and the marker each sit in a cell of their own, and each
+   cell's `width` has to cover the padding inside it: `box-sizing: border-box`
+   above counts padding within the width, so a cell measured for its glyph alone
+   comes out narrower than the glyph and spills into the code beside it.
+
+   Neither cell is part of what a selection picks up, so a hunk copied off the
+   page comes out as code to paste into an editor rather than as a patch. */
+
+.diff-number {
+  display: inline-block;
+  /* As many digits as this file's highest line number needs — set per file, since
+     a forty-line file should not carry a column cut for a long one — plus the
+     gutter either side of them. */
+  width: calc(var(--diff-digits, 3) * 1ch + 1.2rem);
+  padding: 0 0.6rem;
+  text-align: right;
+  color: var(--ink-soft);
+  user-select: none;
 }
 
 .diff-line .marker {
   display: inline-block;
-  width: 1.6ch;
-  padding-left: 0.5rem;
+  width: calc(1ch + 0.5rem);
+  padding-right: 0.5rem;
   color: var(--ink-soft);
   user-select: none;
 }
@@ -812,8 +847,9 @@ p.meta .branch {
   color: var(--removed);
 }
 
+/* The aside about the lines gets the two cells the lines get, empty, so it starts
+   where they start — nothing more to inset it by. */
 .diff-line.aside {
-  padding-left: 0.5rem;
   color: var(--ink-soft);
   font-style: italic;
 }
