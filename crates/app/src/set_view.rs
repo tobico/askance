@@ -1843,15 +1843,17 @@ fn answerable(id: i64, questions: Vec<QuestionView>) -> impl IntoView {
         {questions_heading()}
         <ol class="questions">{asked}</ol>
         <section class="set-comment">
-            <textarea
-                id="set-comment"
-                name="set-comment"
-                rows="3"
-                placeholder="Other comments"
-                aria-label="Other comments"
-                prop:value=move || comment.get()
-                on:input:target=move |ev| comment.set(ev.target().value())
-            ></textarea>
+            <div class="grow" data-value=move || comment.get()>
+                <textarea
+                    id="set-comment"
+                    name="set-comment"
+                    rows="1"
+                    placeholder="Other comments"
+                    aria-label="Other comments"
+                    prop:value=move || comment.get()
+                    on:input:target=move |ev| comment.set(ev.target().value())
+                ></textarea>
+            </div>
         </section>
         <section class="submit">
             <button
@@ -2049,15 +2051,21 @@ fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
             // placeholder is not a label — it is a hint the browser is free to
             // leave unspoken, and a field with nothing else naming it would reach
             // a screen reader unnamed.
-            <textarea
-                id=field.clone()
-                name=field
-                rows="2"
-                placeholder=prompt
-                aria-label=prompt
-                prop:value=move || live.free_text.get()
-                on:input:target=move |ev| live.free_text.set(ev.target().value())
-            ></textarea>
+            // The wrapper carries the text a second time, where the stylesheet
+            // uses it to give the field its height — see `.grow`. It is the
+            // signal's own value, so a restored draft arrives at the right height
+            // rather than one line tall with the rest of it hidden.
+            <div class="grow" data-value=move || live.free_text.get()>
+                <textarea
+                    id=field.clone()
+                    name=field
+                    rows="1"
+                    placeholder=prompt
+                    aria-label=prompt
+                    prop:value=move || live.free_text.get()
+                    on:input:target=move |ev| live.free_text.set(ev.target().value())
+                ></textarea>
+            </div>
         </div>
     }
 }

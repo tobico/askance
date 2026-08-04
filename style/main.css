@@ -106,7 +106,46 @@ textarea {
   border: 1px solid var(--edge);
   border-radius: 0.4rem;
   padding: 0.5rem 0.6rem;
-  resize: vertical;
+  /* Every field in the app grows to fit what is in it — see `.grow` — so there is
+     nothing to scroll and no reason to offer a drag handle. A height dragged by
+     hand would be overwritten by the next keystroke anyway. */
+  resize: none;
+  overflow: hidden;
+}
+
+/* A field as tall as what has been typed into it, and one line tall when nothing
+   has.
+
+   Nothing measures anything. The wrapper holds two things in the same grid cell:
+   the field, and a copy of the field's text that is in the layout but invisible.
+   The copy is ordinary wrapped text and so has an ordinary height; a grid cell is
+   as tall as its tallest occupant; the field is stretched to match. That makes the
+   height right before the first keystroke as well as after it — a restored draft
+   included, and a server-rendered page before any script has run.
+
+   The trailing space in the content is what reserves the last line: a value ending
+   in a newline would otherwise measure as though it did not. */
+
+.grow {
+  display: grid;
+}
+
+.grow > textarea,
+.grow::after {
+  grid-area: 1 / 1;
+}
+
+.grow::after {
+  content: attr(data-value) " ";
+  visibility: hidden;
+  /* Every metric that decides where a line breaks, matching the field's own — a
+     copy that wrapped differently would be the wrong height. The border is
+     transparent rather than absent, because it still takes up its width. */
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid transparent;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 /* The prompt is the placeholder rather than a label above the field, so it is

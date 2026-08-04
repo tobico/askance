@@ -688,6 +688,51 @@ async fn every_question_has_a_free_text_field_and_the_set_has_one_comment_box() 
 }
 
 #[tokio::test]
+async fn every_field_is_prompted_by_its_placeholder_and_starts_one_line_tall() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &full_grammar_set()).await;
+
+    // Q1, Q2 and Q2a offer Options, so the neutral prompt goes on those three;
+    // Q2b and Q3 offer none, and there the words are the whole answer.
+    assert_eq!(
+        html.matches(r#"placeholder="Your thoughts""#).count(),
+        3,
+        "expected the neutral prompt wherever there are Options to stand beside:\n{html}"
+    );
+    assert_eq!(
+        html.matches(r#"placeholder="Your answer""#).count(),
+        2,
+        "with no Options the words are the answer:\n{html}"
+    );
+    assert!(
+        html.contains(r#"placeholder="Other comments""#),
+        "expected the set-level field prompted too:\n{html}"
+    );
+    // No labels left to name them, so the placeholder has to be the accessible
+    // name as well — a browser is free to leave a placeholder unspoken.
+    assert_eq!(
+        html.matches(r#"aria-label="Your thoughts""#).count(),
+        3,
+        "a field with no label needs a name of its own:\n{html}"
+    );
+
+    // Every field grows from one row, and the wrapper the stylesheet measures it
+    // by is in the page the server writes — so the height is already right for a
+    // restored draft, before any script has run.
+    assert_eq!(
+        html.matches(r#"class="grow""#).count(),
+        6,
+        "expected every field wrapped for growing:\n{html}"
+    );
+    assert_eq!(
+        html.matches(r#"rows="1""#).count(),
+        6,
+        "an empty field is one line tall, the comment box included:\n{html}"
+    );
+}
+
+#[tokio::test]
 async fn the_set_view_shows_where_the_ask_came_from() {
     let (_dir, pool) = fresh_pool().await;
 
