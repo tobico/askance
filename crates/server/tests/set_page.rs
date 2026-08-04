@@ -99,6 +99,41 @@ fn full_grammar_set() -> QuestionSet {
     }
 }
 
+/// The same Set written the way agents write it: Questions carrying a bulleted
+/// list with a code span in it, a fenced code block, and a GFM table on a
+/// Sub-question — and Options carrying markup of their own, one of them with a
+/// block an Option has no room for.
+///
+/// The labels and the Option numbers are untouched, so a Response resolving
+/// [`full_grammar_set`] resolves this too.
+fn marked_up_set() -> QuestionSet {
+    let mut set = full_grammar_set();
+
+    set.questions[0].text = "Where should the request counter live?\n\n\
+         - in-process, per instance\n\
+         - in `redis`, shared across instances\n"
+        .to_owned();
+    set.questions[0].options[0].text =
+        "In-process, per instance — see `Counter::local`.".to_owned();
+    set.questions[0].options[1].text = "In **Redis**, shared across instances.".to_owned();
+    set.questions[1].text = "How should a throttled client be told to back off?\n\n\
+         ```rust\n\
+         fn allowance() -> u32 { 600 }\n\
+         ```\n"
+        .to_owned();
+    set.questions[1].options[0].text = "A bare 429.\n\n\
+         - no headers\n\
+         - no body\n"
+        .to_owned();
+    set.questions[1].subquestions[0].text = "What should Retry-After say?\n\n\
+         | header | seconds |\n\
+         | --- | --- |\n\
+         | Retry-After | 30 |\n"
+        .to_owned();
+
+    set
+}
+
 fn answer(label: &str, selected: Option<u32>, free_text: Option<&str>) -> Answer {
     Answer {
         label: label.to_owned(),
@@ -375,6 +410,244 @@ async fn markdown_that_would_run_in_the_browser_does_not_reach_the_page() {
 }
 
 #[tokio::test]
+async fn a_questions_markdown_is_rendered_by_the_server() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    assert!(
+        html.contains("<li>in-process, per instance</li>"),
+        "expected the Question's list rendered to HTML:\n{html}"
+    );
+    assert!(
+        html.contains("<code>redis</code>"),
+        "expected the Question's code span rendered to HTML:\n{html}"
+    );
+    assert!(
+        html.contains("<pre>") && html.contains("fn allowance()"),
+        "expected the Question's fenced block rendered as one:\n{html}"
+    );
+    assert!(
+        html.contains("<table>") && html.contains("<td>Retry-After</td>"),
+        "expected the Sub-question's table rendered to HTML:\n{html}"
+    );
+    assert!(
+        !html.contains("| --- |"),
+        "nothing may reach the page as raw markup:\n{html}"
+    );
+    // A list or a table inside a `<p>` closes it where the browser says so
+    // rather than where the markup does, which would leave the page the server
+    // rendered and the page the browser hydrates disagreeing about its shape.
+    assert!(
+        !html.contains(r#"<p class="text">"#),
+        "a question's text holds block markdown, so it cannot be a paragraph:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_questions_label_still_sits_at_the_head_of_its_rendered_text() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    // The label a Response answers by, then the text it labels — a Question and
+    // a Sub-question alike, however blocky the markdown under it.
+    let found = positions(
+        &html,
+        &[
+            r#"class="label">Q1"#,
+            "<li>in-process, per instance</li>",
+            r#"class="label">Q2a"#,
+            "<td>Retry-After</td>",
+        ],
+    );
+    assert!(
+        found.windows(2).all(|pair| pair[0] < pair[1]),
+        "expected each label at the head of its own text, got offsets {found:?}:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn markdown_that_would_run_in_the_browser_does_not_reach_a_question() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.questions[0].text = "Careful now.\n\n<script>alert('pwned')</script>\n\n\
+         <img src=x onerror=\"alert('pwned')\">\n\n\
+         [click me](javascript:alert('pwned'))\n"
+        .to_owned();
+
+    let html = set_page(&pool, &set).await;
+
+    assert!(
+        html.contains("Careful now."),
+        "expected the Question's prose"
+    );
+    assert!(
+        !html.contains("alert('pwned')"),
+        "the Question's script should have been sanitised away:\n{html}"
+    );
+    assert!(
+        !html.contains("onerror"),
+        "the Question's event handler should have been sanitised away:\n{html}"
+    );
+    assert!(
+        !html.contains("javascript:"),
+        "the Question's script link should have been sanitised away:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_settled_sets_questions_are_rendered_the_way_the_form_rendered_them() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let (answered, _) = answered_set_page(&pool, &marked_up_set(), &decided_every_way()).await;
+    let archived = archived_set_page(&pool, &marked_up_set()).await;
+
+    for html in [&answered, &archived] {
+        assert!(
+            html.contains("<li>in-process, per instance</li>")
+                && html.contains("<code>redis</code>")
+                && html.contains("<td>Retry-After</td>"),
+            "a settled Set is read for what was asked, so its markdown is rendered too:\n{html}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_options_markdown_is_rendered_inline_by_the_server() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    let quoted = option_row(&html, "Counter::local");
+    assert!(
+        quoted.contains("<code>Counter::local</code>"),
+        "expected the Option's code span rendered to HTML:\n{quoted}"
+    );
+    assert!(
+        html.contains("<strong>Redis</strong>"),
+        "expected the Option's emphasis rendered to HTML:\n{html}"
+    );
+
+    // The row is the tap target, and it is the label wrapping the radio that
+    // makes it one: the rendered text has to sit inside that label beside the
+    // radio it selects, still answering by number.
+    assert!(
+        quoted.contains("<label>")
+            && quoted.contains(r#"name="Q1-option""#)
+            && quoted.contains(r#"value="1""#),
+        "expected the Option's radio and its text in the one label:\n{quoted}"
+    );
+    assert!(
+        quoted.matches("<input").count() == 1,
+        "expected exactly the one radio in the row:\n{quoted}"
+    );
+}
+
+#[tokio::test]
+async fn block_markdown_in_an_option_is_flattened_into_its_row() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    // An Option is one line beside a radio, so a list inside its label would
+    // break the row apart — and the whole row is what the human taps.
+    assert!(
+        !html.contains("<li>no headers</li>"),
+        "an Option's list may not be drawn as one:\n{html}"
+    );
+
+    let row = option_row(&html, "A bare 429.");
+    assert!(
+        row.contains("no headers") && row.contains("no body"),
+        "flattened, not dropped: every word the agent wrote is still in the row:\n{row}"
+    );
+    assert!(
+        row.matches("<input").count() == 1 && row.contains(r#"name="Q2-option""#),
+        "expected the flattened Option still drawn as a single row:\n{row}"
+    );
+}
+
+#[tokio::test]
+async fn markdown_that_would_run_in_the_browser_does_not_reach_an_option() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.questions[0].options[0].text = "Careful now. <script>alert('pwned')</script> \
+         <img src=\"x\" onerror=\"alert('pwned')\"> \
+         [click me](javascript:alert('pwned'))"
+        .to_owned();
+
+    let html = set_page(&pool, &set).await;
+
+    assert!(html.contains("Careful now."), "expected the Option's words");
+    assert!(
+        html.contains("click me"),
+        "expected the link's words, which are all that is left of it:\n{html}"
+    );
+    assert!(
+        !html.contains("alert('pwned')"),
+        "the Option's script should have been sanitised away:\n{html}"
+    );
+    assert!(
+        !html.contains("onerror"),
+        "the Option's event handler should have been sanitised away:\n{html}"
+    );
+    assert!(
+        !html.contains("javascript:"),
+        "the Option's script link should have been sanitised away:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_settled_sets_options_read_with_their_markup_and_their_marks() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let (html, _) = answered_set_page(&pool, &marked_up_set(), &decided_every_way()).await;
+
+    // Q1: Option 1 was chosen and Option 2 carries the ★. Read back, each still
+    // has its number and its marks beside the text the agent wrote.
+    let chosen = option_row(&html, "<code>Counter::local</code>");
+    assert!(
+        chosen.contains(r#"class="n">1"#) && chosen.contains("chosen"),
+        "expected the chosen Option numbered and marked beside its markup:\n{chosen}"
+    );
+
+    let recommended = option_row(&html, "<strong>Redis</strong>");
+    assert!(
+        recommended.contains(r#"class="n">2"#) && recommended.contains("★"),
+        "expected the Recommendation numbered and starred beside its markup:\n{recommended}"
+    );
+    assert!(
+        !recommended.contains("chosen"),
+        "the Recommendation was not taken:\n{recommended}"
+    );
+}
+
+/// Every place the server renders the agent's markdown hangs off the one class,
+/// so a heading, a table or a fenced block is drawn the same way wherever it was
+/// written. Without this each place grows a copy of the rules, and they drift.
+#[tokio::test]
+async fn rendered_markdown_is_marked_for_one_set_of_styles_wherever_it_appears() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    for marked in [
+        // The Preface's body rather than its section: the section is anchored
+        // and headed for the table of contents, and the markdown is what sits
+        // inside it.
+        r#"<div class="preface-body markdown""#,
+        r#"<div class="markdown""#,
+        r#"<span class="option-text markdown""#,
+    ] {
+        assert!(
+            html.contains(marked),
+            "expected rendered markdown marked by `{marked}`:\n{html}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn the_recommendation_is_marked_but_nothing_is_preselected() {
     let (_dir, pool) = fresh_pool().await;
 
@@ -500,7 +773,7 @@ async fn a_set_with_no_preface_shows_no_preface_section() {
     let html = set_page(&pool, &set).await;
 
     assert!(
-        !html.contains(r#"class="preface""#),
+        !html.contains(r#"class="preface"#),
         "an empty Preface is the same as none:\n{html}"
     );
 }
@@ -890,6 +1163,39 @@ async fn the_table_of_contents_mirrors_the_page_top_to_bottom() {
         contents.contains("Where should the request counter live?"),
         "a Question is listed by its label and its own words:\n{contents}"
     );
+}
+
+/// The nav is a line of text in a narrow column, so a Question written as
+/// markdown is named there by its words alone. The page draws that same Question
+/// as blocks, and the two are rendered from the one source — this is the seam
+/// where the table of contents and the rendered markdown meet, and neither
+/// feature's own tests can see it.
+#[tokio::test]
+async fn the_contents_names_a_markdown_question_by_its_words_alone() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let contents = table_of_contents(&set_page(&pool, &marked_up_set()).await);
+
+    // Q1's text is a paragraph over a bulleted list; Q2's is a paragraph over a
+    // fenced block. Flattened, both read on as one line.
+    assert!(
+        contents.contains(
+            "Where should the request counter live? in-process, per instance \
+             in redis, shared across instances"
+        ),
+        "the nav wants the words, with the list flattened into the line:\n{contents}"
+    );
+    assert!(
+        contents.contains("How should a throttled client be told to back off? fn allowance()"),
+        "a fenced block is words in the nav too:\n{contents}"
+    );
+
+    for markup in ["<ul>", "<li>", "<pre>", "<code>", "<p>"] {
+        assert!(
+            !contents.contains(markup),
+            "the nav is text, so `{markup}` has no place in it:\n{contents}"
+        );
+    }
 }
 
 #[tokio::test]

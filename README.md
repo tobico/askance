@@ -425,16 +425,17 @@ An agent supplies `title`, `preface` and `questions`. It never supplies
 directory and overwrites anything a Set claims.
 
 ```yaml
-title: Rate limiting for the public API   # required
+title: Rate limiting for the public API   # required, and plain text
 preface: |                                # optional markdown; everything the
   Why this needs deciding, in enough      #   human needs without seeing the
   detail to answer without asking back.   #   agent's session
 questions:
   - label: Q1                             # agent-owned and opaque; the Response
-    text: Where should the counter live?  #   answers by this name
+                                          #   answers by this name
+    text: Where should the counter live?  # markdown, blocks and all
     options:                              # optional
       - n: 1                              # the number the human selects
-        text: In-process, per instance.
+        text: In-process, per instance.   # inline markdown only
         recommended: true                 # the Recommendation; at most one
       - n: 2                              #   per question
         text: In Redis, shared.
@@ -447,6 +448,18 @@ questions:
 The rest of the grammar: a Set needs a non-empty title, labels are distinct
 across the Set, Option numbers are distinct within a question, and there is no
 multi-select — an Answer carries one `selected`.
+
+Markdown is the agent's half of the page. The `preface`, and the `text` of a
+Question and of a Sub-question, are rendered in full: headings, lists, tables,
+fenced code. An Option's `text` gets inline markup only — the emphasis, the
+code spans, the links — because an Option is one line beside a radio, and a
+block written there is flattened into that line rather than drawn as one. The
+`title` is not markdown: it heads the page and stands in the pending list and
+the Archive as typed.
+
+All of it is rendered on the server and sanitized on the way through, so a
+script or an event handler written into any of those fields is dropped rather
+than run, and no markdown parser reaches the browser.
 
 ### Response
 
@@ -466,6 +479,11 @@ comment: |                 # optional, about the Set as a whole
   A Response of nothing but `unanswered` entries plus a comment is a valid
   counter-question: the agent has to take the discussion back a step.
 ```
+
+The human's half is plain text throughout. `free_text` and `comment` are their
+own words, and come back as typed — line breaks and all, and read back on the
+archived page the same way. Nothing in a Response has been through a markdown
+parser, in either direction.
 
 ### Refusals
 
