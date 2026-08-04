@@ -63,6 +63,11 @@ captured by the CLI at send time and attached to every Question Set, so code
 approval can happen in the web UI.
 _Avoid_: patch, changeset
 
+**Diagram**:
+A mermaid fence in a Preface or Question, rendered visually in the viewer.
+Degrades to its readable source text whenever it cannot render.
+_Avoid_: chart, graph, figure
+
 **Archive**:
 Where Question Sets live after their Response is delivered (or after manual
 archiving of an orphaned Set). Permanent, browsable decision history.
