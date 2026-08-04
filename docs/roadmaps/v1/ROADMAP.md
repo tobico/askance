@@ -22,6 +22,8 @@ swap if push notifications become urgent before conveniences.
 - [x] 03: Answering conveniences — [brief](03-answering-conveniences.md)
 - [x] 04: PWA + push — [brief](04-pwa-and-push.md)
 - [x] 05: Nix packaging + deployment — [brief](05-nix-packaging.md)
-- [ ] 06: Skills adoption — [brief](06-skills-adoption.md) *(in progress —
-  branch `askance-transport` in the [tobico-skills](https://github.com/tobico/tobico-skills)
-  repo, where this stage's work lands)*
+- [x] 06: Skills adoption — [brief](06-skills-adoption.md) *(landed in
+  [tobico-skills](https://github.com/tobico/tobico-skills); end-to-end
+  validation through the phone PWA still outstanding — the cycle has been
+  driven twice from live sessions, but not through a real `/grilling` session,
+  and the chat fallback is unverified)*
