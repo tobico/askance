@@ -70,9 +70,11 @@ sqlx = { version = "0.8", default-features = false, features = [
 # The Diff is highlighted server-side. Default features off swaps oniguruma for
 # the pure-Rust regex engine — no C dependency in the build — and drops the
 # themes: the token classes are styled by the site's own stylesheet, so a
-# bundled colour scheme would only be dead weight.
+# bundled colour scheme would only be dead weight. The bundled syntaxes go the
+# same way, in favour of `two-face`'s wider set below; what stays is the loader
+# that reads it.
 syntect = { version = "5", default-features = false, features = [
-    "default-syntaxes",
+    "dump-load",
     "html",
     "parsing",
     "regex-fancy",
@@ -83,6 +85,14 @@ time = { version = "0.3", default-features = false, features = [
     "std",
 ] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# The syntaxes syntect bundles are Sublime Text's defaults, which is a set that
+# stopped growing before TypeScript, TOML and Nix existed as far as it is
+# concerned — a Diff of any of them came out unhighlighted. This is the set `bat`
+# ships, the same defaults with those in it. `syntect-fancy` holds it to the
+# pure-Rust regex engine our syntect line already chose.
+two-face = { version = "0.5", default-features = false, features = [
+    "syntect-fancy",
+] }
 # Pinned exactly: the bindgen format is unstable, so the wasm-bindgen crate has
 # to match the one built into the cargo-leptos the flake pins. Bump the two
 # together or the wasm build stops with a schema-version mismatch.

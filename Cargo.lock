@@ -173,6 +173,7 @@ dependencies = [
  "sqlx",
  "syntect",
  "time",
+ "two-face",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -3794,6 +3795,17 @@ dependencies = [
  "rand 0.9.5",
  "sha1",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "two-face"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b285c51f8a6ade109ed4566d33ac4fb289fb5d6cf87ed70908a5eaf65e948e34"
+dependencies = [
+ "serde",
+ "serde_derive",
+ "syntect",
 ]
 
 [[package]]
