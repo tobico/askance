@@ -606,10 +606,19 @@ async fn a_settled_sets_options_read_with_their_markup_and_their_marks() {
 
     // Q1: Option 1 was chosen and Option 2 carries the ★. Read back, each still
     // has its number and its marks beside the text the agent wrote.
+    //
+    // The class rather than the word, and the two are asserted apart: the row is
+    // marked as chosen for the stylesheet to outline, and it says "chosen" in a
+    // word for a reader who cannot see an outline. `contains("chosen")` alone
+    // could not tell those two apart — the class spells it too.
     let chosen = option_row(&html, "<code>Counter::local</code>");
     assert!(
-        chosen.contains(r#"class="n">1"#) && chosen.contains("chosen"),
+        chosen.contains(r#"class="n">1"#) && chosen.contains(r#"class="option chosen"#),
         "expected the chosen Option numbered and marked beside its markup:\n{chosen}"
+    );
+    assert!(
+        chosen.contains(r#"class="chose">chosen"#),
+        "expected the word as well, for a reader the outline says nothing to:\n{chosen}"
     );
 
     let recommended = option_row(&html, "<strong>Redis</strong>");
@@ -618,8 +627,8 @@ async fn a_settled_sets_options_read_with_their_markup_and_their_marks() {
         "expected the Recommendation numbered and starred beside its markup:\n{recommended}"
     );
     assert!(
-        !recommended.contains("chosen"),
-        "the Recommendation was not taken:\n{recommended}"
+        !recommended.contains("chose"),
+        "the Recommendation was not taken, in neither the class nor a word:\n{recommended}"
     );
 }
 
@@ -865,11 +874,13 @@ async fn an_answered_set_shows_what_was_chosen_apart_from_what_was_recommended()
 
     let (html, _) = answered_set_page(&pool, &full_grammar_set(), &decided_every_way()).await;
 
-    // Q1: Option 1 was chosen, and it is Option 2 that carries the ★.
+    // Q1: Option 1 was chosen, and it is Option 2 that carries the ★. The class
+    // is what the outline hangs off and the word is what a reader who cannot see
+    // one is told; both have to be on it, and neither on the other Option.
     let chosen = option_row(&html, "In-process, per instance.");
     assert!(
-        chosen.contains("chosen"),
-        "expected the human's Option marked as chosen:\n{chosen}"
+        chosen.contains(r#"class="option chosen"#) && chosen.contains(r#"class="chose">chosen"#),
+        "expected the human's Option marked as chosen, in the class and in a word:\n{chosen}"
     );
     assert!(
         !chosen.contains("★"),
@@ -882,7 +893,7 @@ async fn an_answered_set_shows_what_was_chosen_apart_from_what_was_recommended()
         "expected the Recommendation still marked as one:\n{recommended}"
     );
     assert!(
-        !recommended.contains("chosen"),
+        !recommended.contains("chose"),
         "the Recommendation was not taken, and the page must not read as if it was:\n{recommended}"
     );
 

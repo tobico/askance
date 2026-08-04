@@ -2334,13 +2334,13 @@ fn resolved(asked: &AskView, response: Option<&Response>) -> impl IntoView + use
     // page, rather than claiming the agent was told anything.
     let open = response.is_some() && selected.is_none() && said.is_none();
 
-    // The form's own wording, minus its "Or": there with Options the words were
-    // the note in the margin beside one, and read back they are still. Addressed
-    // to the human who answered, because there is only ever the one of them.
+    // The form's own wording, minus the name of the Question it prefixes there: a
+    // field in a column of five needs telling apart from the other four, and this
+    // sits inside the one Question it belongs to with nothing to be confused with.
     let prompt = if options.is_empty() {
         "Your answer"
     } else {
-        "In your own words"
+        "Your thoughts"
     };
 
     let offers: Vec<_> = options
@@ -2375,12 +2375,17 @@ fn resolved(asked: &AskView, response: Option<&Response>) -> impl IntoView + use
 }
 
 /// One Option after the fact: numbered and worded as it was offered, marked if
-/// the agent recommended it, and marked separately — in a word, not only in the
-/// outline — if this is the one the human chose.
+/// the agent recommended it, and marked apart from that if this is the one the
+/// human chose.
 ///
 /// The two marks are deliberately different things to read: the ★ is what was
-/// suggested, and "chosen" is what was decided, which on any given question may
+/// suggested, and the outline is what was decided, which on any given question may
 /// well not be the same Option.
+///
+/// "chosen" is still written, and the stylesheet takes it out of the layout rather
+/// than out of the page — the outline says which one to a reader looking at it and
+/// nothing at all to one who is not, and an archive that cannot say what was
+/// decided is not much of an archive. See `.ask.decided .chose`.
 fn decided_option(option: &OptionView, selected: Option<u32>) -> impl IntoView + use<> {
     let chosen = selected == Some(option.n);
     let class = match (chosen, option.recommended) {

@@ -1276,16 +1276,11 @@ p.meta .branch {
   color: var(--accent);
 }
 
-/* Marked, not chosen: the Recommendation is outlined in dashes so it cannot be
-   mistaken for the solid outline of the Option actually selected. */
-.option.recommended label {
-  border-style: dashed;
-  border-color: var(--accent);
-}
-
-.option.recommended label:has(input:checked) {
-  border-style: solid;
-}
+/* The ★ is the whole of the mark. An outline as well was a second way of saying
+   the same thing, in the same colour as the outline that means "selected" — so the
+   two marks it was meant to keep apart were told apart by a border style, which is
+   the least legible difference on the page. The `recommended` class stays: it is
+   still true of the Option, and the ★ hangs off it. */
 
 .set-comment {
   margin-top: 1.5rem;
@@ -1362,31 +1357,37 @@ p.meta .branch {
   border-radius: 0.4rem;
 }
 
-/* Marked as it was in the form: dashed, because a Recommendation is what was
-   suggested and not what was decided — which on any given question may well
-   have been the other Option. */
-.ask.decided .option.recommended {
-  border-style: dashed;
-  border-color: var(--accent);
-}
+/* Marked by its ★ and nothing else, as in the form. */
 
-/* The one Option that is not history keeps the page's ink, takes the solid
-   outline the form gave a selected radio, and says so in a word besides. */
+/* The one Option that is not history keeps the page's ink and takes the outline
+   the form gave a selected radio. That outline is the whole of what says this is
+   the one — see `.chose` below for what that costs and how it is paid. */
 .ask.decided .option.chosen {
   color: var(--ink);
-  border-style: solid;
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
+/* Out of the layout, still in the document.
+
+   An outline is a fine thing to look at and nothing whatever to listen to: the
+   `chosen` class is not announced, and unlike the Recommendation there is no ★ to
+   fall back on. Left at the outline alone, a permanent log of decisions would stop
+   saying what was decided to anyone not looking at it. So the word stays for the
+   readers that need words.
+
+   Not `display: none`, which would take it out of the accessibility tree along
+   with the layout. */
 .ask.decided .chose {
-  margin-left: auto;
-  padding-left: 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--accent);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Written by a human in a textarea, so their line breaks are part of what they
