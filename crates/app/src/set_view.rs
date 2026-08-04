@@ -769,6 +769,24 @@ struct Watched {
 
     /// The class that sets those words — see [`face`].
     kind: &'static str,
+
+    /// The section this part of the page belongs to, by the id and the name of it.
+    /// A section heading belongs to itself, so for one of those these are its own
+    /// — which is how [`Watched::inside`] tells the two apart without a flag.
+    ///
+    /// Carried rather than worked out by walking back up the list: the header
+    /// names the section along with the part inside it, and the wrap switch has to
+    /// know whether the reader is anywhere in the Diff at all.
+    section: &'static str,
+    section_name: &'static str,
+}
+
+impl Watched {
+    /// The section this sits inside, or `None` when it *is* the section — which is
+    /// exactly when its own id is the section's.
+    fn inside(&self) -> Option<&'static str> {
+        (self.anchor != self.section).then_some(self.section_name)
+    }
 }
 
 /// The class that sets one line's words: a Question's label and prose in the
@@ -802,6 +820,8 @@ fn spied(sections: &[Section]) -> Vec<Watched> {
                 label: None,
                 text: section.name.to_owned(),
                 kind: "contents-section",
+                section: section.anchor,
+                section_name: section.name,
             };
 
             std::iter::once(heading).chain(section.entries.iter().map(|entry| Watched {
@@ -809,6 +829,8 @@ fn spied(sections: &[Section]) -> Vec<Watched> {
                 label: entry.label.clone(),
                 text: entry.text.clone(),
                 kind: face(entry.label.as_deref()),
+                section: section.anchor,
+                section_name: section.name,
             }))
         })
         .collect()
@@ -939,23 +961,9 @@ struct Nav {
 /// two the reader gets is the stylesheet's answer to how wide their window is,
 /// and there is no second copy to fall out of step with the first.
 ///
-/// `use<>`: the nav is built from the Set here and keeps nothing of it, so it
-/// outlives the borrow.
-fn contents(set: &SetView) -> impl IntoView + use<> {
-    let sections = outline(set);
-    let watched = spied(&sections);
-
-    let nav = Nav {
-        // It starts where a page nobody has scrolled puts it, so the nav the
-        // server writes is already right and the spy has nothing to correct when
-        // it arrives.
-        here: RwSignal::new(lit(&[])),
-        pinned: StoredValue::new(false),
-        // Shut: the bar names where the reader is, and the list is what they ask
-        // for on top of that.
-        open: RwSignal::new(false),
-    };
-
+/// The outline and the watched list are worked out once by the caller and handed
+/// to the floating header as well, so the two cannot describe different pages.
+fn contents(sections: Vec<Section>, watched: Vec<Watched>, nav: Nav) -> impl IntoView {
     let sections: Vec<_> = sections
         .into_iter()
         .map(|section| {
@@ -1024,6 +1032,85 @@ fn contents(set: &SetView) -> impl IntoView + use<> {
                 {sections}
             </ol>
         </nav>
+    }
+}
+
+/// The floating header: on a wide viewport, where the reader is and — while they
+/// are in the Diff — the switch that governs how it is drawn.
+///
+/// Its own element rather than the nav's bar let through at this width. The bar is
+/// a button whose whole job is opening the list, and here the list is already in
+/// the margin, so that button would be a control that does nothing — focusable,
+/// announced as a button, and inert. They share the signal and nothing else.
+///
+/// The naming is a breadcrumb rather than one line, because the sidebar beside it
+/// already says both halves with two highlights and one line would say less than
+/// what it is sitting next to. It reads from the same scroll-spy signal, so it
+/// cannot disagree with the sidebar about where the reader is.
+///
+/// The words are hidden from assistive tech: the sidebar's own line already carries
+/// `aria-current`, and a second copy of the answer is a second thing to hear. The
+/// switch is not hidden — it is a real control, and the one thing here that is not
+/// said somewhere else on screen.
+///
+/// Nothing to say on a narrow viewport, where the bar is doing this; the stylesheet
+/// keeps it off, as it keeps the bar off here.
+fn header(watched: Vec<Watched>, nav: Nav, wrapped: RwSignal<bool>) -> impl IntoView {
+    // Whether the wrap switch belongs here yet. Read off the section the reader is
+    // in rather than off which line exactly, so it stays put as they move from
+    // the Diff's heading down through its files instead of flickering per file.
+    //
+    // A Set with no Diff has no such section, so this is never true for one.
+    let in_the_diff = {
+        let watched = watched.clone();
+        Signal::derive(move || {
+            watched
+                .get(nav.here.get())
+                .is_some_and(|here| here.section == "diff")
+        })
+    };
+
+    let name = move || {
+        // A place the watched list does not have cannot happen — `here` only ever
+        // holds one of them — but the header is not worth a panic.
+        let here = watched.get(nav.here.get())?;
+
+        Some(view! {
+            {here
+                .inside()
+                .map(|section| {
+                    view! {
+                        <span class="page-header-section">{section}</span>
+                        <span class="page-header-sep">"›"</span>
+                    }
+                })}
+            <span class=format!("page-header-name {}", here.kind)>
+                {here
+                    .label
+                    .clone()
+                    .map(|label| view! { <span class="contents-label">{label}</span> })}
+                {here.text.clone()}
+            </span>
+        })
+    };
+
+    view! {
+        <div class="page-header">
+            <p class="page-header-where" aria-hidden="true">{name}</p>
+            {move || {
+                in_the_diff
+                    .get()
+                    .then(|| {
+                        view! {
+                            <crate::switch::Switch
+                                label="Word wrap"
+                                on=wrapped
+                                flip=move |on| set_wrapping(wrapped, on)
+                            />
+                        }
+                    })
+            }}
+        </div>
     }
 }
 
@@ -1433,9 +1520,36 @@ fn dismiss(_nav: Nav) {}
 /// The material above is the same however it stands: a settled Set is read for
 /// what was decided *and* for what the decision was about.
 fn sheet(set: SetView) -> impl IntoView {
-    // Built before the Set is taken apart below, since it is a description of
-    // the whole of it.
-    let contents = contents(&set);
+    // How this device wants Diffs drawn. It lives up here because two controls
+    // drive it — the switch beside the Diff heading and the one in the floating
+    // header — and they have to be two views of one setting rather than two
+    // settings that happen to agree.
+    let wrapped = RwSignal::new(false);
+
+    // The browser's alone, like the drafts: an effect never runs during SSR, so
+    // the server draws every Diff unwrapped and only an open page asks the device
+    // what it wanted.
+    Effect::new(move |_| wrapped.set(crate::device::wrapping()));
+
+    // Both are descriptions of the whole Set, so they are built before it is taken
+    // apart below — and from one outline, so the sidebar and the header cannot end
+    // up describing different pages.
+    let sections = outline(&set);
+    let watched = spied(&sections);
+
+    let nav = Nav {
+        // The highlight starts where a page nobody has scrolled puts it, so the nav
+        // the server writes is already right and the spy has nothing to correct
+        // when it arrives.
+        here: RwSignal::new(lit(&[])),
+        pinned: StoredValue::new(false),
+        // Shut: the bar names where the reader is, and the list is what they ask
+        // for on top of that.
+        open: RwSignal::new(false),
+    };
+
+    let contents = contents(sections, watched.clone(), nav);
+    let header = header(watched, nav, wrapped);
 
     // A Set sent from outside a repo has neither, and an empty line of
     // provenance is worse than none.
@@ -1502,6 +1616,10 @@ fn sheet(set: SetView) -> impl IntoView {
         // the stylesheet, so where it sits here is a reading order rather than
         // a position.
         {contents}
+        // Under the nav in reading order and pinned to the top edge by the
+        // stylesheet, which is also what keeps it off a narrow viewport: there the
+        // nav's own bar is already doing this job.
+        {header}
         {provenance}
         {when}
         {standing}
@@ -1525,9 +1643,20 @@ fn sheet(set: SetView) -> impl IntoView {
             })}
         // Between the Preface and the Questions: the Preface says what the
         // agent is asking about, and the Diff is the evidence for it.
-        {set.diff.map(diff_section)}
+        {set.diff.map(|diff| diff_section(diff, wrapped))}
         {body}
     }
+}
+
+/// Turn wrapping on or off for this device, and for every Diff it opens after
+/// this one.
+///
+/// Shared by the two switches that offer it — beside the Diff heading, and in the
+/// floating header once the heading has scrolled past — so that flipping either
+/// moves the other.
+fn set_wrapping(wrapped: RwSignal<bool>, on: bool) {
+    wrapped.set(on);
+    crate::device::set_wrapping(on);
 }
 
 /// The attached Diff, and the one setting that governs how it is read.
@@ -1543,14 +1672,7 @@ fn sheet(set: SetView) -> impl IntoView {
 /// last chose, so the first paint is always unwrapped and settles a frame later
 /// — a reflow, and one the alternative costs a script in the document head to
 /// avoid.
-fn diff_section(diff: DiffView) -> impl IntoView {
-    let wrapped = RwSignal::new(false);
-
-    // The browser's alone, like the drafts: an effect never runs during SSR, so
-    // the server draws the Diff unwrapped and only an open page asks the device
-    // what it wanted.
-    Effect::new(move |_| wrapped.set(crate::device::wrapping()));
-
+fn diff_section(diff: DiffView, wrapped: RwSignal<bool>) -> impl IntoView {
     view! {
         <section class=move || if wrapped.get() { "diff wrapped" } else { "diff" } id="diff">
             <div class="section-head">
@@ -1558,10 +1680,7 @@ fn diff_section(diff: DiffView) -> impl IntoView {
                 <crate::switch::Switch
                     label="Word wrap"
                     on=wrapped
-                    flip=move |on| {
-                        wrapped.set(on);
-                        crate::device::set_wrapping(on);
-                    }
+                    flip=move |on| set_wrapping(wrapped, on)
                 />
             </div>
             // The per-file anchors — `diff-1`, `diff-2`, … — are stamped by the
@@ -2334,13 +2453,13 @@ fn resolved(asked: &AskView, response: Option<&Response>) -> impl IntoView + use
     // page, rather than claiming the agent was told anything.
     let open = response.is_some() && selected.is_none() && said.is_none();
 
-    // The form's own wording, minus its "Or": there with Options the words were
-    // the note in the margin beside one, and read back they are still. Addressed
-    // to the human who answered, because there is only ever the one of them.
+    // The form's own wording, minus the name of the Question it prefixes there: a
+    // field in a column of five needs telling apart from the other four, and this
+    // sits inside the one Question it belongs to with nothing to be confused with.
     let prompt = if options.is_empty() {
         "Your answer"
     } else {
-        "In your own words"
+        "Your thoughts"
     };
 
     let offers: Vec<_> = options
@@ -2375,12 +2494,17 @@ fn resolved(asked: &AskView, response: Option<&Response>) -> impl IntoView + use
 }
 
 /// One Option after the fact: numbered and worded as it was offered, marked if
-/// the agent recommended it, and marked separately — in a word, not only in the
-/// outline — if this is the one the human chose.
+/// the agent recommended it, and marked apart from that if this is the one the
+/// human chose.
 ///
 /// The two marks are deliberately different things to read: the ★ is what was
-/// suggested, and "chosen" is what was decided, which on any given question may
+/// suggested, and the outline is what was decided, which on any given question may
 /// well not be the same Option.
+///
+/// "chosen" is still written, and the stylesheet takes it out of the layout rather
+/// than out of the page — the outline says which one to a reader looking at it and
+/// nothing at all to one who is not, and an archive that cannot say what was
+/// decided is not much of an archive. See `.ask.decided .chose`.
 fn decided_option(option: &OptionView, selected: Option<u32>) -> impl IntoView + use<> {
     let chosen = selected == Some(option.n);
     let class = match (chosen, option.recommended) {
@@ -2760,6 +2884,61 @@ mod tests {
             ],
             "each section's own heading, then whatever is under it — which is \
              the order the page has them in, and what the highlight moves along",
+        );
+    }
+
+    #[test]
+    fn a_watched_part_knows_which_section_it_is_in() {
+        let watched = spied(&outline(&every_section()));
+
+        // What the floating header reads to name where the reader is: the section
+        // for everything under one, and `None` for a section's own heading, which
+        // is in nothing but itself.
+        let inside: Vec<_> = watched.iter().map(Watched::inside).collect();
+
+        assert_eq!(
+            inside,
+            [
+                None,
+                None,
+                Some("Diff"),
+                Some("Diff"),
+                None,
+                Some("Questions"),
+                Some("Questions"),
+            ],
+        );
+    }
+
+    #[test]
+    fn the_diffs_own_parts_are_the_ones_that_offer_word_wrap() {
+        let watched = spied(&outline(&every_section()));
+
+        // The switch follows the section and not the line, so it stays put as the
+        // reader moves from the Diff's heading down through its files rather than
+        // appearing and vanishing per file.
+        let in_the_diff: Vec<_> = watched
+            .iter()
+            .map(|watched| watched.section == "diff")
+            .collect();
+
+        assert_eq!(
+            in_the_diff,
+            [false, true, true, true, false, false, false],
+            "the Diff's heading and both its files, and nothing else",
+        );
+    }
+
+    #[test]
+    fn a_set_with_no_diff_never_offers_word_wrap() {
+        let mut set = every_section();
+        set.diff = None;
+
+        let watched = spied(&outline(&set));
+
+        assert!(
+            watched.iter().all(|watched| watched.section != "diff"),
+            "with no Diff there is nowhere the switch belongs",
         );
     }
 

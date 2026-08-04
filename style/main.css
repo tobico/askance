@@ -445,6 +445,14 @@ p.meta .branch {
   }
 }
 
+/* The floating header, which exists only where the sidebar does: below that width
+   the nav's own bar is already pinned to the top saying the same thing, and two of
+   them would be two answers to one question. */
+
+.page-header {
+  display: none;
+}
+
 /* The sidebar: the page's sections, top to bottom, in the margin — so the column
    stays exactly where it was and nothing below the nav has moved.
 
@@ -476,6 +484,88 @@ p.meta .branch {
     font-size: 0.85rem;
     line-height: 1.4;
   }
+
+  /* The header, pinned across the reading column. Sticky rather than fixed, like
+     the bar below this width and for the same reason: it belongs to the column
+     and pins itself as the page goes up under it, so nothing is covered on
+     arrival and there is no room to make for it.
+
+     Out past the column's padding on both sides, so once pinned the page passes
+     behind it rather than beside it. */
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin: 0 -1rem 1rem;
+    padding: 0.5rem 1rem;
+    min-height: 2.5rem;
+    background: var(--card);
+    border-bottom: 1px solid var(--edge);
+  }
+
+  /* The provenance line is set to pull up against the title, because until now it
+     followed the title: the nav between them in the markup is out of the flow at
+     this width. The header is not out of the flow — that is what lets it be sticky
+     — so left alone the line would be dragged up underneath it. */
+  .page-header + p.meta {
+    margin-top: 0;
+  }
+
+  /* Where a jump lands: the header covers the top edge exactly as the bar does at
+     the narrower width, so everything the nav jumps to keeps its height clear of
+     itself, plus a little air. */
+  .preface,
+  .diff,
+  #questions,
+  .diff-file,
+  .question {
+    scroll-margin-top: 3.25rem;
+  }
+}
+
+/* One line, cut where it runs out of column — the sidebar's own rule, for the same
+   reason. The section it names is given whatever room the switch beside it does not
+   want. */
+.page-header-where {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.page-header-section {
+  flex: none;
+  color: var(--ink-soft);
+}
+
+.page-header-sep {
+  flex: none;
+  color: var(--ink-soft);
+}
+
+.page-header-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+/* A path here is set as the Diff sets it, so the two read as the same name. */
+.page-header-name.contents-path {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+/* Room for the switch, whatever the name is doing. */
+.page-header .switch {
+  flex: none;
 }
 
 .contents ol {
@@ -1276,16 +1366,11 @@ p.meta .branch {
   color: var(--accent);
 }
 
-/* Marked, not chosen: the Recommendation is outlined in dashes so it cannot be
-   mistaken for the solid outline of the Option actually selected. */
-.option.recommended label {
-  border-style: dashed;
-  border-color: var(--accent);
-}
-
-.option.recommended label:has(input:checked) {
-  border-style: solid;
-}
+/* The ★ is the whole of the mark. An outline as well was a second way of saying
+   the same thing, in the same colour as the outline that means "selected" — so the
+   two marks it was meant to keep apart were told apart by a border style, which is
+   the least legible difference on the page. The `recommended` class stays: it is
+   still true of the Option, and the ★ hangs off it. */
 
 .set-comment {
   margin-top: 1.5rem;
@@ -1362,31 +1447,37 @@ p.meta .branch {
   border-radius: 0.4rem;
 }
 
-/* Marked as it was in the form: dashed, because a Recommendation is what was
-   suggested and not what was decided — which on any given question may well
-   have been the other Option. */
-.ask.decided .option.recommended {
-  border-style: dashed;
-  border-color: var(--accent);
-}
+/* Marked by its ★ and nothing else, as in the form. */
 
-/* The one Option that is not history keeps the page's ink, takes the solid
-   outline the form gave a selected radio, and says so in a word besides. */
+/* The one Option that is not history keeps the page's ink and takes the outline
+   the form gave a selected radio. That outline is the whole of what says this is
+   the one — see `.chose` below for what that costs and how it is paid. */
 .ask.decided .option.chosen {
   color: var(--ink);
-  border-style: solid;
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
+/* Out of the layout, still in the document.
+
+   An outline is a fine thing to look at and nothing whatever to listen to: the
+   `chosen` class is not announced, and unlike the Recommendation there is no ★ to
+   fall back on. Left at the outline alone, a permanent log of decisions would stop
+   saying what was decided to anyone not looking at it. So the word stays for the
+   readers that need words.
+
+   Not `display: none`, which would take it out of the accessibility tree along
+   with the layout. */
 .ask.decided .chose {
-  margin-left: auto;
-  padding-left: 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--accent);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Written by a human in a textarea, so their line breaks are part of what they
