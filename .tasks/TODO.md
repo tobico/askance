@@ -25,7 +25,7 @@ merge rather than to these tasks.
 
 ## Tasks
 
-- [ ] 01: A Question's text renders as markdown — [details](01-question-text-markdown.md)
+- [x] 01: A Question's text renders as markdown
 - [ ] 02: An Option's text renders as inline markdown — [details](02-option-text-inline.md)
 - [ ] 03: Rendered markdown is styled once, everywhere — [details](03-shared-markdown-styling.md)
 - [ ] 04: The grammar says so — [details](04-document-the-grammar.md)

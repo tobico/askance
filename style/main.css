@@ -540,6 +540,45 @@ h1 + .meta .branch {
   color: var(--accent);
 }
 
+/* A Question's text is the agent's markdown, rendered by the server. It is boxed
+   so that filling it in wholesale cannot swallow the label beside it — and the
+   box is dissolved again here, so the first paragraph runs on from the label the
+   way the question's one line always has, and anything blockier than a paragraph
+   starts below it. */
+.ask .text .markdown {
+  display: contents;
+}
+
+.ask .text .markdown > p:first-child {
+  display: inline;
+}
+
+.ask .text .markdown > p {
+  margin: 0 0 0.5rem;
+}
+
+.ask .text .markdown > :last-child {
+  margin-bottom: 0;
+}
+
+/* The Set's own outline clears its markers, and `list-style` inherits — a list
+   the agent wrote has to get them back. */
+.ask .text .markdown ul,
+.ask .text .markdown ol {
+  list-style: revert;
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.ask .text .markdown code {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.9em;
+}
+
+.ask .text .markdown pre {
+  overflow-x: auto;
+}
+
 .options {
   list-style: none;
   margin: 0 0 0.75rem;

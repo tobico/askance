@@ -25,7 +25,7 @@
 //! permanently, and with nothing to press — except that there is no Response to
 //! show, because there never was one.
 
-use askance_schema::{Answer, Liveness, Question, QuestionOption, Response};
+use askance_schema::{Answer, Liveness, QuestionOption, Response};
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
@@ -35,9 +35,10 @@ use time::{OffsetDateTime, UtcOffset};
 
 /// One Question Set as the browser receives it.
 ///
-/// The Preface and the Diff arrive as HTML rather than as their sources: the
-/// server has the markdown parser and the diff highlighter, and this way the
-/// browser needs neither. The Questions arrive exactly as the agent sent them.
+/// Everything the agent wrote as prose — the Preface, and every Question's and
+/// Sub-question's text — arrives as HTML rather than as its source, and so does
+/// the Diff: the server has the markdown parser and the diff highlighter, and
+/// this way the browser needs neither.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetView {
     pub id: i64,
@@ -46,12 +47,68 @@ pub struct SetView {
     pub branch: Option<String>,
     pub preface_html: Option<String>,
     pub diff_html: Option<String>,
-    pub questions: Vec<Question>,
+    pub questions: Vec<QuestionView>,
 
     /// Where the Set stands. It decides whether this page is a form or a record,
     /// so it travels with the Set rather than being fetched once the page is
     /// already up.
     pub standing: Standing,
+}
+
+/// One Question as the page draws it, with its Sub-questions nested one level
+/// under it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionView {
+    pub ask: AskView,
+    pub subquestions: Vec<AskView>,
+}
+
+/// A Question or a Sub-question as the page draws it: the name it answers to,
+/// its text already rendered, and the Options it offers.
+///
+/// One type for both, because the page asks them the same way and the schema's
+/// distinction between them is spent by the time it gets here: a Sub-question's
+/// name is its parent's label and its letter, resolved on the way out.
+///
+/// The Options travel as the agent sent them — the form is built from their
+/// numbers and their Recommendation flags, and a Response answers by number.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AskView {
+    /// `Q7` for a Question, `Q7a` for a Sub-question.
+    pub name: String,
+
+    /// The text as HTML, rendered and sanitized by the server on the way out.
+    pub text_html: String,
+
+    pub options: Vec<QuestionOption>,
+}
+
+/// The Set's Questions as the page needs them: named as a Response answers them,
+/// with the agent's markdown rendered.
+///
+/// Server-only, because the rendering is — this is the seam that keeps the
+/// markdown parser off the browser's side of the wire.
+#[cfg(feature = "ssr")]
+fn viewed(questions: Vec<askance_schema::Question>) -> Vec<QuestionView> {
+    questions
+        .into_iter()
+        .map(|question| QuestionView {
+            subquestions: question
+                .subquestions
+                .iter()
+                .map(|subquestion| AskView {
+                    name: subquestion.name(&question),
+                    text_html: crate::markdown::to_html(&subquestion.text),
+                    options: subquestion.options.clone(),
+                })
+                .collect(),
+            ask: AskView {
+                name: question.name().to_owned(),
+                text_html: crate::markdown::to_html(&question.text),
+                options: question.options,
+            },
+        })
+        .collect()
 }
 
 /// How a Set stands: still waiting on the human, answered, or closed unanswered.
@@ -133,7 +190,7 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
         // only when the tree is dirty, but an empty patch is not worth a
         // heading either.
         diff_html: stored.set.diff.as_deref().and_then(crate::diff::to_html),
-        questions: stored.set.questions,
+        questions: viewed(stored.set.questions),
         standing,
     }))
 }
@@ -717,7 +774,7 @@ fn unarchived(outcome: Option<Result<Archived, ServerFnError>>) -> Option<AnyVie
 
 /// The questions as a sheet to fill in, with the submit that ends the agent's
 /// wait.
-fn answerable(id: i64, questions: Vec<Question>) -> impl IntoView {
+fn answerable(id: i64, questions: Vec<QuestionView>) -> impl IntoView {
     // The fields are gathered as the questions are drawn, so the list holds one
     // entry per question in the order the Set asked them — which is the order a
     // Response has to account for them in. A question that went missing here
@@ -1010,24 +1067,14 @@ fn refusal(outcome: Option<Result<Submitted, ServerFnError>>) -> Option<AnyView>
 ///
 /// `use<>`: the view is built here and outlives the borrow of `fields`, which
 /// it does not hold on to.
-fn question(question: Question, fields: &mut Vec<Asked>) -> impl IntoView + use<> {
-    let own = ask(
-        question.name().to_owned(),
-        question.text.clone(),
-        question.options.clone(),
-        fields,
-    );
+fn question(question: QuestionView, fields: &mut Vec<Asked>) -> impl IntoView + use<> {
+    let own = ask(question.ask, fields);
 
     let subquestions: Vec<_> = question
         .subquestions
-        .iter()
+        .into_iter()
         .map(|subquestion| {
-            let ask = ask(
-                subquestion.name(&question),
-                subquestion.text.clone(),
-                subquestion.options.clone(),
-                fields,
-            );
+            let ask = ask(subquestion, fields);
             view! { <li class="subquestion">{ask}</li> }
         })
         .collect();
@@ -1041,17 +1088,38 @@ fn question(question: Question, fields: &mut Vec<Asked>) -> impl IntoView + use<
     view! { <li class="question">{own} {nested}</li> }
 }
 
+/// What one question asks: the name it answers to, then its text as the server
+/// rendered it.
+///
+/// A `div` rather than the `p` this used to be — the agent's markdown can be as
+/// blocky as a list, a table or a fenced block, and none of those may live inside
+/// a paragraph. The class the stylesheet and the tests know it by is unchanged,
+/// and the rendered markdown is boxed inside it so the label can stay a child of
+/// its own rather than being swallowed by `inner_html`.
+///
+/// Shared by the form and the record: a settled Set is read for what was asked,
+/// so it is asked in the same words and the same markup.
+fn asked_text(name: String, text_html: String) -> impl IntoView {
+    view! {
+        <div class="text">
+            <span class="label">{name}</span>
+            <div class="markdown" inner_html=text_html></div>
+        </div>
+    }
+}
+
 /// A Question or a Sub-question — both are asked the same way: the name it
 /// answers to, its text, its Options as a radio group, then a free-text field.
 ///
-/// `name` is what a Response answers by (`Q7`, `Q7a`), so it names the fields
+/// The name is what a Response answers by (`Q7`, `Q7a`), so it names the fields
 /// too.
-fn ask(
-    name: String,
-    text: String,
-    options: Vec<QuestionOption>,
-    collected: &mut Vec<Asked>,
-) -> impl IntoView + use<> {
+fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
+    let AskView {
+        name,
+        text_html,
+        options,
+    } = asked;
+
     let group = format!("{name}-option");
     let field = format!("{name}-free-text");
     let has_options = !options.is_empty();
@@ -1082,10 +1150,7 @@ fn ask(
 
     view! {
         <div class="ask">
-            <p class="text">
-                <span class="label">{name}</span>
-                {text}
-            </p>
+            {asked_text(name, text_html)}
             {radios}
             <label class="free-text" for=field.clone()>
                 {prompt}
@@ -1211,7 +1276,7 @@ fn answer_to<'a>(response: &'a Response, name: &str) -> Option<&'a Answer> {
 ///
 /// Kept readable forever rather than shown as a decision that was made: the
 /// Archive is permanent, and what is permanent here is the ask.
-fn orphaned(questions: &[Question]) -> impl IntoView + use<> {
+fn orphaned(questions: &[QuestionView]) -> impl IntoView + use<> {
     view! {
         <p class="counter-question">
             "This Set was archived unanswered: nobody answered these questions, and no Response \
@@ -1226,7 +1291,7 @@ fn orphaned(questions: &[Question]) -> impl IntoView + use<> {
 ///
 /// With no Response there is nothing to have decided — the Set was archived
 /// unanswered — so the questions read as they were asked and nothing is marked.
-fn settled(questions: &[Question], response: Option<Response>) -> impl IntoView + use<> {
+fn settled(questions: &[QuestionView], response: Option<Response>) -> impl IntoView + use<> {
     let outcomes: Vec<_> = questions
         .iter()
         .map(|question| settled_question(question, response.as_ref()))
@@ -1261,24 +1326,14 @@ fn settled(questions: &[Question], response: Option<Response>) -> impl IntoView 
 /// One settled Question, with its Sub-questions nested one level under it — the
 /// read counterpart of [`question`], and laid out the same way, because it is the
 /// same Set being looked at.
-fn settled_question(question: &Question, response: Option<&Response>) -> impl IntoView + use<> {
-    let own = resolved(
-        question.name().to_owned(),
-        question.text.clone(),
-        &question.options,
-        response,
-    );
+fn settled_question(question: &QuestionView, response: Option<&Response>) -> impl IntoView + use<> {
+    let own = resolved(&question.ask, response);
 
     let subquestions: Vec<_> = question
         .subquestions
         .iter()
         .map(|subquestion| {
-            let resolved = resolved(
-                subquestion.name(question),
-                subquestion.text.clone(),
-                &subquestion.options,
-                response,
-            );
+            let resolved = resolved(subquestion, response);
             view! { <li class="subquestion">{resolved}</li> }
         })
         .collect();
@@ -1300,13 +1355,14 @@ fn settled_question(question: &Question, response: Option<&Response>) -> impl In
 /// absence of a Response is itself something to draw: with none at all the Set
 /// was archived unanswered, and there was nobody to tell that these questions
 /// were still open.
-fn resolved(
-    name: String,
-    text: String,
-    options: &[QuestionOption],
-    response: Option<&Response>,
-) -> impl IntoView + use<> {
-    let answer = response.and_then(|response| answer_to(response, &name));
+fn resolved(asked: &AskView, response: Option<&Response>) -> impl IntoView + use<> {
+    let AskView {
+        name,
+        text_html,
+        options,
+    } = asked;
+
+    let answer = response.and_then(|response| answer_to(response, name));
     let selected = answer.and_then(|answer| answer.selected);
     let said = answer
         .and_then(|answer| answer.free_text.as_deref())
@@ -1337,10 +1393,7 @@ fn resolved(
 
     view! {
         <div class="ask decided">
-            <p class="text">
-                <span class="label">{name}</span>
-                {text}
-            </p>
+            {asked_text(name.clone(), text_html.clone())}
             {shown}
             {said
                 .map(|said| {

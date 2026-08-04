@@ -99,6 +99,31 @@ fn full_grammar_set() -> QuestionSet {
     }
 }
 
+/// The same Set with its Questions written the way agents write them: a
+/// bulleted list carrying a code span, a fenced code block, and a GFM table on
+/// a Sub-question. The labels and the Options are untouched, so a Response
+/// resolving [`full_grammar_set`] resolves this too.
+fn marked_up_set() -> QuestionSet {
+    let mut set = full_grammar_set();
+
+    set.questions[0].text = "Where should the request counter live?\n\n\
+         - in-process, per instance\n\
+         - in `redis`, shared across instances\n"
+        .to_owned();
+    set.questions[1].text = "How should a throttled client be told to back off?\n\n\
+         ```rust\n\
+         fn allowance() -> u32 { 600 }\n\
+         ```\n"
+        .to_owned();
+    set.questions[1].subquestions[0].text = "What should Retry-After say?\n\n\
+         | header | seconds |\n\
+         | --- | --- |\n\
+         | Retry-After | 30 |\n"
+        .to_owned();
+
+    set
+}
+
 fn answer(label: &str, selected: Option<u32>, free_text: Option<&str>) -> Answer {
     Answer {
         label: label.to_owned(),
@@ -216,6 +241,20 @@ async fn answered_set_page(
 
     assert_eq!(status, StatusCode::OK);
     (html, accepted.submitted_at)
+}
+
+/// The set view of a Set the human closed unanswered: the ask kept readable,
+/// with no Response to show beside it.
+async fn archived_set_page(pool: &SqlitePool, set: &QuestionSet) -> String {
+    let stored = store::insert_set(pool, set).await.unwrap();
+    store::archive_set(pool, &store::Settlements::new(8), stored.id)
+        .await
+        .unwrap();
+
+    let (status, html) = page(pool, &format!("/sets/{}", stored.id)).await;
+
+    assert_eq!(status, StatusCode::OK);
+    html
 }
 
 /// The `<li>` whose text contains `needle` — one Option's row, so a test can ask
@@ -354,6 +393,110 @@ async fn markdown_that_would_run_in_the_browser_does_not_reach_the_page() {
         !html.contains("javascript:"),
         "the Preface's script link should have been sanitised away:\n{html}"
     );
+}
+
+#[tokio::test]
+async fn a_questions_markdown_is_rendered_by_the_server() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    assert!(
+        html.contains("<li>in-process, per instance</li>"),
+        "expected the Question's list rendered to HTML:\n{html}"
+    );
+    assert!(
+        html.contains("<code>redis</code>"),
+        "expected the Question's code span rendered to HTML:\n{html}"
+    );
+    assert!(
+        html.contains("<pre>") && html.contains("fn allowance()"),
+        "expected the Question's fenced block rendered as one:\n{html}"
+    );
+    assert!(
+        html.contains("<table>") && html.contains("<td>Retry-After</td>"),
+        "expected the Sub-question's table rendered to HTML:\n{html}"
+    );
+    assert!(
+        !html.contains("| --- |"),
+        "nothing may reach the page as raw markup:\n{html}"
+    );
+    // A list or a table inside a `<p>` closes it where the browser says so
+    // rather than where the markup does, which would leave the page the server
+    // rendered and the page the browser hydrates disagreeing about its shape.
+    assert!(
+        !html.contains(r#"<p class="text">"#),
+        "a question's text holds block markdown, so it cannot be a paragraph:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_questions_label_still_sits_at_the_head_of_its_rendered_text() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    // The label a Response answers by, then the text it labels — a Question and
+    // a Sub-question alike, however blocky the markdown under it.
+    let found = positions(
+        &html,
+        &[
+            r#"class="label">Q1"#,
+            "<li>in-process, per instance</li>",
+            r#"class="label">Q2a"#,
+            "<td>Retry-After</td>",
+        ],
+    );
+    assert!(
+        found.windows(2).all(|pair| pair[0] < pair[1]),
+        "expected each label at the head of its own text, got offsets {found:?}:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn markdown_that_would_run_in_the_browser_does_not_reach_a_question() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.questions[0].text = "Careful now.\n\n<script>alert('pwned')</script>\n\n\
+         <img src=x onerror=\"alert('pwned')\">\n\n\
+         [click me](javascript:alert('pwned'))\n"
+        .to_owned();
+
+    let html = set_page(&pool, &set).await;
+
+    assert!(
+        html.contains("Careful now."),
+        "expected the Question's prose"
+    );
+    assert!(
+        !html.contains("alert('pwned')"),
+        "the Question's script should have been sanitised away:\n{html}"
+    );
+    assert!(
+        !html.contains("onerror"),
+        "the Question's event handler should have been sanitised away:\n{html}"
+    );
+    assert!(
+        !html.contains("javascript:"),
+        "the Question's script link should have been sanitised away:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_settled_sets_questions_are_rendered_the_way_the_form_rendered_them() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let (answered, _) = answered_set_page(&pool, &marked_up_set(), &decided_every_way()).await;
+    let archived = archived_set_page(&pool, &marked_up_set()).await;
+
+    for html in [&answered, &archived] {
+        assert!(
+            html.contains("<li>in-process, per instance</li>")
+                && html.contains("<code>redis</code>")
+                && html.contains("<td>Retry-After</td>"),
+            "a settled Set is read for what was asked, so its markdown is rendered too:\n{html}"
+        );
+    }
 }
 
 #[tokio::test]
