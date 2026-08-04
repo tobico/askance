@@ -49,6 +49,15 @@ pub struct SetView {
     pub diff: Option<DiffView>,
     pub questions: Vec<QuestionView>,
 
+    /// Whether anything the agent wrote here came out as a Diagram, and so
+    /// whether this page carries the client-side renderer at all.
+    ///
+    /// Answered by the server, from the HTML it has just rendered — see
+    /// [`diagrammed`]. It travels with the Set because it is a fact about this
+    /// Set's own material, and because it decides what the page names in its
+    /// head, which is written before anything in the browser could ask.
+    pub diagrams: bool,
+
     /// Where the Set stands. It decides whether this page is a form or a record,
     /// so it travels with the Set rather than being fetched once the page is
     /// already up.
@@ -157,6 +166,26 @@ fn viewed(questions: Vec<askance_schema::Question>) -> Vec<QuestionView> {
         .collect()
 }
 
+/// Whether any of this Set's rendered markdown holds a Diagram: the Preface, and
+/// every Question's and Sub-question's text.
+///
+/// The Options are not asked, because there is nothing to find in one: an
+/// Option's text is rendered inline, and a fence in there is flattened into the
+/// code span it would have been written as long before it could become a Diagram.
+///
+/// Asked of the rendered HTML rather than of the markdown, which is what keeps
+/// this answer and the renderer's own reading of the page from ever disagreeing —
+/// see [`crate::markdown::holds_diagram`].
+#[cfg(feature = "ssr")]
+fn diagrammed(preface_html: Option<&str>, questions: &[QuestionView]) -> bool {
+    let mut asked = questions
+        .iter()
+        .flat_map(|question| std::iter::once(&question.ask).chain(&question.subquestions));
+
+    preface_html.is_some_and(crate::markdown::holds_diagram)
+        || asked.any(|ask| crate::markdown::holds_diagram(&ask.text_html))
+}
+
 /// One question's Options as the page draws them, in the order the agent offered
 /// them. Rendered inline: a row beside a radio has room for markup and none for
 /// a block.
@@ -233,25 +262,32 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
         }
     };
 
+    // An empty Preface is the same as none at all: no point drawing the section
+    // for it.
+    let preface_html = stored
+        .set
+        .preface
+        .as_deref()
+        .map(str::trim)
+        .filter(|preface| !preface.is_empty())
+        .map(crate::markdown::to_html);
+
+    let questions = viewed(stored.set.questions);
+
     Ok(Some(SetView {
         id: stored.id,
         title: stored.set.title,
         project: stored.set.project,
         branch: stored.set.branch,
-        // An empty Preface is the same as none at all: no point drawing the
-        // section for it.
-        preface_html: stored
-            .set
-            .preface
-            .as_deref()
-            .map(str::trim)
-            .filter(|preface| !preface.is_empty())
-            .map(crate::markdown::to_html),
+        // Asked of the two of them together, and before either is given away:
+        // one Diagram anywhere on the page is what the renderer is loaded for.
+        diagrams: diagrammed(preface_html.as_deref(), &questions),
+        preface_html,
         // A Diff with no files in it is the same as none: the CLI attaches one
         // only when the tree is dirty, but an empty patch is not worth a
         // heading either.
         diff: stored.set.diff.as_deref().and_then(crate::diff::to_html),
-        questions: viewed(stored.set.questions),
+        questions,
         standing,
     }))
 }
@@ -1602,6 +1638,10 @@ fn sheet(set: SetView) -> impl IntoView {
         ("/archive", "← Archive")
     };
 
+    // Written wherever this sits in the view — it puts its tags in the head, not
+    // here — so it is up with the other things that are about the page as a whole.
+    let renderer = set.diagrams.then(diagram_renderer);
+
     let body = match set.standing {
         Standing::Waiting(_) => answerable(set.id, set.questions).into_any(),
         Standing::Answered(answered) => settled(&set.questions, Some(answered.response)).into_any(),
@@ -1609,6 +1649,7 @@ fn sheet(set: SetView) -> impl IntoView {
     };
 
     view! {
+        {renderer}
         <A href=back attr:class="back">{out}</A>
         <h1>{set.title}</h1>
         // After the title and before the rest: the page says what it is, then
@@ -1645,6 +1686,33 @@ fn sheet(set: SetView) -> impl IntoView {
         // agent is asking about, and the Diff is the evidence for it.
         {set.diff.map(|diff| diff_section(diff, wrapped))}
         {body}
+    }
+}
+
+/// The id the mermaid bundle's script tag carries, so that `diagrams.js` has
+/// something to wait on when the two arrive together rather than in order — see
+/// the note there.
+const BUNDLE: &str = "mermaid-bundle";
+
+/// The client-side renderer, named by the page — and only by a page that has a
+/// Diagram on it to draw.
+///
+/// This is the whole of the carve-out from rendering everything on the server
+/// (ADR-0002), and the whole of what keeps it narrow: mermaid is three and a half
+/// megabytes, so a Set without a Diagram names neither of these and pays for
+/// neither. What a page that does name them gets is the source blocks the
+/// markdown renderer already wrote, drawn over — and if either script never
+/// arrives, the blocks themselves, which is a readable page and not a broken one.
+///
+/// In the head rather than beside the Diagram, so the browser starts fetching the
+/// moment it reads the head instead of when it reaches the Preface — that is what
+/// `leptos_meta`'s `Script` is for, wherever it is written. Deferred so that both
+/// run after the page is parsed and in this order: `diagrams.js` drives what the
+/// bundle brings, so the bundle goes first.
+fn diagram_renderer() -> impl IntoView {
+    view! {
+        <leptos_meta::Script id=BUNDLE src="/mermaid.min.js" defer="" />
+        <leptos_meta::Script src="/diagrams.js" defer="" />
     }
 }
 
@@ -2573,6 +2641,7 @@ mod tests {
                 asked("Q1", "Where should the request counter live?"),
                 asked("Q2", "How should a throttled client be told?"),
             ],
+            diagrams: false,
             standing: Standing::Waiting(Liveness::Waiting),
         }
     }

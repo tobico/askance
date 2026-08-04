@@ -535,6 +535,7 @@ $ nix fmt                 # the Nix files
 $ nix flake check         # the NixOS module, in a VM (Linux only)
 
 $ tools/generate-icons.sh # the PWA icons, after editing their SVG
+$ tools/update-mermaid.sh # the vendored mermaid bundle, to move its pinned version
 ```
 
 `cargo test` covers the round trip in-process. `nix flake check` boots a VM with
@@ -547,7 +548,8 @@ with nothing set in the environment. It needs a Linux host to boot the guest on,
 so on macOS the check is absent rather than failing.
 
 `assets/` is copied verbatim into the site root by `cargo leptos`: the web
-manifest, the icons and the service worker. They cannot live under `/pkg/` with
+manifest, the icons, the service worker and the two files a page with a Diagram
+on it names. They cannot live under `/pkg/` with
 the wasm and the CSS — a service worker only controls the paths beneath the one
 it was served from, so one under `/pkg/` could never show a notification for
 `/sets/12`. The worker itself does no caching; every page is rendered against
@@ -558,6 +560,15 @@ The icons are all one SVG, `assets/icons/askance.svg`, rasterized by the script
 above (using `resvg` from the dev shell) to the PNG sizes the manifest and iOS
 ask for. The PNGs are committed so a build needs nothing but cargo — edit the
 SVG and re-run the script rather than touching them.
+
+`assets/mermaid.min.js` is vendored on the same bargain, by the script above:
+mermaid renders only in a browser, so a ```` ```mermaid ```` fence in a Preface
+or a Question is drawn client-side — the one carve-out from rendering everything
+on the server ([ADR 0002](docs/adr/0002-client-side-mermaid-rendering.md)). The
+bundle and `assets/diagrams.js`, which drives it, are named by a page only when
+the markdown the server just rendered turned up a Diagram, so a Set without one
+ships no JS at all. A diagram that will not draw keeps the source block the
+renderer wrote, which is also what a browser running no JS is left with.
 
 The tests run the real server in-process, so the round trip they check is the
 one an agent gets — including the quickstart above, whose example files

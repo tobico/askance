@@ -134,6 +134,27 @@ fn marked_up_set() -> QuestionSet {
     set
 }
 
+/// The same Set with a Diagram in its Preface: the structural half of what the
+/// agent is saying, drawn rather than described.
+fn diagrammed_set() -> QuestionSet {
+    let mut set = full_grammar_set();
+
+    set.preface = Some(
+        concat!(
+            "Where the counter would live:\n",
+            "\n",
+            "```mermaid\n",
+            "graph LR;\n",
+            "  client-->api;\n",
+            "  api-->redis;\n",
+            "```\n",
+        )
+        .to_owned(),
+    );
+
+    set
+}
+
 fn answer(label: &str, selected: Option<u32>, free_text: Option<&str>) -> Answer {
     Answer {
         label: label.to_owned(),
@@ -283,6 +304,20 @@ fn option_row(html: &str, needle: &str) -> String {
     let closes = at + html[at..].find("</li>").unwrap_or(0);
 
     html[opens..closes].to_owned()
+}
+
+/// The `<script>` tag naming this `src`, so a test can ask how it was written
+/// without depending on the order its attributes came out in.
+fn script_tag(html: &str, src: &str) -> String {
+    let at = html
+        .find(&format!(r#"src="{src}""#))
+        .unwrap_or_else(|| panic!("expected a script naming {src} in the page:\n{html}"));
+    let opens = html[..at]
+        .rfind("<script")
+        .unwrap_or_else(|| panic!("expected {src} named by a script tag:\n{html}"));
+    let closes = at + html[at..].find('>').unwrap_or(0);
+
+    html[opens..=closes].to_owned()
 }
 
 /// Where each of these markers sits in the page, in the order given, failing
@@ -833,6 +868,102 @@ async fn a_set_with_no_diff_shows_no_diff_section() {
         !html.contains(r#"class="diff""#),
         "with no Diff attached there is no section to draw:\n{html}"
     );
+}
+
+#[tokio::test]
+async fn a_set_with_a_diagram_names_the_client_side_renderer() {
+    let (_dir, pool) = fresh_pool().await;
+
+    let html = set_page(&pool, &diagrammed_set()).await;
+
+    assert!(
+        html.contains(r#"<pre class="mermaid">"#),
+        "expected the block the renderer draws from:\n{html}"
+    );
+
+    // In the head, so the browser starts fetching three and a half megabytes of
+    // mermaid while it is still reading the document rather than when it reaches
+    // the Preface.
+    let head = html
+        .find("</head>")
+        .unwrap_or_else(|| panic!("expected a document head:\n{html}"));
+    let found = positions(&html, &["/mermaid.min.js", "/diagrams.js"]);
+    assert!(
+        found[0] < found[1] && found[1] < head,
+        "expected the bundle then the script, both in the head, got {found:?} \
+         against a head ending at {head}:\n{html}"
+    );
+
+    // Deferred, which is the whole of how the two are ordered against each other
+    // and against the page they act on: both run once it is parsed, in the order
+    // it names them.
+    for src in ["/mermaid.min.js", "/diagrams.js"] {
+        let tag = script_tag(&html, src);
+        assert!(tag.contains("defer"), "expected {src} deferred: {tag}");
+    }
+
+    // What `diagrams.js` waits on where the two arrive together instead of in
+    // order — a Set reached by a link inside the app.
+    assert!(
+        script_tag(&html, "/mermaid.min.js").contains(r#"id="mermaid-bundle""#),
+        "expected the bundle named, so the script has something to wait for:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_diagram_in_a_question_names_the_renderer_just_the_same() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.questions[1].subquestions[0].text =
+        "Which way round?\n\n```mermaid\ngraph TD;\n  a-->b;\n```\n".to_owned();
+
+    let html = set_page(&pool, &set).await;
+
+    assert!(
+        html.contains("/mermaid.min.js"),
+        "a Diagram is a Diagram wherever the agent wrote it:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn a_set_with_no_diagram_ships_no_script_at_all() {
+    let (_dir, pool) = fresh_pool().await;
+
+    // Fences and tables and code spans throughout, and not one Diagram: the
+    // renderer is loaded for the Diagram alone, and this is what almost every
+    // Set looks like.
+    let html = set_page(&pool, &marked_up_set()).await;
+
+    for absent in ["mermaid", "/diagrams.js"] {
+        assert!(
+            !html.contains(absent),
+            "a page with no Diagram on it should not mention `{absent}`:\n{html}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_diagram_the_renderer_cannot_draw_still_reaches_the_page_as_its_source() {
+    let (_dir, pool) = fresh_pool().await;
+    let mut set = full_grammar_set();
+    set.preface = Some("```mermaid\nnot a diagram at all\n```\n".to_owned());
+
+    let html = set_page(&pool, &set).await;
+
+    // The server does not parse mermaid, and neither does it complain: whether
+    // this draws is decided in the browser, and a diagram that will not draw is
+    // left as the block a human can read. What the page must not carry is any
+    // word about it — the fallback is silent.
+    assert!(
+        html.contains(r#"<pre class="mermaid">not a diagram at all"#),
+        "expected the source exactly as the agent wrote it:\n{html}"
+    );
+    for complaint in ["Syntax error", "error in text", "mermaid-error"] {
+        assert!(
+            !html.contains(complaint),
+            "the fallback says nothing, and the page carried `{complaint}`:\n{html}"
+        );
+    }
 }
 
 #[tokio::test]

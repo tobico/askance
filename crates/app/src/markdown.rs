@@ -27,6 +27,23 @@ fn dialect() -> Options {
 /// the same mermaid the agent wrote the fence for.
 pub const DIAGRAM: &str = "mermaid";
 
+/// How a Diagram's block opens: what [`block`] writes and what
+/// [`holds_diagram`] looks for.
+fn diagram_block() -> String {
+    format!("<pre class=\"{DIAGRAM}\">")
+}
+
+/// Whether this rendered HTML holds a Diagram — which is to say whether the page
+/// it goes into is one of the few that needs the client-side renderer.
+///
+/// Asked of the rendered HTML rather than of the markdown it came from, because
+/// the rendering is where the question was already settled: a fence became
+/// [`block`]'s `pre` or it did not, and reading the source a second time here
+/// would be a second answer to keep in step with the first.
+pub fn holds_diagram(html: &str) -> bool {
+    html.contains(&diagram_block())
+}
+
 /// Render `markdown` to HTML with anything that could act on the page removed.
 ///
 /// A fenced block naming a language it recognises is coloured by the same
@@ -138,10 +155,7 @@ fn block(fence: Fence, code: &str) -> String {
         // Escaped, not coloured: the source is for mermaid to read, and for a
         // human to read when mermaid never runs. Both want it as written.
         Fence::Diagram => {
-            format!(
-                "<pre class=\"{DIAGRAM}\">{}</pre>",
-                highlight::escaped(code)
-            )
+            format!("{}{}</pre>", diagram_block(), highlight::escaped(code))
         }
         Fence::Coloured(syntax) => match highlight::block(code, syntax) {
             Some(marked) => format!("<pre><code>{marked}</code></pre>"),
@@ -333,7 +347,7 @@ fn gap(inlined: &mut Vec<Event<'_>>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{to_html, to_inline_html, to_plain};
+    use super::{holds_diagram, to_html, to_inline_html, to_plain};
 
     #[test]
     fn prose_becomes_the_html_it_describes() {
@@ -431,6 +445,28 @@ mod tests {
             html.contains("<pre class=\"mermaid\">"),
             "and the block it was smuggled into is still the Diagram's:\n{html}"
         );
+    }
+
+    #[test]
+    fn rendered_markdown_says_whether_it_holds_a_diagram() {
+        assert!(holds_diagram(&to_html("```mermaid\ngraph TD;\n```\n")));
+        assert!(
+            !holds_diagram(&to_html(
+                "Nothing to draw.\n\n```rust\nfn allowance() {}\n```\n"
+            )),
+            "a page with no Diagram on it is the one that ships no renderer",
+        );
+    }
+
+    #[test]
+    fn a_diagram_block_written_out_as_html_is_one_the_page_holds() {
+        // `mermaid` on a `pre` is the one class the sanitizer lets through, so an
+        // agent that writes the block instead of the fence gets the same block —
+        // and this is asked of the block a browser would draw from rather than of
+        // how the agent arrived at it, so it says so.
+        let html = to_html("<pre class=\"mermaid\">graph TD;</pre>\n");
+
+        assert!(holds_diagram(&html), "{html}");
     }
 
     #[test]
