@@ -109,6 +109,14 @@ textarea {
   resize: vertical;
 }
 
+/* The prompt is the placeholder rather than a label above the field, so it is
+   doing a label's work and has to be as readable as one. `opacity` because
+   Firefox dims a placeholder on top of whatever colour it is given. */
+textarea::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
+}
+
 /* A page's title with a control on the other end of its line. Wrapping, so that
    anything the control has to say in words drops to a full-width line of its own
    underneath rather than being squeezed into the column beside the title. */
@@ -1240,22 +1248,8 @@ p.meta .branch {
   border-style: solid;
 }
 
-.ask .free-text {
-  display: block;
-  margin-bottom: 0.3rem;
-  font-size: 0.8rem;
-  color: var(--ink-soft);
-}
-
 .set-comment {
   margin-top: 1.5rem;
-}
-
-.set-comment label {
-  display: block;
-  margin-bottom: 0.3rem;
-  font-size: 0.9rem;
-  color: var(--ink-soft);
 }
 
 /* The submit sits at the foot of the column, after the last thing there is to

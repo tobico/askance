@@ -1843,11 +1843,12 @@ fn answerable(id: i64, questions: Vec<QuestionView>) -> impl IntoView {
         {questions_heading()}
         <ol class="questions">{asked}</ol>
         <section class="set-comment">
-            <label for="set-comment">"Anything about the Set as a whole"</label>
             <textarea
                 id="set-comment"
                 name="set-comment"
                 rows="3"
+                placeholder="Other comments"
+                aria-label="Other comments"
                 prop:value=move || comment.get()
                 on:input:target=move |ev| comment.set(ev.target().value())
             ></textarea>
@@ -2019,10 +2020,12 @@ fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
         fields: live,
     });
 
-    // With no Options the free text *is* the answer; with them it is the note
-    // in the margin beside one.
+    // With no Options the free text *is* the answer; with them it is whatever the
+    // human has to say, which may stand instead of an Option or beside one. Hence
+    // the neutral word: "Or in your own words" read as a choice between the two,
+    // which was never what it meant.
     let prompt = if has_options {
-        "Or in your own words"
+        "Your thoughts"
     } else {
         "Your answer"
     };
@@ -2039,13 +2042,19 @@ fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
         <div class="ask">
             {asked_text(name, text_html)}
             {radios}
-            <label class="free-text" for=field.clone()>
-                {prompt}
-            </label>
+            // The prompt is the placeholder rather than a label above the field:
+            // one line of small print per question, times five questions, was
+            // more of the page spent saying what a text box is for than reading
+            // the Questions. It is the `aria-label` as well, because a
+            // placeholder is not a label — it is a hint the browser is free to
+            // leave unspoken, and a field with nothing else naming it would reach
+            // a screen reader unnamed.
             <textarea
                 id=field.clone()
                 name=field
                 rows="2"
+                placeholder=prompt
+                aria-label=prompt
                 prop:value=move || live.free_text.get()
                 on:input:target=move |ev| live.free_text.set(ev.target().value())
             ></textarea>
