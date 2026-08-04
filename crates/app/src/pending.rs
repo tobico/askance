@@ -105,11 +105,14 @@ pub fn PendingList() -> impl IntoView {
         // view's "← Pending" sits in: every page here starts with where else
         // there is to go, so neither list needs a typed URL to reach the other.
         <A href="/archive" attr:class="to-archive">"Archive →"</A>
-        <h1>"Pending"</h1>
-        // Above the list rather than buried in a settings page: this is the one
-        // page that is open often enough to be where the human notices that the
-        // phone is not being told, and there is nowhere else to put it.
-        <crate::push::Notifications />
+        // On the title's line rather than buried in a settings page: this is the
+        // one page open often enough to be where the human notices that the phone
+        // is not being told, and a switch is small enough to live in the space the
+        // heading was leaving empty anyway.
+        <div class="page-head">
+            <h1>"Pending"</h1>
+            <crate::push::Notifications />
+        </div>
         // A Transition rather than a Suspense: the fallback belongs to the first
         // load, and a refetch every ten seconds must not blink the list away.
         <Transition fallback=|| view! { <p class="empty">"Loading…"</p> }>

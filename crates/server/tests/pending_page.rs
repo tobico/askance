@@ -154,14 +154,20 @@ async fn the_pending_list_carries_the_notification_control() {
         html.contains(r#"class="notifications""#),
         "the pending list is where a device is turned on:\n{html}"
     );
-    // Only a browser knows where a device stands, so what the server renders is
-    // that it does not yet — never an offer that might already be taken up.
     assert!(
-        html.contains("Checking notifications on this device"),
-        "the server should render the control as unlooked-at:\n{html}"
+        html.contains("Push notifications"),
+        "the switch should be labelled in the page the server writes:\n{html}"
+    );
+    // Only a browser knows where a device stands, so the server renders the one
+    // state it can be sure of: off, and not to be flipped until the browser has
+    // said otherwise. Rendering it on would show a device as subscribed before
+    // anything had established that it was.
+    assert!(
+        html.contains("disabled"),
+        "the server cannot know a flip would do anything:\n{html}"
     );
     assert!(
-        !html.contains("Turn on for this device"),
-        "the server cannot know there is anything to turn on:\n{html}"
+        !html.contains("checked"),
+        "the server cannot know this device is subscribed:\n{html}"
     );
 }

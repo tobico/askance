@@ -1,6 +1,6 @@
-//! Turning notifications on for the device in front of you: the control that
-//! says where this device stands, the server's public key it subscribes against,
-//! and where the subscription the browser hands back is sent.
+//! Turning notifications on for the device in front of you: the switch that says
+//! where this device stands, the server's public key it subscribes against, and
+//! where the subscription the browser hands back is sent.
 //!
 //! Per device, like the drafts in `localStorage`: the phone being subscribed says
 //! nothing about the laptop. Nothing here is remembered between visits either —
@@ -192,16 +192,21 @@ fn refusal(said: String) -> String {
     )
 }
 
-/// The control on the pending list: where this device stands, and the one tap
+/// The switch on the pending list: where this device stands, and the one flip
 /// that changes it.
 #[component]
 pub fn Notifications() -> impl IntoView {
     let standing = RwSignal::new(Standing::Unknown);
-    // Why a tap did not do what it offered to, in the browser's own words where
-    // it had any. Cleared by the next tap: it describes that attempt and no
+    // Why a flip did not do what it offered to, in the browser's own words where
+    // it had any. Cleared by the next flip: it describes that attempt and no
     // other.
     let trouble = RwSignal::new(None::<String>);
-    let working = RwSignal::new(false);
+    // What a flip in flight is asking for, and `None` when none is. The
+    // destination rather than a bare "busy", because that is what the switch
+    // shows while it waits — subscribing is four round trips through the browser
+    // and a push service, and a switch that snapped back to where it started for
+    // a second of it would read as a flip that failed.
+    let wanted = RwSignal::new(None::<bool>);
 
     // The browser's alone: an effect never runs during SSR, which is why the
     // server renders `Unknown` and this is what replaces it.
@@ -209,86 +214,87 @@ pub fn Notifications() -> impl IntoView {
         spawn_local(async move { standing.set(look().await) });
     });
 
-    let toggle = move |_| {
-        if working.get() {
+    // Where the switch sits: what is being asked for while something is being
+    // asked for, and otherwise where the device actually is. Every standing but
+    // `On` reads as off — an unknown device is not a device that is on, and
+    // neither is a blocked one.
+    let on = Signal::derive(move || match wanted.get() {
+        Some(wanted) => wanted,
+        None => standing.get() == Standing::On,
+    });
+
+    // Nothing a flip could do, or nothing until the one in flight is done.
+    let waiting = Signal::derive(move || wanted.get().is_some() || !flippable(standing.get()));
+
+    let flip = move |on: bool| {
+        if wanted.get().is_some() {
             return;
         }
-        let turning_on = standing.get() != Standing::On;
-        working.set(true);
+        wanted.set(Some(on));
         trouble.set(None);
 
         spawn_local(async move {
-            match if turning_on {
-                enable().await
-            } else {
-                disable().await
-            } {
+            match if on { enable().await } else { disable().await } {
                 Ok(now) => standing.set(now),
                 Err(said) => {
                     trouble.set(Some(said));
                     // Where the device actually ended up, rather than where the
-                    // tap meant to leave it: a subscribe that failed halfway is
-                    // exactly when the control must not be guessed at.
+                    // flip meant to leave it: a subscribe that failed halfway is
+                    // exactly when the switch must not be guessed at.
                     standing.set(look().await);
                 }
             }
-            working.set(false);
+            wanted.set(None);
         });
     };
 
-    // Announced politely: the words are the whole point of the control, and they
-    // change under a tap rather than in place of one.
+    // The switch says on or off; the line under it says the things a switch
+    // cannot — that this browser has none to offer, that permission is a dead
+    // end, that a flip failed. It is always in the document, so that a screen
+    // reader has a live region to announce into rather than a paragraph
+    // appearing beside it; the stylesheet takes an empty one out of the layout.
     view! {
         <section class="notifications">
-            <p class="state" aria-live="polite">{move || said(standing.get())}</p>
-            {move || {
-                offer(standing.get())
-                    .map(|label| {
-                        view! {
-                            <button
-                                type="button"
-                                on:click=toggle
-                                prop:disabled=move || working.get()
-                            >
-                                {move || if working.get() { "Just a moment…" } else { label }}
-                            </button>
-                        }
-                    })
-            }}
-            {move || trouble.get().map(|said| view! { <p class="error">{said}</p> })}
+            <crate::switch::Switch label="Push notifications" on=on disabled=waiting flip=flip />
+            <p class="state" aria-live="polite">
+                {move || trouble.get().or_else(|| said(standing.get()).map(str::to_owned))}
+            </p>
         </section>
     }
 }
 
-/// Where this device stands, in words.
-fn said(standing: Standing) -> &'static str {
+/// What has to be said in words, because the switch cannot say it — and `None`
+/// wherever the switch already does.
+///
+/// A device that is on or off is not written about at all: the switch is the
+/// whole of the answer, and a sentence restating it would be one more thing to
+/// read on the page that is opened most.
+fn said(standing: Standing) -> Option<&'static str> {
     match standing {
-        Standing::Unknown => "Checking notifications on this device…",
         // Both halves of it, because the page cannot tell which: a browser
         // without push, or one withholding it because the connection is not
         // secure. Over the tailnet the second is what `tailscale serve` is for.
-        Standing::Unavailable => {
+        Standing::Unavailable => Some(
             "Notifications are not available here — this browser has no push \
-             support, or the page is not being served over https."
-        }
-        Standing::Blocked => {
+             support, or the page is not being served over https.",
+        ),
+        Standing::Blocked => Some(
             "Notifications are blocked for this device. This browser will not ask \
-             again, so allow them in its settings for this site."
-        }
-        Standing::Off => "Notifications are off on this device.",
-        Standing::On => "This device will be told when a Question Set arrives.",
+             again, so allow them in its settings for this site.",
+        ),
+        // Still looking says nothing rather than saying so: the switch is
+        // disabled for the moment it takes, and a sentence that appears only to
+        // be replaced is worse than a switch that waits.
+        Standing::Unknown | Standing::Off | Standing::On => None,
     }
 }
 
-/// The tap on offer, if this device is anywhere a tap can help.
-fn offer(standing: Standing) -> Option<&'static str> {
-    match standing {
-        Standing::Off => Some("Turn on for this device"),
-        Standing::On => Some("Turn off for this device"),
-        // Nothing a tap could do: still looking, never going to work, or a dead
-        // end only the browser's own settings lead out of.
-        Standing::Unknown | Standing::Unavailable | Standing::Blocked => None,
-    }
+/// Whether the switch will take a flip here.
+///
+/// Everywhere else is somewhere a flip could not help: still looking, never
+/// going to work, or a dead end only the browser's own settings lead out of.
+fn flippable(standing: Standing) -> bool {
+    matches!(standing, Standing::Off | Standing::On)
 }
 
 // What follows is the browser half: the push manager lives on the service
@@ -554,19 +560,36 @@ async fn disable() -> Result<Standing, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Permission, Standing, offer, refusal, standing};
+    use super::{Permission, Standing, flippable, refusal, said, standing};
 
     #[test]
     fn a_subscribed_device_is_on_and_can_be_turned_off() {
         assert_eq!(standing(Permission::Granted, true), Standing::On);
-        assert_eq!(offer(Standing::On), Some("Turn off for this device"));
+        assert!(flippable(Standing::On));
     }
 
     #[test]
-    fn an_unsubscribed_device_is_off_and_is_offered_the_tap() {
+    fn an_unsubscribed_device_is_off_and_can_be_turned_on() {
         assert_eq!(standing(Permission::Granted, false), Standing::Off);
         assert_eq!(standing(Permission::Undecided, false), Standing::Off);
-        assert!(offer(Standing::Off).is_some());
+        assert!(flippable(Standing::Off));
+    }
+
+    #[test]
+    fn a_device_the_switch_speaks_for_is_not_also_written_about() {
+        // The switch says on and off, so a line saying either would be the same
+        // answer twice — and "still looking" would be a line that exists only to
+        // be replaced a moment later.
+        for silent in [Standing::On, Standing::Off, Standing::Unknown] {
+            assert_eq!(said(silent), None, "{silent:?} was written about");
+        }
+    }
+
+    #[test]
+    fn a_device_the_switch_cannot_speak_for_says_why_in_words() {
+        for spoken in [Standing::Unavailable, Standing::Blocked] {
+            assert!(said(spoken).is_some(), "{spoken:?} went unexplained");
+        }
     }
 
     #[test]
@@ -579,9 +602,12 @@ mod tests {
     }
 
     #[test]
-    fn nothing_a_tap_could_do_is_offered_as_a_tap() {
+    fn nothing_a_flip_could_do_leaves_the_switch_unflippable() {
+        // Including `Unknown`, which is what the server renders: a switch that
+        // took a flip before the browser had said where the device stands would
+        // be acting on a state nobody had established.
         for nothing in [Standing::Unknown, Standing::Unavailable, Standing::Blocked] {
-            assert_eq!(offer(nothing), None, "{nothing:?} offered a tap");
+            assert!(!flippable(nothing), "{nothing:?} took a flip");
         }
     }
 

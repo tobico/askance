@@ -37,8 +37,14 @@ pub fn Switch(
             <input
                 type="checkbox"
                 role="switch"
+                // `prop:` for the tick and the attribute for the disabling, and
+                // the difference is what the server can say. A property exists
+                // only in a browser, which is the right home for a tick the
+                // human keeps changing — but it would leave the page the server
+                // writes holding a switch that takes a flip nothing is listening
+                // for, so being unflippable has to survive as markup.
                 prop:checked=move || on.get()
-                prop:disabled=move || disabled.get()
+                disabled=move || disabled.get()
                 // The box the browser has just ticked, rather than the opposite
                 // of what the signal held: a disabled flip never gets here, and
                 // reading the element is the account that cannot disagree with

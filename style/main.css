@@ -98,48 +98,48 @@ textarea {
   resize: vertical;
 }
 
-/* Notifications on this device: where it stands, and the tap that changes it.
-   Above the pending list and quiet like the Set's own standing line — it is read
-   once, when the answer is not the expected one, and then ignored for weeks. */
+/* A page's title with a control on the other end of its line. Wrapping, so that
+   anything the control has to say in words drops to a full-width line of its own
+   underneath rather than being squeezed into the column beside the title. */
 
-.notifications {
+.page-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem 1rem;
-  margin: 0 0 1rem;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
+  margin-bottom: 1rem;
+}
+
+/* The gap below belongs to the row, which has more in it than the heading. */
+.page-head h1 {
+  margin: 0;
+}
+
+/* Notifications on this device: the switch, and the line for what a switch cannot
+   say. Quiet like the Set's own standing line — it is read once, when the answer
+   is not the expected one, and then ignored for weeks.
+
+   The control has no box of its own. The switch belongs on the heading's line and
+   the line belongs under both, so its children are laid out by the header row
+   instead of by it — the same dissolving a Question's rendered markdown does. */
+
+.notifications {
+  display: contents;
 }
 
 .notifications .state {
-  margin: 0;
-  /* Room for the button beside it on a phone, and the whole line to itself when
-     the words run past that. */
-  flex: 1 1 12rem;
-}
-
-.notifications button {
-  padding: 0.4rem 0.7rem;
-  font: inherit;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--edge);
-  border-radius: 0.5rem;
-  cursor: pointer;
-}
-
-.notifications button:disabled {
-  cursor: progress;
-  opacity: 0.65;
-}
-
-/* Its own line under both, so a failure is not squeezed between them. */
-.notifications .error {
   flex-basis: 100%;
   margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+/* Nothing to say, so nothing in the layout — but the paragraph stays in the
+   document, because a screen reader announces into a live region it was already
+   watching and not into one that has just appeared. */
+.notifications .state:empty {
+  display: none;
 }
 
 /* The two lists of Sets — what is waiting and what was decided — are drawn as
