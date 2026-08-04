@@ -5,8 +5,10 @@
 //! The Response this page builds is explicit rather than complete: every
 //! question gets an entry, and one the human left alone becomes an Unanswered
 //! marker rather than being left out. Leaving a question open is a thing the
-//! human is allowed to do — it just has to be said out loud, and the warning
-//! before submit is where they say it.
+//! human is allowed to do — it just has to be said out loud, and for a question
+//! that offered Options the warning before submit is where they say it. A
+//! free-text question goes back open without one: there was no offered choice
+//! to overlook, so skipping it reads as deliberate on its own.
 //!
 //! A Set that has already been answered gets the same page read rather than
 //! filled in: its own material above, and under it what was decided — the
@@ -477,11 +479,13 @@ fn store_draft(_key: &str, _draft: &Draft) {}
 #[cfg(not(feature = "hydrate"))]
 fn clear_draft(_key: &str) {}
 
-/// One question as the page holds on to it: the name it answers to, the Option
-/// the agent recommended, and the fields the human fills.
+/// One question as the page holds on to it: the name it answers to, whether it
+/// offered Options, the Option the agent recommended, and the fields the human
+/// fills.
 #[derive(Debug, Clone)]
 struct Asked {
     label: String,
+    multiple_choice: bool,
     recommended: Option<u32>,
     fields: Fields,
 }
@@ -495,13 +499,15 @@ fn recommendation(options: &[QuestionOption]) -> Option<u32> {
         .map(|option| option.n)
 }
 
-/// The questions a Response leaves open, by name — what the warning before
-/// submit lists.
-fn unanswered(response: &Response) -> Vec<String> {
+/// The questions the warning before submit names: those the Response leaves
+/// open among the ones that offered Options. A free-text question left blank
+/// still goes back marked Unanswered — it just draws no warning, because there
+/// was no offered choice to overlook.
+fn unanswered(response: &Response, multiple_choice: &[String]) -> Vec<String> {
     response
         .answers
         .iter()
-        .filter(|answer| answer.unanswered)
+        .filter(|answer| answer.unanswered && multiple_choice.contains(&answer.label))
         .map(|answer| answer.label.clone())
         .collect()
 }
@@ -825,13 +831,19 @@ fn answerable(id: i64, questions: Vec<Question>) -> impl IntoView {
     });
 
     // `Some(names)` puts the warning between the human and the send. It never
-    // holds an empty list: with nothing left open there is nothing to warn
-    // about, and the Response goes straight out.
+    // holds an empty list: with no offered choice left open there is nothing to
+    // warn about, and the Response goes straight out.
     let confirming = RwSignal::new(None::<Vec<String>>);
 
     let start = move |_| {
         let sending = response();
-        let open = unanswered(&sending);
+        let choices: Vec<String> = fields
+            .read_value()
+            .iter()
+            .filter(|asked| asked.multiple_choice)
+            .map(|asked| asked.label.clone())
+            .collect();
+        let open = unanswered(&sending, &choices);
 
         if open.is_empty() {
             submit.dispatch((id, sending));
@@ -914,9 +926,11 @@ fn answerable(id: i64, questions: Vec<Question>) -> impl IntoView {
             </button>
             {move || refusal(submit.value().get())}
         </section>
-        // The warning that stands between the human and a submit leaving
-        // questions open: every one of them by name, and the choice to go back.
-        // It warns and never blocks — leaving the whole Set open with only a
+        // The warning that stands between the human and a submit skipping
+        // offered choices: every multiple-choice question left open, by name,
+        // and the choice to go back. A skipped free-text question passes
+        // without a word — nothing was offered, so nothing was overlooked. It
+        // warns and never blocks — leaving the whole Set open with only a
         // comment is a counter-question, not a mistake, and it comes through
         // here like any other.
         {move || {
@@ -1045,6 +1059,7 @@ fn ask(
     let live = Fields::new();
     collected.push(Asked {
         label: name.clone(),
+        multiple_choice: has_options,
         recommended: recommendation(&options),
         fields: live,
     });
@@ -1489,7 +1504,7 @@ mod tests {
     }
 
     #[test]
-    fn the_warning_names_every_question_being_left_open() {
+    fn the_warning_names_every_multiple_choice_question_being_left_open() {
         let response = drafted(
             &[
                 filled("Q1", Some(1), ""),
@@ -1499,8 +1514,28 @@ mod tests {
             ],
             "",
         );
+        let choices: Vec<String> = ["Q1", "Q2", "Q2a", "Q2b"].map(String::from).into();
 
-        assert_eq!(unanswered(&response), ["Q2", "Q2b"]);
+        assert_eq!(unanswered(&response, &choices), ["Q2", "Q2b"]);
+    }
+
+    #[test]
+    fn a_free_text_question_left_open_draws_no_warning() {
+        let response = drafted(
+            &[
+                filled("Q1", None, ""),
+                filled("Q2", None, ""),
+                filled("Q3", None, ""),
+            ],
+            "",
+        );
+        let choices = vec!["Q2".to_owned()];
+
+        assert_eq!(
+            unanswered(&response, &choices),
+            ["Q2"],
+            "Q1 and Q3 offered no Options, so skipping them is not warned about",
+        );
     }
 
     #[test]
