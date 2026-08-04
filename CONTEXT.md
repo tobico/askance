@@ -20,7 +20,8 @@ _Avoid_: description, context, body
 
 **Question**:
 A single labelled decision put to the human. Carries an agent-supplied opaque
-label (e.g. `Q7`), prose text, and optionally Options and Sub-questions.
+label (e.g. `Q7`), markdown prose text, and optionally Options and
+Sub-questions.
 _Avoid_: item, prompt
 
 **Sub-question**:
@@ -30,7 +31,8 @@ _Avoid_: child question, part
 
 **Option**:
 One discrete choice offered on a Question or Sub-question, numbered `.1`,
-`.2`, … At most one Option per question is the Recommendation.
+`.2`, … Its text is a label rather than prose, so markdown in it is inline
+markup only. At most one Option per question is the Recommendation.
 _Avoid_: choice, answer option
 
 **Recommendation**:

@@ -28,4 +28,4 @@ merge rather than to these tasks.
 - [x] 01: A Question's text renders as markdown
 - [x] 02: An Option's text renders as inline markdown
 - [x] 03: Rendered markdown is styled once, everywhere
-- [ ] 04: The grammar says so — [details](04-document-the-grammar.md)
+- [x] 04: The grammar says so
