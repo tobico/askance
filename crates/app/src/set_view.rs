@@ -2053,10 +2053,25 @@ fn ask(asked: AskView, collected: &mut Vec<Asked>) -> impl IntoView + use<> {
     }
 }
 
+/// What a click on Option `n` leaves the Question holding, given what it held
+/// already: nothing, when the click landed on the Option that was already
+/// selected, and otherwise the Option clicked.
+///
+/// Clearing a Question is the one thing a radio group cannot do on its own — the
+/// browser has no gesture for un-picking one — and changing your mind about
+/// approving a Recommendation you have thought better of is exactly the case that
+/// wants it. A second click undoes the first, which is the only gesture there was
+/// left to give it.
+fn clicked(selected: Option<u32>, n: u32) -> Option<u32> {
+    (selected != Some(n)).then_some(n)
+}
+
 /// One Option on offer: a radio labelled by its number and text.
 ///
 /// The Recommendation is marked and never selected — nothing is selected on
-/// load, so an unread Recommendation cannot be submitted by accident.
+/// load, so an unread Recommendation cannot be submitted by accident. Clicking
+/// the selected Option clears it, which puts the Question back to unanswered and
+/// so back into the warning before submit.
 fn offered(group: String, option: OptionView, live: Fields) -> impl IntoView {
     let id = format!("{group}-{}", option.n);
     let n = option.n;
@@ -2086,7 +2101,20 @@ fn offered(group: String, option: OptionView, live: Fields) -> impl IntoView {
                     name=group
                     value=n.to_string()
                     prop:checked=move || live.selected.get() == Some(n)
+                    // Both, because they answer different gestures. An arrow key
+                    // moves the selection and fires a change without ever firing
+                    // a click; a click on the Option already selected is the
+                    // other way round — the browser fires no change, because as
+                    // far as it is concerned nothing changed. Space is a click
+                    // here too, which is what gives the keyboard the clearing.
+                    //
+                    // The click runs before the change, so it still sees what the
+                    // Question held before this gesture — which is the whole of
+                    // how a second click on the same Option is told from a first.
                     on:change=move |_| live.selected.set(Some(n))
+                    on:click=move |_| {
+                        live.selected.set(clicked(live.selected.get_untracked(), n));
+                    }
                 />
                 <span class="n">{n}</span>
                 <span class="option-text markdown" inner_html=option.text_html></span>
@@ -2358,8 +2386,9 @@ mod tests {
 
     use super::{
         ARCHIVE_WARNING, AskView, DiffView, Draft, Filled, Mark, QuestionView, SetView, Standing,
-        Stands, Watched, anchor, answer_to, draft_key, drafted, lit, mark, nothing_answered,
-        outline, restorable, shortened, spied, stands, submitted_when, unanswered,
+        Stands, Watched, anchor, answer_to, clicked, draft_key, drafted, lit, mark,
+        nothing_answered, outline, restorable, shortened, spied, stands, submitted_when,
+        unanswered,
     };
 
     /// A Question as the page receives it, with the nav's plain words and the
@@ -2499,6 +2528,31 @@ mod tests {
         let choices: Vec<String> = ["Q1", "Q2", "Q2a", "Q2b"].map(String::from).into();
 
         assert_eq!(unanswered(&response, &choices), ["Q2", "Q2b"]);
+    }
+
+    #[test]
+    fn clicking_the_selected_option_clears_the_question() {
+        assert_eq!(clicked(Some(2), 2), None);
+    }
+
+    #[test]
+    fn clicking_any_other_option_selects_it() {
+        assert_eq!(clicked(None, 2), Some(2), "the first click on a question");
+        assert_eq!(clicked(Some(1), 2), Some(2), "changing which one");
+    }
+
+    #[test]
+    fn a_cleared_question_is_open_again_and_warned_about() {
+        // Clearing is not a third state: it puts the Question back exactly where
+        // it was before anything was picked, warning and all.
+        let response = drafted(&[filled("Q1", clicked(Some(1), 1), "")], "");
+
+        assert!(response.answers[0].unanswered);
+        assert_eq!(
+            unanswered(&response, &["Q1".to_owned()]),
+            ["Q1"],
+            "an Option cleared is an Option not chosen, and the submit says so",
+        );
     }
 
     #[test]
