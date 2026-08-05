@@ -159,7 +159,7 @@ checksum = "7d902e3d592a523def97af8f317b08ce16b7ab854c1985a0c671e6f15cebc236"
 name = "askance-app"
 version = "0.1.0"
 dependencies = [
- "ammonia",
+ "askance-render",
  "askance-schema",
  "askance-store",
  "js-sys",
@@ -167,13 +167,10 @@ dependencies = [
  "leptos_axum",
  "leptos_meta",
  "leptos_router",
- "pulldown-cmark",
  "serde",
  "serde_json",
  "sqlx",
- "syntect",
  "time",
- "two-face",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -203,6 +200,18 @@ dependencies = [
  "leptos",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "askance-render"
+version = "0.1.0"
+dependencies = [
+ "ammonia",
+ "askance-schema",
+ "pulldown-cmark",
+ "serde",
+ "syntect",
+ "two-face",
 ]
 
 [[package]]

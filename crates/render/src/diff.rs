@@ -9,13 +9,13 @@
 //! this output is not run through a sanitiser the way the Preface's is (a
 //! sanitiser would take the class attributes the colouring depends on with it).
 //!
-//! The highlighter itself lives in [`crate::highlight`], shared with the fenced
+//! The highlighter itself lives in `crate::highlight`, shared with the fenced
 //! blocks in the agent's markdown.
 
 use syntect::parsing::SyntaxReference;
 
+use crate::DiffView;
 use crate::highlight::{escaped, for_path};
-use crate::set_view::DiffView;
 
 /// What the one section of a Diff git did not write is called — in the page and
 /// in the table of contents alike, since both name the same fold.

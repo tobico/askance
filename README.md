@@ -620,3 +620,10 @@ too.
 `askance-frontend` — the wasm half of the UI — is a workspace member but not a
 default one: it turns on `leptos/hydrate`, which cannot coexist with the
 `leptos/ssr` everything else needs. Only `cargo leptos` builds it.
+
+`askance-render` is everything the server does to what an agent wrote before it
+leaves: markdown to sanitized HTML, the Diff parsed and highlighted, and the view
+types the viewer draws a Set from. It knows nothing of the store, the router or
+the UI, so it is the seam the browser never reaches across — its `ssr` feature
+carries the renderers, and with the feature off what is left is the view types
+alone, which is what the wasm half takes.

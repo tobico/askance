@@ -4,6 +4,7 @@ members = [
     "crates/app",
     "crates/cli",
     "crates/frontend",
+    "crates/render",
     "crates/schema",
     "crates/server",
     "crates/store",
@@ -16,6 +17,7 @@ members = [
 default-members = [
     "crates/app",
     "crates/cli",
+    "crates/render",
     "crates/schema",
     "crates/server",
     "crates/store",
@@ -28,6 +30,9 @@ rust-version = "1.85"
 
 [workspace.dependencies]
 askance-app = { path = "crates/app" }
+# The view types alone, unless a dependant asks for `ssr` on top: the renderers
+# are the server's, and the wasm half of the UI carries the types without them.
+askance-render = { path = "crates/render", default-features = false }
 askance-schema = { path = "crates/schema" }
 askance-store = { path = "crates/store" }
 # The Preface is agent-supplied markdown, so what pulldown-cmark renders is

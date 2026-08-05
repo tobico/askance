@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+# The view types alone. The renderers behind them are the server's, and the wasm
+# half of this crate must not carry them, so they arrive with the `ssr` feature
+# below and not before.
+askance-render.workspace = true
 askance-schema.workspace = true
 leptos.workspace = true
 leptos_meta.workspace = true
@@ -24,13 +28,9 @@ web-sys = { workspace = true, optional = true }
 # The server half. `#[server]` compiles these bodies only under `ssr`, so the
 # wasm build never sees sqlx or the store — nor a markdown parser or a syntax
 # highlighter, which is why the Preface and the Diff arrive already rendered.
-ammonia = { workspace = true, optional = true }
 askance-store = { workspace = true, optional = true }
 leptos_axum = { workspace = true, optional = true }
-pulldown-cmark = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
-syntect = { workspace = true, optional = true }
-two-face = { workspace = true, optional = true }
 
 [features]
 hydrate = [
@@ -41,13 +41,10 @@ hydrate = [
     "leptos/hydrate",
 ]
 ssr = [
-    "dep:ammonia",
+    "askance-render/ssr",
     "dep:askance-store",
     "dep:leptos_axum",
-    "dep:pulldown-cmark",
     "dep:sqlx",
-    "dep:syntect",
-    "dep:two-face",
     "leptos/ssr",
     "leptos_meta/ssr",
     "leptos_router/ssr",

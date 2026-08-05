@@ -18,15 +18,6 @@ pub mod push;
 pub mod set_view;
 pub mod switch;
 
-// The agent's markdown and the Diff are rendered before they leave the server,
-// so neither parser belongs to the browser half.
-#[cfg(feature = "ssr")]
-mod diff;
-#[cfg(feature = "ssr")]
-mod highlight;
-#[cfg(feature = "ssr")]
-mod markdown;
-
 /// The HTML document the server sends and the browser hydrates. Phone-first:
 /// the viewport tag is the one thing a responsive layout cannot do without.
 ///

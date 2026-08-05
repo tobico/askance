@@ -1,0 +1,28 @@
+[package]
+name = "askance-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+askance-schema.workspace = true
+serde.workspace = true
+
+# The renderers, which are the server's alone: the browser is handed the HTML
+# they produce, so no markdown parser and no syntax highlighter ship to it. Off
+# under `default-features = false`, which is how the wasm half takes the view
+# types without the megabytes of syntax definitions behind them — see the `ssr`
+# feature.
+ammonia = { workspace = true, optional = true }
+pulldown-cmark = { workspace = true, optional = true }
+syntect = { workspace = true, optional = true }
+two-face = { workspace = true, optional = true }
+
+[features]
+default = ["ssr"]
+# Named as `askance-app`'s own halves are: `ssr` is the server's side of the
+# wire, and rendering only ever happens there. What is left with it off is the
+# view types, which both sides need — the server to build, the browser to
+# deserialize. Once the wasm half of the UI is gone the feature goes with it and
+# this crate is unconditionally the whole of what is here.
+ssr = ["dep:ammonia", "dep:pulldown-cmark", "dep:syntect", "dep:two-face"]

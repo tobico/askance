@@ -27,7 +27,7 @@ fn dialect() -> Options {
 /// the same mermaid the agent wrote the fence for.
 pub const DIAGRAM: &str = "mermaid";
 
-/// How a Diagram's block opens: what [`block`] writes and what
+/// How a Diagram's block opens: what `block` writes and what
 /// [`holds_diagram`] looks for.
 fn diagram_block() -> String {
     format!("<pre class=\"{DIAGRAM}\">")
@@ -38,7 +38,7 @@ fn diagram_block() -> String {
 ///
 /// Asked of the rendered HTML rather than of the markdown it came from, because
 /// the rendering is where the question was already settled: a fence became
-/// [`block`]'s `pre` or it did not, and reading the source a second time here
+/// `block`'s `pre` or it did not, and reading the source a second time here
 /// would be a second answer to keep in step with the first.
 pub fn holds_diagram(html: &str) -> bool {
     html.contains(&diagram_block())
@@ -49,7 +49,7 @@ pub fn holds_diagram(html: &str) -> bool {
 /// A fenced block naming a language it recognises is coloured by the same
 /// highlighter the Diff uses, and one naming [`DIAGRAM`] is held for the
 /// client-side renderer instead. Those are the one thing here that puts markup of
-/// our own into the agent's prose — see [`sanitizer`] for what that costs.
+/// our own into the agent's prose — see `sanitizer` for what that costs.
 pub fn to_html(markdown: &str) -> String {
     let mut rendered = String::new();
     html::push_html(
