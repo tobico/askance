@@ -1,5 +1,7 @@
-//! The set view: one Question Set laid out to be read — its Preface, then every
-//! Question and Sub-question in the order the agent asked them.
+//! The set view: one Question Set laid out to be read — its Preface, the Diff
+//! that is the evidence for it, and then every Question and Sub-question in the
+//! order the agent asked them, with the table of contents down the margin that
+//! is the way around all of it.
 //!
 //! A Set that has settled gets the same page read rather than filled in: its own
 //! material above, and under it what was decided — the Option chosen beside the
@@ -15,7 +17,16 @@
 import { A, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import type { JSX } from "solid-js";
-import { For, Match, Show, Switch, onCleanup, onMount } from "solid-js";
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 
 import { RefusedError, loadSet } from "../api/client";
 import type {
@@ -26,7 +37,11 @@ import type {
   Response,
   SetView,
 } from "../api/types";
+import { setWrapping, wrapping } from "../device";
+import { Contents, PageHeader, navigation } from "./Contents";
+import { Diff } from "./Diff";
 import { drawDiagrams } from "./diagrams";
+import { anchor, outline, spied } from "./outline";
 import { settledWhen } from "./when";
 
 /// One Question Set, as the URL names it.
@@ -64,7 +79,8 @@ function absent(error: Error | null): boolean {
 }
 
 /// One Set, top to bottom: how it stands and its own material — what the agent
-/// asked about — and then the record of what became of it.
+/// asked about and the evidence for it — and then the record of what became of
+/// it.
 ///
 /// The material above is the same however it stands: a settled Set is read for
 /// what was decided *and* for what the decision was about.
@@ -86,6 +102,32 @@ function Sheet(props: { set: SetView }): JSX.Element {
 
     onCleanup(drawDiagrams());
   });
+
+  // How this device wants Diffs drawn. It lives up here because two controls
+  // drive it — the switch beside the Diff heading and the one in the floating
+  // header — and they have to be two views of one setting rather than two
+  // settings that happen to agree.
+  //
+  // Read from the device as the page is built rather than from an effect
+  // afterwards: there is no server-rendered first paint to disagree with any
+  // more, so a reader who asked for wrapping gets it without the Diff arriving
+  // unwrapped and reflowing into it.
+  const [wrapped, setWrapped] = createSignal(wrapping());
+
+  /// Turn wrapping on or off for this device, and for every Diff it opens after
+  /// this one.
+  const flip = (on: boolean) => {
+    setWrapped(on);
+    setWrapping(on);
+  };
+
+  // Both are descriptions of the whole Set, and both come from the one outline,
+  // so the sidebar, the floating header and the scroll-spy cannot end up
+  // describing different pages.
+  const sections = createMemo(() => outline(props.set));
+  const watched = createMemo(() => spied(sections()));
+
+  const nav = navigation();
 
   const standing = () => props.set.standing;
 
@@ -137,6 +179,15 @@ function Sheet(props: { set: SetView }): JSX.Element {
         {out()}
       </A>
       <h1>{props.set.title}</h1>
+      {/* After the title and before the rest: the page says what it is, then
+          what is in it. It is taken out of the flow and put in the margin by
+          the stylesheet, so where it sits here is a reading order rather than
+          a position. */}
+      <Contents sections={sections()} watched={watched()} nav={nav} />
+      {/* Under the nav in reading order and pinned to the top edge by the
+          stylesheet, which is also what keeps it off a narrow viewport: there
+          the nav's own bar is already doing this job. */}
+      <PageHeader watched={watched()} nav={nav} wrapped={wrapped()} flip={flip} />
       {/* A Set sent from outside a repo has neither, and an empty line of
           provenance is worse than none. */}
       <Show when={props.set.project !== null || props.set.branch !== null}>
@@ -167,9 +218,11 @@ function Sheet(props: { set: SetView }): JSX.Element {
           </section>
         )}
       </Show>
-      {/* The Diff goes between the Preface and the Questions — the Preface says
-          what the agent is asking about, and the Diff is the evidence for it. It
-          is its own task, and until then a Set that has one is read without it. */}
+      {/* Between the Preface and the Questions: the Preface says what the agent
+          is asking about, and the Diff is the evidence for it. */}
+      <Show when={props.set.diff}>
+        {(diff) => <Diff diff={diff()} wrapped={wrapped()} flip={flip} />}
+      </Show>
       <Questions
         questions={props.set.questions}
         decided={decided()}
@@ -447,22 +500,4 @@ function nothingAnswered(response: Response): string | null {
         "counter-question — and every question went back to the agent still open."
     : "Nothing here was answered, and nothing was said about the Set either: " +
         "every question went back to the agent still open.";
-}
-
-/// The id a Question is reached by: its label, lowercased — `Q3` becomes `q3`,
-/// which is also what a human writing the link by hand would type.
-///
-/// A label is the agent's own string, and an id cannot hold everything a string
-/// can, so anything an id will not take becomes a hyphen; a label made of nothing
-/// else falls back to the Question's position. Labels are distinct across a Set
-/// and in practice they are `Q1`, `Q2`, …, so the fallback is for the pathological
-/// Set rather than the ordinary one.
-function anchor(label: string, position: number): string {
-  const id = [...label.trim().toLowerCase()]
-    .map((letter) => (/[a-z0-9\-_]/.test(letter) ? letter : "-"))
-    .join("")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "");
-
-  return id === "" ? `q${position}` : id;
 }

@@ -7,15 +7,15 @@
 //! this file. The three fixtures are one Set in each of its three standings,
 //! plus a fourth carrying a Diagram.
 //!
-//! The answering form and the Diff are their own tasks and are not drawn yet.
+//! The answering form is its own task and is not drawn yet. The Diff and the table
+//! of contents are drawn here too, and asked about in `diff.test.tsx` and
+//! `contents.test.tsx` — this file is the record itself.
 
-import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router";
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
-import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
+import { screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Response as Decided, SetView } from "../src/api/types";
-import { SetPage } from "../src/set/SetPage";
+import { mount, reading, texts } from "./reading";
 import { json, serving } from "./serving";
 import answered from "./fixtures/set-answered.json" with { type: "json" };
 import answering from "./fixtures/set-answering.json" with { type: "json" };
@@ -37,47 +37,15 @@ const DIAGRAMMED = diagram as SetView;
 /// them, so this is the one date on either page.
 const SETTLED = "2026-08-03 09:07 UTC";
 
-/// The page as it is really mounted: on its own route, so the id it fetches is
-/// the one the URL names, and inside a router, because the way back out of a Set
-/// is a link.
-function mount(id = "1") {
-  // No retries: a test that asked for a refusal should see it at once, rather
-  // than after the three attempts a real page is right to make.
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-
-  const history = createMemoryHistory();
-  history.set({ value: `/sets/${id}` });
-
-  return render(() => (
-    <QueryClientProvider client={client}>
-      <MemoryRouter history={history}>
-        <Route path="/sets/:id" component={SetPage} />
-      </MemoryRouter>
-    </QueryClientProvider>
-  ));
-}
-
-/// The page once the Set it was asked for has arrived.
-///
-/// Whatever was drawn before it goes first, so that a test reading one Set after
-/// another is reading one page at a time: two pages in the document at once are
-/// two `#preface`s, and an id that names two elements names neither.
-async function reading(set: SetView): Promise<HTMLElement> {
-  cleanup();
-  serving(json(set));
-  const { container } = mount();
-  await waitFor(() => expect(container.querySelector("h1")).toBeTruthy());
-  return container;
-}
-
-/// Everything of `selector` in the page, as the text of each — the order they
-/// come out in is the order the page has them in.
-function texts(container: HTMLElement, selector: string): string[] {
-  return [...container.querySelectorAll(selector)].map(
-    (found) => found.textContent ?? "",
+/// The label at the head of one question, found among the Questions rather than
+/// anywhere on the page: the table of contents lists a Question by its label too,
+/// so `Q3` names two things in the document and only one of them is a question.
+function named(page: ParentNode, label: string): HTMLElement {
+  const found = [...page.querySelectorAll<HTMLElement>(".ask .text > .label")].find(
+    (head) => head.textContent === label,
   );
+  expect(found, `expected the question ${label}`).toBeTruthy();
+  return found as HTMLElement;
 }
 
 /// The row drawing this Option, found by words that are only in it, so a test can
@@ -180,12 +148,12 @@ describe("reading a Set", () => {
   });
 
   it("offers nothing on a question that has no Options", async () => {
-    await reading(WAITING);
+    const page = await reading(WAITING);
 
     // Q2b and Q3 offer nothing to choose between, so they get no list of
     // Options at all — just their text.
     for (const bare of ["Q2b", "Q3"]) {
-      const ask = screen.getByText(bare).closest(".ask")!;
+      const ask = named(page, bare).closest(".ask")!;
       expect(
         ask.querySelector(".options"),
         `${bare} offers no Options, so it should have no list of them`,
@@ -214,10 +182,10 @@ describe("reading a Set", () => {
   });
 
   it("keeps a Question's label at the head of its rendered text", async () => {
-    await reading(WAITING);
+    const page = await reading(WAITING);
 
     for (const label of ["Q1", "Q2a"]) {
-      const text = screen.getByText(label).closest(".text")!;
+      const text = named(page, label).closest(".text")!;
       expect(text.firstElementChild!.className).toBe("label");
       expect(text.lastElementChild!.className).toContain("markdown");
     }
@@ -348,7 +316,11 @@ describe("the record of a settled Set", () => {
     // A Set is answered once, so there is nothing here to act on it with.
     expect(page.querySelector("input")).toBeNull();
     expect(page.querySelector("textarea")).toBeNull();
-    expect(page.querySelector("button")).toBeNull();
+    // The nav's bar is a button, and the only one an answered Set has: it is a way
+    // around the record rather than anything that acts on it. Counted rather than
+    // excused, so a button that does act on the Set still fails this.
+    expect(page.querySelectorAll("button")).toHaveLength(1);
+    expect(page.querySelector("button")!.className).toBe("contents-bar");
     expect(page.querySelector(".questions")!.className).toContain("decided");
   });
 
@@ -443,10 +415,14 @@ describe("the record of a settled Set", () => {
     for (const set of [WAITING, ANSWERED, ARCHIVED]) {
       const page = await reading(set);
 
-      expect(texts(page, "h2.section-heading")).toEqual([
-        "Preface",
-        "Questions",
-      ]);
+      // Named so a jump from the table of contents lands somewhere the reader can
+      // see they have arrived at. The Diff is named the same way when there is one
+      // — and it is the waiting fixture that carries one.
+      expect(texts(page, "h2.section-heading")).toEqual(
+        set.diff === null
+          ? ["Preface", "Questions"]
+          : ["Preface", "Diff", "Questions"],
+      );
       for (const id of ["preface", "questions", "q1"]) {
         expect(page.querySelector(`#${id}`), `expected #${id}`).toBeTruthy();
       }

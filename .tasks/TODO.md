@@ -19,7 +19,7 @@ them green.
 - [x] 02: The viewer's JSON API — [details](02-ui-api.md)
 - [x] 03: Web scaffold and walking skeleton — [details](03-web-scaffold.md)
 - [x] 04: Set view as a record — [details](04-set-view-reading.md)
-- [ ] 05: Diff viewer — [details](05-diff-viewer.md)
+- [x] 05: Diff viewer — [details](05-diff-viewer.md)
 - [ ] 06: Set view answering — [details](06-set-view-answering.md)
 - [ ] 07: Archive and Liveness — [details](07-archive-and-liveness.md)
 - [ ] 08: PWA and push — [details](08-pwa-and-push.md)
