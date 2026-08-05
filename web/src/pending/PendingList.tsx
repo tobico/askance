@@ -7,6 +7,7 @@ import { For, Match, Show, Switch } from "solid-js";
 
 import { listPending } from "../api/client";
 import type { Liveness, PendingEntry } from "../api/types";
+import { Notifications } from "../push/Notifications";
 
 /// How often the open page refetches the list, in milliseconds.
 ///
@@ -48,8 +49,13 @@ export function PendingList() {
       <A class="to-archive" href="/archive">
         Archive →
       </A>
+      {/* On the title's line rather than buried in a settings page: this is the
+          one page open often enough to be where the human notices that the
+          phone is not being told, and a switch is small enough to live in the
+          space the heading was leaving empty anyway. */}
       <div class="page-head">
         <h1>Pending</h1>
+        <Notifications />
       </div>
       <Switch>
         {/* Pending rather than fetching: the fallback belongs to the first

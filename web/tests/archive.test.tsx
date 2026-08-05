@@ -167,11 +167,13 @@ describe("the way between the two lists", () => {
     fireEvent.click(screen.getByText("← Pending"));
 
     await waitFor(() => expect(window.location.pathname).toBe("/"));
-    expect(screen.getByText(PENDING[0]!.title)).toBeTruthy();
+    // Waited for rather than read: the URL changes as the route does, and the
+    // list it landed on is a fetch behind that.
+    await waitFor(() => screen.getByText(PENDING[0]!.title));
 
     fireEvent.click(screen.getByText("Archive →"));
 
     await waitFor(() => expect(window.location.pathname).toBe("/archive"));
-    expect(screen.getByText(ORPHANED.title)).toBeTruthy();
+    await waitFor(() => screen.getByText(ORPHANED.title));
   });
 });

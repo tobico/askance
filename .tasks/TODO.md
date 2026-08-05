@@ -22,5 +22,5 @@ them green.
 - [x] 05: Diff viewer — [details](05-diff-viewer.md)
 - [x] 06: Set view answering — [details](06-set-view-answering.md)
 - [x] 07: Archive and Liveness — [details](07-archive-and-liveness.md)
-- [ ] 08: PWA and push — [details](08-pwa-and-push.md)
+- [x] 08: PWA and push — [details](08-pwa-and-push.md)
 - [ ] 09: Cutover — [details](09-cutover.md)

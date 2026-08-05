@@ -181,11 +181,9 @@ async fn body_text(response: axum::response::Response) -> String {
 /// Put a device on the list, the way the page does.
 async fn subscribe(app: &Router, device: &Device) {
     let args = serde_json::json!({
-        "subscription": {
-            "endpoint": device.endpoint,
-            "p256dh": device.p256dh(),
-            "auth": device.auth(),
-        },
+        "endpoint": device.endpoint,
+        "p256dh": device.p256dh(),
+        "auth": device.auth(),
     });
 
     let http = app
@@ -193,7 +191,7 @@ async fn subscribe(app: &Router, device: &Device) {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/ui/subscribe-push")
+                .uri("/api/ui/push/subscribe")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(serde_json::to_vec(&args).unwrap()))
                 .unwrap(),

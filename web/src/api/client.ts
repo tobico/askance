@@ -10,9 +10,12 @@ import type {
   ArchiveEntry,
   Archived,
   PendingEntry,
+  PushKey,
   Response as Decided,
   SetView,
   Submitted,
+  Subscribed,
+  Subscription,
 } from "./types";
 
 /// A refusal from the server, in the shape both halves refuse in.
@@ -72,6 +75,30 @@ export function archiveSet(id: number): Promise<Archived> {
   return post<Archived>(`/api/ui/sets/${id}/archive`);
 }
 
+/// The public half of the server's VAPID keypair — what `PushManager.subscribe`
+/// takes as its `applicationServerKey`, and the only way a browser names the
+/// server it is subscribing to.
+export async function pushKey(): Promise<string> {
+  return (await get<PushKey>("/api/ui/push/key")).key;
+}
+
+/// Hand this device's subscription over, so a Set arriving can reach it.
+export function subscribePush(
+  subscription: Subscription,
+): Promise<Subscribed> {
+  return post<Subscribed>("/api/ui/push/subscribe", subscription);
+}
+
+/// Ask the server to forget this device, named by the endpoint that is the only
+/// name a subscription has.
+///
+/// Answered with nothing at all — there is no outcome to read, because an
+/// endpoint the server never stored leaves what was asked for holding either
+/// way.
+export async function unsubscribePush(endpoint: string): Promise<void> {
+  await refused(await sent("/api/ui/push/unsubscribe", { endpoint }));
+}
+
 async function get<T>(path: string): Promise<T> {
   return taken(
     await fetch(path, {
@@ -81,26 +108,34 @@ async function get<T>(path: string): Promise<T> {
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
-  return taken(
-    await fetch(path, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-      },
-      // An empty object rather than no body at all: the routes that take one
-      // want JSON, and the ones that take none are not troubled by it.
-      body: JSON.stringify(body ?? {}),
-    }),
-  );
+  return taken(await sent(path, body));
+}
+
+function sent(path: string, body?: unknown): Promise<Response> {
+  return fetch(path, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    // An empty object rather than no body at all: the routes that take one
+    // want JSON, and the ones that take none are not troubled by it.
+    body: JSON.stringify(body ?? {}),
+  });
 }
 
 async function taken<T>(response: Response): Promise<T> {
+  await refused(response);
+
+  return (await response.json()) as T;
+}
+
+/// Throw if the server refused, in its own words. Split out from [`taken`] for
+/// the one endpoint that answers with no body to read.
+async function refused(response: Response): Promise<void> {
   if (!response.ok) {
     throw new RefusedError(response.status, await refusal(response));
   }
-
-  return (await response.json()) as T;
 }
 
 /// What a refusal said, or a stand-in when it did not say anything readable —
