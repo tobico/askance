@@ -13,6 +13,7 @@
   "dependencies": {
     "@solidjs/router": "^0.15.3",
     "@tanstack/solid-query": "^5.90.5",
+    "mermaid": "^11.16.1",
     "solid-js": "^1.9.9"
   },
   "pnpm": {

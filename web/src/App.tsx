@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import type { JSX } from "solid-js";
 
 import { PendingList } from "./pending/PendingList";
+import { SetPage } from "./set/SetPage";
 
 /// One client for the whole app, made once rather than per render: it is where
 /// the cache lives, and a page that rebuilt it would have no cache at all.
@@ -21,6 +22,7 @@ export function App(): JSX.Element {
     <QueryClientProvider client={queries}>
       <Router root={Shell}>
         <Route path="/" component={PendingList} />
+        <Route path="/sets/:id" component={SetPage} />
         <Route path="*" component={NoSuchPage} />
       </Router>
     </QueryClientProvider>

@@ -5,7 +5,7 @@
 //! its own: a hand-written interface is a second opinion about the wire, and
 //! the whole point of generating them is that there is only ever one.
 
-import type { ApiError, PendingEntry } from "./types";
+import type { ApiError, PendingEntry, SetView } from "./types";
 
 /// A refusal from the server, in the shape both halves refuse in.
 ///
@@ -27,6 +27,15 @@ export class RefusedError extends Error {
 /// The Sets still waiting on the human, newest first.
 export function listPending(): Promise<PendingEntry[]> {
   return get<PendingEntry[]>("/api/ui/pending");
+}
+
+/// One Set, rendered, with where it stands.
+///
+/// The id is whatever the URL held, unparsed: one that is not a number cannot
+/// name a Set, and the server answers for that the same way it answers for one
+/// that names no Set — a 404, which the page reads as "there isn't one".
+export function loadSet(id: string): Promise<SetView> {
+  return get<SetView>(`/api/ui/sets/${encodeURIComponent(id)}`);
 }
 
 async function get<T>(path: string): Promise<T> {

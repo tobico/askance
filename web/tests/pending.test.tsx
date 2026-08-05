@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PendingEntry } from "../src/api/types";
 import { PendingList } from "../src/pending/PendingList";
+import { json, serving } from "./serving";
 import pending from "./fixtures/pending.json" with { type: "json" };
 
 const SETS = pending as PendingEntry[];
@@ -20,26 +21,6 @@ const SETS = pending as PendingEntry[];
 /// The two Sets the fixture holds, by the badge each is there to exercise.
 const LIVE = SETS.find((set) => set.liveness === "waiting")!;
 const DEAD = SETS.find((set) => set.liveness === "disconnected")!;
-
-/// Stand-in for the server, one answer per fetch in the order given. The last
-/// answer is repeated, because the page polls for as long as it is open and a
-/// test should not have to say how many times.
-function serving(...answers: Array<() => Promise<Response>>) {
-  let asked = 0;
-  const fetching = vi.fn(() => answers[Math.min(asked++, answers.length - 1)]!());
-  vi.stubGlobal("fetch", fetching);
-  return fetching;
-}
-
-function json(body: unknown, status = 200): () => Promise<Response> {
-  return () =>
-    Promise.resolve(
-      new Response(JSON.stringify(body), {
-        status,
-        headers: { "content-type": "application/json" },
-      }),
-    );
-}
 
 /// The page as it is mounted, minus the routing: a query needs its client, and
 /// nothing here reads the URL.
