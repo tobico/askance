@@ -68,6 +68,18 @@ A mermaid fence in a Preface or Question, rendered visually in the viewer.
 Degrades to its readable source text whenever it cannot render.
 _Avoid_: chart, graph, figure
 
+**Guide**:
+The agent-facing usage instructions shipped inside the CLI and printed by
+it, so an agent needs nothing beyond the binary to learn how to ask. Split
+into a core that every ask needs and Topics fetched when their task arises.
+_Avoid_: help, manual, docs
+
+**Topic**:
+A task-scoped section of the Guide (e.g. gates), split out so an agent pays
+its reading cost only when the task is at hand — at which point it is
+required reading, never optional.
+_Avoid_: section, chapter
+
 **Archive**:
 Where Question Sets live after their Response is delivered (or after manual
 archiving of an orphaned Set). Permanent, browsable decision history.
