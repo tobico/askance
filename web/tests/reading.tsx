@@ -86,10 +86,7 @@ export function sent(fetching: ReturnType<typeof serving>): unknown {
   return JSON.parse(String(last![1]?.body));
 }
 
-/// Everything of `selector` in the page, as the text of each — the order they
-/// come out in is the order the page has them in.
-export function texts(container: ParentNode, selector: string): string[] {
-  return [...container.querySelectorAll(selector)].map(
-    (found) => found.textContent ?? "",
-  );
-}
+/// Everything of `selector` in the page, as the text of each. Shared with the
+/// lists' own mount, because reading a page's order back is the same act on
+/// either.
+export { texts } from "./listing";

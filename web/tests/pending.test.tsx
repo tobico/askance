@@ -6,13 +6,12 @@
 //! this file by construction. When the wire shape moves, the fixture moves with
 //! it and these tests are what notice.
 
-import { render, screen, waitFor } from "@solidjs/testing-library";
-import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
-import type { JSX } from "solid-js";
+import { screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PendingEntry } from "../src/api/types";
 import { PendingList } from "../src/pending/PendingList";
+import { mount, texts } from "./listing";
 import { json, serving } from "./serving";
 import pending from "./fixtures/pending.json" with { type: "json" };
 
@@ -21,20 +20,6 @@ const SETS = pending as PendingEntry[];
 /// The two Sets the fixture holds, by the badge each is there to exercise.
 const LIVE = SETS.find((set) => set.liveness === "waiting")!;
 const DEAD = SETS.find((set) => set.liveness === "disconnected")!;
-
-/// The page as it is mounted, minus the routing: a query needs its client, and
-/// nothing here reads the URL.
-function mount(component: () => JSX.Element) {
-  // No retries: a test that asked for a refusal should see it at once, rather
-  // than after the three attempts a real page is right to make.
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-
-  return render(() => (
-    <QueryClientProvider client={client}>{component()}</QueryClientProvider>
-  ));
-}
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -69,6 +54,29 @@ describe("the pending list", () => {
     // The whole row is the tap target, so the link is the row's and not the
     // title's.
     expect(row.querySelector("a")!.getAttribute("href")).toBe(`/sets/${DEAD.id}`);
+  });
+
+  it("keeps the order it was given, which is newest ask first", async () => {
+    serving(json(SETS));
+    const { container } = mount(PendingList);
+
+    await waitFor(() => screen.getByText(LIVE.title));
+
+    // The list is scanned from the top for what has just come in, and the server
+    // is what ordered it — the page must not reorder what it was handed.
+    expect(texts(container, ".set-row .title")).toEqual(
+      SETS.map((set) => set.title),
+    );
+  });
+
+  it("offers the way through to what was already decided", async () => {
+    serving(json(SETS));
+    const { container } = mount(PendingList);
+
+    await waitFor(() => screen.getByText(LIVE.title));
+
+    const through = container.querySelector(".to-archive")!;
+    expect(through.getAttribute("href")).toBe("/archive");
   });
 
   it("says of each Set whether an agent is still waiting on it", async () => {

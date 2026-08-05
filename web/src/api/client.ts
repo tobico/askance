@@ -7,6 +7,7 @@
 
 import type {
   ApiError,
+  ArchiveEntry,
   Archived,
   PendingEntry,
   Response as Decided,
@@ -34,6 +35,12 @@ export class RefusedError extends Error {
 /// The Sets still waiting on the human, newest first.
 export function listPending(): Promise<PendingEntry[]> {
   return get<PendingEntry[]>("/api/ui/pending");
+}
+
+/// The Sets that have been settled, newest first — answered or closed
+/// unanswered, which is the whole of the Archive.
+export function listArchive(): Promise<ArchiveEntry[]> {
+  return get<ArchiveEntry[]>("/api/ui/archive");
 }
 
 /// One Set, rendered, with where it stands.

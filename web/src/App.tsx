@@ -4,6 +4,7 @@ import { Route, Router } from "@solidjs/router";
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import type { JSX } from "solid-js";
 
+import { ArchiveList } from "./archive/ArchiveList";
 import { PendingList } from "./pending/PendingList";
 import { SetPage } from "./set/SetPage";
 
@@ -22,6 +23,7 @@ export function App(): JSX.Element {
     <QueryClientProvider client={queries}>
       <Router root={Shell}>
         <Route path="/" component={PendingList} />
+        <Route path="/archive" component={ArchiveList} />
         <Route path="/sets/:id" component={SetPage} />
         <Route path="*" component={NoSuchPage} />
       </Router>

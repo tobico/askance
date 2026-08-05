@@ -1,6 +1,7 @@
 //! The pending list: the Question Sets still waiting on the human, newest
 //! first.
 
+import { A } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { For, Match, Show, Switch } from "solid-js";
 
@@ -44,9 +45,9 @@ export function PendingList() {
           view's "← Pending" sits in: every page here starts with where else
           there is to go, so neither list needs a typed URL to reach the
           other. */}
-      <a class="to-archive" href="/archive">
+      <A class="to-archive" href="/archive">
         Archive →
-      </a>
+      </A>
       <div class="page-head">
         <h1>Pending</h1>
       </div>
@@ -81,7 +82,7 @@ function PendingRow(props: { entry: PendingEntry }) {
   // not the title inside it.
   return (
     <li class="set-row pending-set">
-      <a href={`/sets/${props.entry.id}`}>
+      <A href={`/sets/${props.entry.id}`}>
         <span class="title">{props.entry.title}</span>
         <span class="meta">
           <Show when={props.entry.project}>
@@ -95,7 +96,7 @@ function PendingRow(props: { entry: PendingEntry }) {
           </span>
           <span class="age">{props.entry.age}</span>
         </span>
-      </a>
+      </A>
     </li>
   );
 }

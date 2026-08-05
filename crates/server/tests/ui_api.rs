@@ -138,6 +138,40 @@ async fn wait_for_response(app: &Router, id: i64, hold: u64) -> axum::response::
         .unwrap()
 }
 
+/// Hold a wait on a Set the way the CLI does, on a task the test can drop.
+fn hold_a_wait(app: &Router, id: i64) -> tokio::task::JoinHandle<()> {
+    let app = app.clone();
+
+    tokio::spawn(async move {
+        let _held = wait_for_response(&app, id, 60).await;
+    })
+}
+
+/// The pending list, asked for until the row for `id` reads as `liveness`.
+///
+/// A wait takes its slot as its handler starts running, which is a moment after
+/// the request opening it goes in — so the list is asked again rather than once
+/// after a guessed pause.
+async fn pending_where(app: &Router, id: i64, liveness: Liveness) -> Vec<PendingEntry> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+
+    loop {
+        let pending: Vec<PendingEntry> = get(app, "/api/ui/pending").await;
+        if pending
+            .iter()
+            .any(|row| row.id == id && row.liveness == liveness)
+        {
+            return pending;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "waited for Set {id} to read as {liveness:?} in vain: {pending:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 fn answered(label: &str, selected: Option<u32>) -> Answer {
     Answer {
         label: label.to_owned(),
@@ -230,6 +264,75 @@ async fn a_set_nothing_has_waited_on_for_long_enough_reads_as_disconnected() {
         pending[0].age.ends_with(" ago"),
         "expected an age in words, got {:?}",
         pending[0].age
+    );
+}
+
+#[tokio::test]
+async fn the_badge_is_the_wait_the_agents_half_is_genuinely_holding() {
+    let (_dir, pool, app) = fresh_app().await;
+    let waited_on = post_set(&app, SET).await;
+    let orphan = store::insert_set(&pool, &bare("the one whose agent went"))
+        .await
+        .unwrap()
+        .id;
+    // Both old enough that the window measured from their creation has closed, so
+    // the only thing that can make either of them read as waiting is a wait.
+    for id in [waited_on, orphan] {
+        backdate_created(&pool, id, "2026-08-03T09:00:00.000Z").await;
+    }
+
+    let agent = hold_a_wait(&app, waited_on);
+    let pending = pending_where(&app, waited_on, Liveness::Waiting).await;
+
+    // And a wait held on one Set says nothing about another: the registry is
+    // asked per Set, not read as "somebody is about".
+    let other = pending
+        .iter()
+        .find(|row| row.id == orphan)
+        .expect("the Set nothing is waiting on is still pending");
+    assert_eq!(
+        other.liveness,
+        Liveness::Disconnected,
+        "the Set nothing is waiting on keeps its own badge: {pending:?}"
+    );
+
+    // The set view is fed from the same registry, because the two badges are one
+    // fact: the human archives a Set from its own page, with the badge in view.
+    let set: SetView = get(&app, &format!("/api/ui/sets/{waited_on}")).await;
+    assert_eq!(set.standing, Standing::Waiting(Liveness::Waiting));
+    let orphaned: SetView = get(&app, &format!("/api/ui/sets/{orphan}")).await;
+    assert_eq!(
+        orphaned.standing,
+        Standing::Waiting(Liveness::Disconnected),
+        "a Set nothing is waiting on is still waiting on the human"
+    );
+
+    agent.abort();
+}
+
+#[tokio::test]
+async fn a_disconnected_set_is_still_answerable_from_the_viewer() {
+    let (_dir, pool, app) = fresh_app().await;
+    let id = post_set(&app, SET).await;
+    backdate_created(&pool, id, "2026-08-03T09:00:00.000Z").await;
+
+    let pending: Vec<PendingEntry> = get(&app, "/api/ui/pending").await;
+    assert_eq!(pending[0].liveness, Liveness::Disconnected);
+
+    // Display state only (ADR-0001): the badge never gates an answer, and a Set
+    // whose agent has gone is neither withdrawn nor closed on its own.
+    let outcome: Submitted = post(
+        &app,
+        &format!("/api/ui/sets/{id}/response"),
+        serde_json::to_value(decided()).unwrap(),
+    )
+    .await;
+    assert_eq!(outcome, Submitted::Accepted);
+
+    let pending: Vec<PendingEntry> = get(&app, "/api/ui/pending").await;
+    assert!(
+        pending.is_empty(),
+        "the answered Set should be off the list: {pending:?}"
     );
 }
 
