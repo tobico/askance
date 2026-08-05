@@ -5,7 +5,14 @@
 //! its own: a hand-written interface is a second opinion about the wire, and
 //! the whole point of generating them is that there is only ever one.
 
-import type { ApiError, PendingEntry, SetView } from "./types";
+import type {
+  ApiError,
+  Archived,
+  PendingEntry,
+  Response as Decided,
+  SetView,
+  Submitted,
+} from "./types";
 
 /// A refusal from the server, in the shape both halves refuse in.
 ///
@@ -38,11 +45,50 @@ export function loadSet(id: string): Promise<SetView> {
   return get<SetView>(`/api/ui/sets/${encodeURIComponent(id)}`);
 }
 
-async function get<T>(path: string): Promise<T> {
-  const response = await fetch(path, {
-    headers: { accept: "application/json" },
-  });
+/// Answer a Set, which ends the wait the agent is holding on it.
+///
+/// The outcome is the answer's body rather than its status: every one of them —
+/// taken, already answered, archived, refused by the grammar — is something the
+/// page has to say in words, and only a server that could not answer at all
+/// throws.
+export function submitResponse(
+  id: number,
+  response: Decided,
+): Promise<Submitted> {
+  return post<Submitted>(`/api/ui/sets/${id}/response`, response);
+}
 
+/// Close a Set unanswered: the human declaring that nobody is ever going to
+/// answer it. There is nothing to send but the Set's own id, which is in the
+/// path.
+export function archiveSet(id: number): Promise<Archived> {
+  return post<Archived>(`/api/ui/sets/${id}/archive`);
+}
+
+async function get<T>(path: string): Promise<T> {
+  return taken(
+    await fetch(path, {
+      headers: { accept: "application/json" },
+    }),
+  );
+}
+
+async function post<T>(path: string, body?: unknown): Promise<T> {
+  return taken(
+    await fetch(path, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      // An empty object rather than no body at all: the routes that take one
+      // want JSON, and the ones that take none are not troubled by it.
+      body: JSON.stringify(body ?? {}),
+    }),
+  );
+}
+
+async function taken<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new RefusedError(response.status, await refusal(response));
   }

@@ -11,7 +11,9 @@ import { vi } from "vitest";
 /// say how many times.
 export function serving(...answers: Array<() => Promise<Response>>) {
   let asked = 0;
-  const fetching = vi.fn(() =>
+  // Typed as `fetch` is called rather than as a bare thunk, so a test can read
+  // back what a page put on the wire and not just that it asked.
+  const fetching = vi.fn((_path: RequestInfo | URL, _init?: RequestInit) =>
     answers[Math.min(asked++, answers.length - 1)]!(),
   );
   vi.stubGlobal("fetch", fetching);

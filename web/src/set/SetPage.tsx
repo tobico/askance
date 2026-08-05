@@ -1,7 +1,7 @@
-//! The set view: one Question Set laid out to be read — its Preface, the Diff
-//! that is the evidence for it, and then every Question and Sub-question in the
-//! order the agent asked them, with the table of contents down the margin that
-//! is the way around all of it.
+//! The set view: one Question Set laid out to be answered — its Preface, the
+//! Diff that is the evidence for it, and then every Question and Sub-question in
+//! the order the agent asked them, with the table of contents down the margin
+//! that is the way around all of it.
 //!
 //! A Set that has settled gets the same page read rather than filled in: its own
 //! material above, and under it what was decided — the Option chosen beside the
@@ -32,14 +32,18 @@ import { RefusedError, loadSet } from "../api/client";
 import type {
   Answer,
   AskView,
+  Liveness,
   OptionView,
   QuestionView,
   Response,
   SetView,
 } from "../api/types";
 import { setWrapping, wrapping } from "../device";
+import { Answering } from "./Answering";
+import { AskText } from "./AskText";
 import { Contents, PageHeader, navigation } from "./Contents";
 import { Diff } from "./Diff";
+import { Standing } from "./Standing";
 import { drawDiagrams } from "./diagrams";
 import { anchor, outline, spied } from "./outline";
 import { settledWhen } from "./when";
@@ -131,9 +135,16 @@ function Sheet(props: { set: SetView }): JSX.Element {
 
   const standing = () => props.set.standing;
 
-  /// Whether this Set has settled, one way or the other. It is what decides
-  /// whether the page reads as a record.
-  const decided = () => !("Waiting" in standing());
+  /// Whether anyone is still on the other end — and `null` once the Set has
+  /// settled, which is what decides whether this page is a sheet to fill in or a
+  /// record to read.
+  const waiting = (): Liveness | null => {
+    const how = standing();
+    return "Waiting" in how ? how.Waiting : null;
+  };
+
+  /// Whether this Set has settled, one way or the other.
+  const decided = () => waiting() === null;
 
   /// The Response behind the record, and `null` when there is none: a Set closed
   /// unanswered is a record with nothing decided in it.
@@ -203,6 +214,13 @@ function Sheet(props: { set: SetView }): JSX.Element {
       <Show when={when()}>
         {(when) => <p class={when().mark}>{when().said}</p>}
       </Show>
+      {/* Whether anyone is still on the other end, and the one thing to do about
+          it if nobody is. Above the Preface because both are about the ask
+          rather than about answering it — and because archiving is decided with
+          the badge and the Questions in view, not from a list row. */}
+      <Show when={waiting()}>
+        {(liveness) => <Standing id={props.set.id} liveness={liveness()} />}
+      </Show>
       {/* Named and anchored like the Questions below it: the heading is what a
           jump from the table of contents lands on, and the id is what it jumps
           to.
@@ -223,29 +241,32 @@ function Sheet(props: { set: SetView }): JSX.Element {
       <Show when={props.set.diff}>
         {(diff) => <Diff diff={diff()} wrapped={wrapped()} flip={flip} />}
       </Show>
-      <Questions
-        questions={props.set.questions}
-        decided={decided()}
-        response={response()}
-      />
+      <Show
+        when={decided()}
+        fallback={
+          <Answering id={props.set.id} questions={props.set.questions} />
+        }
+      >
+        <Questions questions={props.set.questions} response={response()} />
+      </Show>
     </>
   );
 }
 
-/// The questions, and what became of them.
+/// The questions of a settled Set, and what became of them.
 ///
 /// The heading is drawn unconditionally, unlike the Preface's: the Questions are
 /// the one section every Set has. Its id sits on the heading rather than on the
 /// list, so a jump lands on the name of the thing rather than just above its
-/// first row.
+/// first row. A Set still waiting is asked on the sheet instead — see
+/// [`Answering`] — which draws the same heading and the same anchors.
 function Questions(props: {
   questions: QuestionView[];
-  decided: boolean;
   response: Response | null;
 }): JSX.Element {
   /// A Set that settled with no Response behind it, which is the one standing
   /// that was never answered by anybody.
-  const orphaned = () => props.decided && props.response === null;
+  const orphaned = () => props.response === null;
 
   /// What to say at the head of a Response that resolved nothing.
   const nothing = () => {
@@ -278,13 +299,12 @@ function Questions(props: {
       <h2 class="section-heading" id="questions">
         Questions
       </h2>
-      <ol class={props.decided ? "questions decided" : "questions"}>
+      <ol class="questions decided">
         <For each={props.questions}>
           {(question, index) => (
             <Question
               question={question}
               position={index() + 1}
-              decided={props.decided}
               response={props.response}
             />
           )}
@@ -306,7 +326,6 @@ function Questions(props: {
 function Question(props: {
   question: QuestionView;
   position: number;
-  decided: boolean;
   response: Response | null;
 }): JSX.Element {
   return (
@@ -314,11 +333,7 @@ function Question(props: {
       class="question"
       id={anchor(props.question.ask.name, props.position)}
     >
-      <Ask
-        ask={props.question.ask}
-        decided={props.decided}
-        response={props.response}
-      />
+      <Ask ask={props.question.ask} response={props.response} />
       {/* Sub-questions get no anchor of their own: one scrolls into view with
           its parent. */}
       <Show when={props.question.subquestions.length > 0}>
@@ -326,11 +341,7 @@ function Question(props: {
           <For each={props.question.subquestions}>
             {(subquestion) => (
               <li class="subquestion">
-                <Ask
-                  ask={subquestion}
-                  decided={props.decided}
-                  response={props.response}
-                />
+                <Ask ask={subquestion} response={props.response} />
               </li>
             )}
           </For>
@@ -353,7 +364,6 @@ function Question(props: {
 /// still open.
 function Ask(props: {
   ask: AskView;
-  decided: boolean;
   response: Response | null;
 }): JSX.Element {
   const answer = () => {
@@ -382,14 +392,8 @@ function Ask(props: {
     props.ask.options.length === 0 ? "Your answer" : "Your thoughts";
 
   return (
-    <div class={props.decided ? "ask decided" : "ask"}>
-      {/* The label a Response answers by, then the text it labels — kept a child
-          of its own rather than being swallowed by the rendered markup beside
-          it, however blocky the agent's markdown under it is. */}
-      <div class="text">
-        <span class="label">{props.ask.name}</span>
-        <div class="markdown" innerHTML={props.ask.text_html} />
-      </div>
+    <div class="ask decided">
+      <AskText name={props.ask.name} html={props.ask.text_html} />
       <Show when={props.ask.options.length > 0}>
         <ul class="options">
           <For each={props.ask.options}>
