@@ -35,8 +35,14 @@ use serde::{Deserialize, Serialize};
 use crate::response::{Answer, Response};
 use crate::set::{Question, QuestionOption, QuestionSet, Subquestion};
 
+// A Violation reaches the CLI inside an `ApiError`, which is also how the viewer
+// is told what a request was refused for — see `Response` for the gating.
+#[cfg(feature = "typescript")]
+use ts_rs::TS;
+
 /// One way a Set fails the question grammar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 pub struct Violation {
     /// The question at fault, e.g. `Q7` or `Q7a`. Absent when the problem is
     /// the Set as a whole.

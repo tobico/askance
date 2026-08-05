@@ -19,6 +19,7 @@ mod push;
 mod reply;
 mod responses;
 mod sets;
+mod ui;
 
 /// Persistence lives in its own crate so the UI's server functions can reach
 /// it without depending on the binary that links them. It is re-exported here
@@ -72,14 +73,17 @@ pub struct Config {
     pub listen: SocketAddr,
 }
 
-/// The agent-facing routes. REST lives under `/api/v1/` to stay clear of
-/// `/api/{fn_name}`, which Leptos server functions claim by default.
+/// Everything the server answers in a serialised format: the agents' contract
+/// under `/api/v1/`, and the viewer's own namespace under `/api/ui/`.
+///
+/// Both live under `/api/` and neither uses `/api/{fn_name}`, which Leptos
+/// server functions claim by default.
 pub fn router(pool: SqlitePool) -> Router {
     api(pool, Settlements::new(SETTLEMENT_BACKLOG), Waits::new())
 }
 
-/// The agent-facing routes over an already-made channel and registry, so the UI
-/// half can share the ones the waits are held on and recorded in.
+/// The same, over an already-made channel and registry, so the pages the Leptos
+/// half still renders share the ones the waits are held on and recorded in.
 fn api(pool: SqlitePool, settlements: Settlements, waits: Waits) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
@@ -91,6 +95,11 @@ fn api(pool: SqlitePool, settlements: Settlements, waits: Waits) -> Router {
             "/api/v1/sets/{id}/response",
             post(responses::submit_response).get(responses::wait_for_response),
         )
+        // The viewer's half. It shares this state rather than holding its own:
+        // a submit or an archiving from the browser has to reach an agent
+        // waiting on the endpoint above, and both halves have to agree about
+        // which Sets a wait is being held on.
+        .merge(ui::routes())
         .with_state(AppState {
             pool,
             settlements,

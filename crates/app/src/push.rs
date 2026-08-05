@@ -10,21 +10,10 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use serde::{Deserialize, Serialize};
 
-/// A subscription as `PushManager.subscribe` describes one, flattened to the
-/// three things a push needs: where to send it, and the two keys it is
-/// encrypted for.
-///
-/// Flattened rather than passed through as the browser's own JSON, because the
-/// nesting it uses — `keys.p256dh`, `keys.auth` — is the browser's shape and not
-/// something the server has any reason to learn.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Subscription {
-    pub endpoint: String,
-    pub p256dh: String,
-    pub auth: String,
-}
+/// What a device hands over and what it is told back — `askance-render`'s, like
+/// the rest of what crosses this wire.
+pub use askance_render::{Subscribed, Subscription};
 
 /// The public half of the server's VAPID keypair, base64url-encoded from the
 /// uncompressed point — what `PushManager.subscribe` takes as its
@@ -44,18 +33,6 @@ pub async fn push_public_key() -> Result<String, ServerFnError> {
         .map_err(|err| ServerFnError::new(format!("{err:#}")))?;
 
     Ok(keys.public_key)
-}
-
-/// What became of a device asking to be notified.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Subscribed {
-    /// This device will be told about a Set from now on. It is stored once
-    /// however many times it subscribes.
-    Stored,
-
-    /// Refused: the browser handed over a subscription with no endpoint, or
-    /// missing a key. Nothing could ever be sent to it, so nothing was stored.
-    Incomplete,
 }
 
 /// Take a device's subscription, so a Set arriving can reach it.

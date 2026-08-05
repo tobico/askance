@@ -1,0 +1,85 @@
+{
+  "branch": "solid-viewer",
+  "diagrams": false,
+  "diff": null,
+  "id": 1,
+  "preface_html": "<p><code>POST /v1/messages</code> has no rate limit.</p>\n<ul>\n<li>one client sent 40k requests in a minute</li>\n<li>the queue was backed up for twenty</li>\n</ul>\n",
+  "project": "askance",
+  "questions": [
+    {
+      "ask": {
+        "name": "Q1",
+        "options": [
+          {
+            "n": 1,
+            "recommended": false,
+            "text_html": "In-process, per instance — see <code>Counter::local</code>."
+          },
+          {
+            "n": 2,
+            "recommended": true,
+            "text_html": "In <strong>Redis</strong>, shared across instances."
+          }
+        ],
+        "text_html": "<p>Where should the request counter live?</p>\n<ul>\n<li>in-process, per instance</li>\n<li>in <code>redis</code>, shared across instances</li>\n</ul>\n"
+      },
+      "nav_text": "Where should the request counter live? in-process, per instance in redis, shared across instances",
+      "subquestions": []
+    },
+    {
+      "ask": {
+        "name": "Q2",
+        "options": [
+          {
+            "n": 1,
+            "recommended": false,
+            "text_html": "A bare 429. no headers no body"
+          },
+          {
+            "n": 2,
+            "recommended": false,
+            "text_html": "A 429 plus RateLimit headers."
+          }
+        ],
+        "text_html": "<p>How should a throttled client be told to back off?</p>\n<pre><code><span class=\"\"><span class=\"\"><span class=\"\"><span class=\"tok-storage\">fn</span> </span><span class=\"tok-entity tok-name\">allowance</span></span><span class=\"\"><span class=\"\"><span class=\"\">(</span></span><span class=\"\"><span class=\"\"><span class=\"\">)</span></span></span></span><span class=\"\"> <span class=\"\"><span class=\"\">-&gt;</span> <span class=\"tok-storage\">u32</span></span> </span><span class=\"\"><span class=\"\"><span class=\"\">{</span> <span class=\"tok-constant\">600</span> </span><span class=\"\"><span class=\"\">}</span></span></span></span></code></pre>"
+      },
+      "nav_text": "How should a throttled client be told to back off? fn allowance() -> u32 { 600 }",
+      "subquestions": [
+        {
+          "name": "Q2a",
+          "options": [
+            {
+              "n": 1,
+              "recommended": false,
+              "text_html": "The exact number of seconds."
+            },
+            {
+              "n": 2,
+              "recommended": false,
+              "text_html": "A rounded number."
+            }
+          ],
+          "text_html": "<p>What should Retry-After say?</p>\n<table><thead><tr><th>header</th><th>seconds</th></tr></thead><tbody>\n<tr><td>Retry-After</td><td>30</td></tr>\n</tbody></table>\n"
+        },
+        {
+          "name": "Q2b",
+          "options": [],
+          "text_html": "<p>Anything else about the headers?</p>\n"
+        }
+      ]
+    },
+    {
+      "ask": {
+        "name": "Q3",
+        "options": [],
+        "text_html": "<p>Anything I should know before starting?</p>\n"
+      },
+      "nav_text": "Anything I should know before starting?",
+      "subquestions": []
+    }
+  ],
+  "standing": {
+    "ArchivedUnanswered": "2026-08-03T09:07:11.000Z"
+  },
+  "title": "Rate limiting for the public API"
+}

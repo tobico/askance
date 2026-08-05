@@ -11,6 +11,10 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 askance-app = { workspace = true, features = ["ssr"] }
+# The rendering behind the viewer's namespace, and the types it answers with.
+# `ssr` and no more: the TypeScript the same types generate is emitted by a test
+# in that crate, and nothing here asks for it.
+askance-render = { workspace = true, features = ["ssr"] }
 askance-schema.workspace = true
 askance-store.workspace = true
 axum = "0.8"

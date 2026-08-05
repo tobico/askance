@@ -16,7 +16,7 @@ them green.
 ## Tasks
 
 - [x] 01: Extract the render crate — [details](01-render-crate.md)
-- [ ] 02: The viewer's JSON API — [details](02-ui-api.md)
+- [x] 02: The viewer's JSON API — [details](02-ui-api.md)
 - [ ] 03: Web scaffold and walking skeleton — [details](03-web-scaffold.md)
 - [ ] 04: Set view as a record — [details](04-set-view-reading.md)
 - [ ] 05: Diff viewer — [details](05-diff-viewer.md)

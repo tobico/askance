@@ -5,6 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::validate::Violation;
 
+// The refusal shape is the whole server's, viewer included — see `Response` for
+// why the emitter is gated.
+#[cfg(feature = "typescript")]
+use ts_rs::TS;
+
 /// What `POST /api/v1/sets` returns once a Set is stored: the identity the
 /// server stamped on it. The CLI waits on `id`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,6 +34,7 @@ pub struct ResponseAccepted {
 
 /// What the API returns when it refuses a request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 pub struct ApiError {
     /// One line saying what was refused.
     pub error: String,

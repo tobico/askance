@@ -8,6 +8,9 @@
 use askance_schema::{Liveness, Response};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "typescript")]
+use ts_rs::TS;
+
 /// One Question Set as the browser receives it.
 ///
 /// Everything the agent wrote — the Preface, every Question's and Sub-question's
@@ -15,6 +18,7 @@ use serde::{Deserialize, Serialize};
 /// does the Diff: the server has the markdown parser and the diff highlighter,
 /// and this way the browser needs neither.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 pub struct SetView {
     pub id: i64,
     pub title: String,
@@ -50,6 +54,7 @@ pub struct SetView {
 /// with, and would make the nav a description of the page rather than of the
 /// Set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 pub struct DiffView {
     pub html: String,
     pub paths: Vec<String>,
@@ -58,6 +63,7 @@ pub struct DiffView {
 /// One Question as the page draws it, with its Sub-questions nested one level
 /// under it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 pub struct QuestionView {
     pub ask: AskView,
     pub subquestions: Vec<AskView>,
@@ -85,6 +91,7 @@ pub struct QuestionView {
 /// The form is built from the Options' numbers and their Recommendation flags,
 /// and a Response answers by number.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 pub struct AskView {
     /// `Q7` for a Question, `Q7a` for a Sub-question.
     pub name: String,
@@ -102,6 +109,7 @@ pub struct AskView {
 /// beside a radio and the whole row is the tap target: a paragraph or a list
 /// emitted inside that label would split the row in two.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 pub struct OptionView {
     pub n: u32,
 
@@ -114,6 +122,7 @@ pub struct OptionView {
 
 /// How a Set stands: still waiting on the human, answered, or closed unanswered.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 pub enum Standing {
     /// Waiting on the human, with what the server can say about the agent on the
     /// other end. Display only (ADR-0001): it is the human who decides what a
@@ -130,6 +139,7 @@ pub enum Standing {
 
 /// A Set's Response as the page needs it: the Answers, and when they were sent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 pub struct Answered {
     pub submitted_at: String,
     pub response: Response,

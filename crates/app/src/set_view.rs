@@ -30,14 +30,17 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use serde::{Deserialize, Serialize};
-use time::format_description::well_known::Rfc3339;
-use time::{OffsetDateTime, UtcOffset};
 
 /// The Set as the page draws it, and every part of it: the view types are
 /// `askance-render`'s, because the server-side rendering that fills them in is.
 /// This page is what they were shaped for, and what reads them back.
+///
+/// [`Submitted`] and [`Archived`] come from there for the same reason from the
+/// other direction: they are what the viewer is told became of the two things it
+/// can do to a Set, and the words it says about each are the page's own.
 pub use askance_render::{
-    Answered, AskView, DiffView, OptionView, QuestionView, SetView, Standing,
+    Answered, Archived, AskView, DiffView, OptionView, QuestionView, SetView, Standing, Submitted,
+    settled_when,
 };
 
 /// The Set with this id, or `None` if there is no such Set.
@@ -73,9 +76,11 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
         }
         // The same verdict the pending list's row carries, from the same
         // registry: this page is where it is acted on.
-        None => {
-            Standing::Waiting(waits.liveness(id, &stored.created_at, OffsetDateTime::now_utc()))
-        }
+        None => Standing::Waiting(waits.liveness(
+            id,
+            &stored.created_at,
+            time::OffsetDateTime::now_utc(),
+        )),
     };
 
     // Everything the agent wrote, rendered — which is the whole of what is left
@@ -83,30 +88,6 @@ pub async fn load_set(id: i64) -> Result<Option<SetView>, ServerFnError> {
     Ok(Some(askance_render::set_view(
         stored.id, stored.set, standing,
     )))
-}
-
-/// What became of the human's Response, as the page needs to know it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Submitted {
-    /// Stored as the Set's answer; whoever was waiting has been woken.
-    Accepted,
-
-    /// The Set was answered before this Response arrived — the first stands,
-    /// and this one was discarded.
-    AlreadyAnswered,
-
-    /// There is no such Set, though there was one when the page loaded.
-    NoSuchSet,
-
-    /// The Set was archived unanswered before this Response arrived — from
-    /// another device, or another tab. Archiving closes a Set for good, so it
-    /// cannot also become an answered one.
-    Archived,
-
-    /// The Response does not resolve the Set. The page builds Responses that
-    /// do, so this is a bug rather than something the human can fix — but it
-    /// is carried back and shown rather than swallowed.
-    Rejected(Vec<String>),
 }
 
 /// Answer a Set. Goes through the same path as the agent-facing endpoint, so a
@@ -134,24 +115,6 @@ pub async fn submit_response(id: i64, response: Response) -> Result<Submitted, S
             Submitted::Rejected(invalid.violations.iter().map(ToString::to_string).collect())
         }
     })
-}
-
-/// What became of the human closing a Set unanswered.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Archived {
-    /// Closed: the Set is off the pending list and in the Archive, and a CLI
-    /// still holding a wait on it has been told.
-    Closed,
-
-    /// It was answered before this arrived, so it is in the Archive as a
-    /// decision. Nothing was changed — a decision is not something to close.
-    AlreadyAnswered,
-
-    /// It had already been archived, from another device or another tab.
-    AlreadyArchived,
-
-    /// There is no such Set, though there was one when the page loaded.
-    NoSuchSet,
 }
 
 /// Archive a Set unanswered: the human declaring that nobody is ever going to
@@ -1397,11 +1360,11 @@ fn sheet(set: SetView) -> impl IntoView {
     let when = match &set.standing {
         Standing::Waiting(_) => None,
         Standing::Answered(answered) => {
-            let when = submitted_when(&answered.submitted_at);
+            let when = settled_when(&answered.submitted_at);
             Some(view! { <p class="answered-at">"Answered " {when}</p> }.into_any())
         }
         Standing::ArchivedUnanswered(archived_at) => {
-            let when = submitted_when(archived_at);
+            let when = settled_when(archived_at);
             // A class of its own: the line sits where an answered Set's date
             // sits and is styled with it, but nothing here was answered.
             Some(
@@ -2130,34 +2093,6 @@ fn offered(group: String, option: OptionView, live: Fields) -> impl IntoView {
     }
 }
 
-/// When a Set was settled, as the page says it — the Response landing, or the
-/// human closing it unanswered. Shared with the Archive, which dates its rows by
-/// the same reasoning and has to word them the same way.
-///
-/// Absolute rather than the pending list's "3h ago": that list is scanned for
-/// what to do next, while a settled Set is an entry in a permanent log,
-/// where relative to now stops meaning anything by the following week. UTC
-/// because the server's clock is the only one in play — the browser is given no
-/// date library, for the same reason it is given no markdown parser.
-///
-/// A stamp that will not parse is shown as stored: the page is still worth
-/// drawing, and the raw stamp still says when.
-pub(crate) fn submitted_when(submitted_at: &str) -> String {
-    let Ok(when) = OffsetDateTime::parse(submitted_at, &Rfc3339) else {
-        return submitted_at.trim().to_owned();
-    };
-
-    let when = when.to_offset(UtcOffset::UTC);
-    format!(
-        "{}-{:02}-{:02} {:02}:{:02} UTC",
-        when.year(),
-        u8::from(when.month()),
-        when.day(),
-        when.hour(),
-        when.minute(),
-    )
-}
-
 /// What to say at the head of a Response that resolved nothing — and `None`
 /// when it resolved something, which is the ordinary case.
 ///
@@ -2398,8 +2333,7 @@ mod tests {
     use super::{
         ARCHIVE_WARNING, AskView, DiffView, Draft, Filled, Mark, QuestionView, SetView, Standing,
         Stands, Watched, anchor, answer_to, clicked, draft_key, drafted, lit, mark,
-        nothing_answered, outline, restorable, shortened, spied, stands, submitted_when,
-        unanswered,
+        nothing_answered, outline, restorable, shortened, spied, stands, unanswered,
     };
 
     /// A Question as the page receives it, with the nav's plain words and the
@@ -3012,29 +2946,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             comment.unwrap_or_default(),
         )
-    }
-
-    #[test]
-    fn the_time_a_response_landed_is_shown_absolutely() {
-        assert_eq!(
-            submitted_when("2026-08-03T12:04:07.412Z"),
-            "2026-08-03 12:04 UTC",
-            "a decision in a permanent log is dated, not aged",
-        );
-        assert_eq!(
-            submitted_when("2026-08-03T22:04:07+10:00"),
-            "2026-08-03 12:04 UTC",
-            "whatever offset it was written with, it is read in the server's",
-        );
-    }
-
-    #[test]
-    fn an_unreadable_stamp_is_shown_as_stored() {
-        assert_eq!(
-            submitted_when(" not a timestamp "),
-            "not a timestamp",
-            "the page is worth drawing without a pretty date",
-        );
     }
 
     #[test]

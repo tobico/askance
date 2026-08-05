@@ -90,6 +90,11 @@ time = { version = "0.3", default-features = false, features = [
     "std",
 ] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# The one source of truth for the wire shape: the viewer's TypeScript types are
+# generated from the Rust ones rather than written twice. It emits them from
+# tests, so it is only ever compiled for a `cargo test` — see the `typescript`
+# feature in `crates/render`.
+ts-rs = "12"
 # The syntaxes syntect bundles are Sublime Text's defaults, which is a set that
 # stopped growing before TypeScript, TOML and Nix existed as far as it is
 # concerned — a Diff of any of them came out unhighlighted. This is the set `bat`

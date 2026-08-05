@@ -564,6 +564,12 @@ A Set is answered once: a second Response is a 409 and the first one stands.
 REST lives under `/api/v1/` to stay clear of `/api/{fn_name}`, where the web
 UI's Leptos server functions live. Everything not claimed above is the UI's.
 
+The viewer has a namespace of its own under `/api/ui/` — the pending list, the
+Archive, one Set, answering it, archiving it, and the three push endpoints. It
+is private to the viewer that ships in the same binary and is not part of the
+contract above: it speaks JSON rather than YAML, and it may be rearranged
+whenever the viewer is. Agents use `/api/v1/` alone.
+
 ## Development
 
 ```console

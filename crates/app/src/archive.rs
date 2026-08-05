@@ -11,25 +11,10 @@
 
 use leptos::prelude::*;
 use leptos_router::components::A;
-use serde::{Deserialize, Serialize};
 
-/// One row of the Archive as the browser receives it.
-///
-/// The date arrives already worded, for the reason the pending list's ages do:
-/// the server has the clock and the date library, and the browser is given
-/// neither.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ArchiveEntry {
-    pub id: i64,
-    pub title: String,
-    pub project: Option<String>,
-    pub branch: Option<String>,
-    pub settled_at: String,
-
-    /// Whether it got here without a Response — archived unanswered by the
-    /// human, rather than decided.
-    pub unanswered: bool,
-}
+/// One row of the Archive as the browser receives it, and the wording of the
+/// date on it — both `askance-render`'s, like the pending list's row.
+pub use askance_render::{ArchiveEntry, settled_when};
 
 /// The Sets that have been settled, newest first.
 #[server]
@@ -49,7 +34,7 @@ pub async fn list_archive() -> Result<Vec<ArchiveEntry>, ServerFnError> {
             title: set.title,
             project: set.project,
             branch: set.branch,
-            settled_at: crate::set_view::submitted_when(&set.settled_at),
+            settled_at: settled_when(&set.settled_at),
             unanswered: set.settled == Settled::ArchivedUnanswered,
         })
         .collect())

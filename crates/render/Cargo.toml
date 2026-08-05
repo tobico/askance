@@ -7,6 +7,10 @@ rust-version.workspace = true
 [dependencies]
 askance-schema.workspace = true
 serde.workspace = true
+# The clock and the calendar behind the two dates the viewer is handed already
+# worded — a pending Set's age and a settled one's day. Both sides of the wire
+# need the wording, and neither needs a date library to read it.
+time.workspace = true
 
 # The renderers, which are the server's alone: the browser is handed the HTML
 # they produce, so no markdown parser and no syntax highlighter ship to it. Off
@@ -18,11 +22,24 @@ pulldown-cmark = { workspace = true, optional = true }
 syntect = { workspace = true, optional = true }
 two-face = { workspace = true, optional = true }
 
+# The TypeScript emitter. It writes the viewer's types out of a test — see the
+# `typescript` feature — so nothing it produces is compiled into anything that
+# ships, and the wasm half of the UI never asks for it.
+ts-rs = { workspace = true, optional = true }
+
 [features]
-default = ["ssr"]
+default = ["ssr", "typescript"]
 # Named as `askance-app`'s own halves are: `ssr` is the server's side of the
 # wire, and rendering only ever happens there. What is left with it off is the
 # view types, which both sides need — the server to build, the browser to
 # deserialize. Once the wasm half of the UI is gone the feature goes with it and
 # this crate is unconditionally the whole of what is here.
 ssr = ["dep:ammonia", "dep:pulldown-cmark", "dep:syntect", "dep:two-face"]
+# What generates `web/src/api/types.ts`: every type on the viewer's side of the
+# wire is described here once and emitted as TypeScript, so the two languages
+# cannot drift. ts-rs does the writing from a test it generates, which is why
+# this is a default feature — a plain `cargo test` regenerates the bindings, and
+# git is what says whether anything moved. It is off wherever it would only be
+# weight: the wasm half takes this crate with `default-features = false`, and a
+# release build of the server does the same.
+typescript = ["askance-schema/typescript", "dep:ts-rs"]
