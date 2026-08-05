@@ -9,15 +9,22 @@ export default defineConfig(({ mode }) => ({
   plugins: [solid()],
 
   // The service worker, the manifest and the icons, served from the site root
-  // and copied into the build untouched. They are the repo's `assets/` — the
-  // same directory the Leptos build takes them from, so there is one copy of
-  // each while both viewers are standing, and when the Leptos half goes this is
-  // the only thing still pointing at it.
+  // and copied into the build untouched. They are the repo's `assets/`, which is
+  // this and nothing else's now.
   //
   // The root is where they have to be: a service worker only controls the paths
   // beneath the one it was served from, and one under the bundle's directory
   // could never show a notification for `/sets/12`.
   publicDir: "../assets",
+
+  build: {
+    // Named rather than left to the default, because the server keeps everything
+    // under this directory for a year and revalidates everything outside it —
+    // see `HASHED` in `crates/server/src/viewer.rs`. What earns the year is that
+    // vite names these files by their content; a file arriving here under a
+    // stable name would be cached past the build that replaced it.
+    assetsDir: "assets",
+  },
 
   server: {
     // `pnpm dev` serves the viewer and nothing else; everything under `/api`
@@ -39,6 +46,11 @@ export default defineConfig(({ mode }) => ({
   },
 
   test: {
+    // Left off, vitest replaces every CSS import with an empty string — which
+    // takes `?raw` with it, and `diagrams.test.ts` reads the stylesheet that way
+    // to assert the two rules about a drawn diagram. There is nothing to query
+    // those off: the SVG is mermaid's, and no component renders it.
+    css: true,
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
   },

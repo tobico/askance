@@ -23,4 +23,4 @@ them green.
 - [x] 06: Set view answering — [details](06-set-view-answering.md)
 - [x] 07: Archive and Liveness — [details](07-archive-and-liveness.md)
 - [x] 08: PWA and push — [details](08-pwa-and-push.md)
-- [ ] 09: Cutover — [details](09-cutover.md)
+- [x] 09: Cutover — [details](09-cutover.md)

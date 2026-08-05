@@ -37,12 +37,13 @@ $ nix develop
 ```
 
 Everything below assumes this shell — it carries the Rust toolchain, `sqlite`,
-`git`, and `cargo-leptos` with the wasm tooling the web UI needs.
+`git`, and the `node` and `pnpm` the viewer is built with.
 
-### 2. Start the server (terminal 1)
+### 2. Build the viewer and start the server (terminal 1)
 
 ```console
-$ cargo leptos watch
+$ (cd web && pnpm install && pnpm build)
+$ cargo run -p askance-server
   INFO askance_server: askance is listening listen=127.0.0.1:8422 database=askance.db
 ```
 
@@ -55,9 +56,10 @@ $ curl http://127.0.0.1:8422/api/v1/health
 ok
 ```
 
-`cargo run -p askance-server` also works, and is what you want when only the
-API matters — it skips the wasm build and serves whatever `cargo leptos build`
-last left in `target/site`.
+The viewer is built into the binary, so `pnpm build` is what puts a UI at that
+address. Skip it if only the API matters — the server starts either way, and
+says on every page that the viewer was not built. While working on the viewer
+itself, `pnpm dev` is the better half of this: see [Development](#development).
 
 ### 3. Ask (terminal 2)
 
@@ -466,15 +468,14 @@ than run, and no markdown parser reaches the browser.
 A ```` ```mermaid ```` fence in any of those three fields is a **Diagram**: the
 structural part of a Preface said as a picture, for the Set that is quicker to
 grasp as one. It is the one thing on the page mermaid draws rather than the
-server ([ADR 0002](docs/adr/0002-client-side-mermaid-rendering.md)), and the
-only reason there is any JavaScript of ours in the browser at all — a Set with
-no Diagram in it ships none.
+server, and the bundle that draws it is imported only by a Set that carries one
+([ADR 0003](docs/adr/0003-solid-spa-viewer.md)).
 
 It is therefore also the one thing on the page that can fail to render, so it
-degrades rather than breaking: a fence mermaid cannot parse, a bundle that never
-arrived, and a browser running no JS all leave the fenced source exactly as the
-agent wrote it, and never an error graphic. Write a diagram whose source reads
-as text, because sometimes it is read as text.
+degrades rather than breaking: a fence mermaid cannot parse and a bundle that
+never arrived both leave the fenced source exactly as the agent wrote it, and
+never an error graphic. Write a diagram whose source reads as text, because
+sometimes it is read as text.
 
 Three node classes are themed for marking a delta — which is what a Diagram at
 a code approval gate is usually for. Tag a node `new`, `modified` or `removed`
@@ -561,14 +562,17 @@ A Set is answered once: a second Response is a 409 and the first one stands.
 | `GET /api/v1/sets/{id}/response?hold={seconds}` | The wait. `200` with the Response, or `204` — "nothing yet, come back" — once the hold window closes. `hold` is clamped to 60s; the client owns retry. |
 | `POST /api/v1/sets/{id}/response` | The human's Response in, `201` with `set_id` and `submitted_at` back. Wakes every wait held on the Set. |
 
-REST lives under `/api/v1/` to stay clear of `/api/{fn_name}`, where the web
-UI's Leptos server functions live. Everything not claimed above is the UI's.
-
 The viewer has a namespace of its own under `/api/ui/` — the pending list, the
 Archive, one Set, answering it, archiving it, and the three push endpoints. It
 is private to the viewer that ships in the same binary and is not part of the
 contract above: it speaks JSON rather than YAML, and it may be rearranged
 whenever the viewer is. Agents use `/api/v1/` alone.
+
+Everything outside `/api/` is the viewer: its own files where it has them, and
+the document everywhere else, because the viewer routes in the browser and
+`/sets/12` is a path only it knows. A *file* that is not there is still a `404`
+— a missing bundle answered with HTML would die as a syntax error at the top of
+the page rather than reporting a stale URL.
 
 ## Development
 
@@ -576,12 +580,10 @@ whenever the viewer is. Agents use `/api/v1/` alone.
 $ cargo test              # unit, schema and end-to-end tests
 $ cargo clippy --all-targets
 $ cargo fmt
-$ cargo leptos build      # both halves of the UI, into target/site
 $ nix fmt                 # the Nix files
 $ nix flake check         # the viewer's suite, and the NixOS module in a VM
 
 $ tools/generate-icons.sh # the PWA icons, after editing their SVG
-$ tools/update-mermaid.sh # the vendored mermaid bundle, to move its pinned version
 ```
 
 And in `web/`, which is the Solid viewer ([ADR
@@ -600,61 +602,55 @@ server on its usual `127.0.0.1:8422`, so the two run side by side in two
 terminals and the browser sees one origin. The proxy is a development thing
 only: the built assets are served by the server itself, out of the same binary.
 
+Which is `pnpm build`'s output, embedded by rust-embed. A release build compiles
+it in; a debug build reads it off disk per request, so a `cargo run -p
+askance-server` serves whatever `pnpm build` last wrote without a recompile — and
+a checkout that has never built the viewer still builds the server, which then
+says so on every page instead of serving one.
+
 `cargo test` covers the round trip in-process. `nix flake check` runs the
 viewer's vitest suite from the pinned pnpm and node, and boots a VM with the
 NixOS module enabled to put a Question Set through it again, for the sake of
 everything the module wraps around that round trip: a unit that starts itself
 at boot, the state directory systemd hands over, a database that survives the
-service being stopped and started under a waiting agent, a server serving the
-site it was packaged with rather than a working tree's, and the CLI on `PATH`
-with nothing set in the environment. The VM needs a Linux host to boot the
-guest on, so on macOS that half of the check is absent rather than failing.
+service being stopped and started under a waiting agent, a store-path binary
+serving the viewer that was built into it, and the CLI on `PATH` with nothing
+set in the environment. The VM needs a Linux host to boot the guest on, so on
+macOS that half of the check is absent rather than failing.
 
 The viewer's dependencies are fetched by a fixed-output derivation named by a
-hash in [`nix/web-tests.nix`](nix/web-tests.nix) — move `web/package.json` or
+hash in [`nix/web.nix`](nix/web.nix) — move `web/package.json` or
 `web/pnpm-lock.yaml` and that hash has to move too, and nix will print the one
-it wanted.
+it wanted. That file both builds the viewer and, with `runTests` on, is the
+`nix flake check` above, so the two cannot disagree about a lockfile.
 
-`assets/` is copied verbatim into the site root by `cargo leptos`: the web
-manifest, the icons, the service worker and the two files a page with a Diagram
-on it names. They cannot live under `/pkg/` with
-the wasm and the CSS — a service worker only controls the paths beneath the one
-it was served from, so one under `/pkg/` could never show a notification for
-`/sets/12`. The worker itself does no caching; every page is rendered against
-live SQLite, and a cached copy of a Set that has since been answered is worse
-to the human than a failure to load.
+`assets/` is vite's `publicDir`, copied verbatim into the site root: the web
+manifest, the icons and the service worker. They cannot live under `/assets/`
+with the hashed bundles — a service worker only controls the paths beneath the
+one it was served from, so one under the bundles' directory could never show a
+notification for `/sets/12`, and the manifest and the icons keep the names the
+phone knows them by. Which is also why the server keeps everything under
+`/assets/` for a year and revalidates everything outside it.
+
+The worker itself does no caching; every list and every Set is read from live
+SQLite, and a cached copy of one that has since been answered is worse to the
+human than a failure to load.
 
 The icons are all one SVG, `assets/icons/askance.svg`, rasterized by the script
 above (using `resvg` from the dev shell) to the PNG sizes the manifest and iOS
 ask for. The PNGs are committed so a build needs nothing but cargo — edit the
 SVG and re-run the script rather than touching them.
 
-`assets/mermaid.min.js` is vendored on the same bargain, by the script above:
-mermaid renders only in a browser, so a ```` ```mermaid ```` fence in a Preface
-or a Question is drawn client-side — the one carve-out from rendering everything
-on the server ([ADR 0002](docs/adr/0002-client-side-mermaid-rendering.md)). The
-bundle and `assets/diagrams.js`, which drives it, are named by a page only when
-the markdown the server just rendered turned up a Diagram, so a Set without one
-ships no JS at all. A diagram that will not draw keeps the source block the
-renderer wrote, which is also what a browser running no JS is left with.
-
 The tests run the real server in-process, so the round trip they check is the
 one an agent gets — including the quickstart above, whose example files
 [`crates/cli/tests/ask.rs`](crates/cli/tests/ask.rs) drives end to end, taking
-the human's part over the API the page's **Submit** posts through. The UI
-compiles natively for that, so `cargo test` covers the server-rendered pages
-too.
-
-`askance-frontend` — the wasm half of the UI — is a workspace member but not a
-default one: it turns on `leptos/hydrate`, which cannot coexist with the
-`leptos/ssr` everything else needs. Only `cargo leptos` builds it.
+the human's part over the API the viewer's **Submit** posts through.
 
 `askance-render` is everything the server does to what an agent wrote before it
 leaves: markdown to sanitized HTML, the Diff parsed and highlighted, and the view
 types the viewer draws a Set from. It knows nothing of the store, the router or
-the UI, so it is the seam the browser never reaches across — its `ssr` feature
-carries the renderers, and with the feature off what is left is the view types
-alone, which is what the wasm half takes.
+the viewer, so it is the seam the browser never reaches across — everything past
+it is HTML the viewer only has to put in the page.
 
 Two things under `web/` are written by `cargo test` rather than by hand, and
 both are committed so that the diff is the review. `web/src/api/types.ts` is

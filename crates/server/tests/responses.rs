@@ -421,6 +421,52 @@ comment: |
 }
 
 #[tokio::test]
+async fn a_wait_opened_on_a_set_that_was_closed_unanswered_is_told_straight_away() {
+    let (_dir, pool, app) = fresh_app().await;
+    let id = post_set(&app, SET).await;
+    close_unanswered(&pool, id).await;
+
+    let waited = wait_for_response(&app, id, 30).await;
+
+    assert_eq!(
+        waited.status(),
+        StatusCode::GONE,
+        "there is nothing to hold a connection open for",
+    );
+    assert!(
+        body_text(waited).await.contains("archived unanswered"),
+        "the reply has to say why there is nothing coming",
+    );
+}
+
+#[tokio::test]
+async fn a_response_to_a_set_that_was_closed_unanswered_is_refused() {
+    let (_dir, pool, app) = fresh_app().await;
+    let id = post_set(&app, SET).await;
+    close_unanswered(&pool, id).await;
+
+    // A Response that does resolve the Set, so what refuses it is the Set being
+    // closed and nothing else.
+    let refused = post_response(&app, id, COMPLETE).await;
+
+    assert_eq!(
+        refused.status(),
+        StatusCode::GONE,
+        "an archived Set cannot also become an answered one",
+    );
+    assert_eq!(stored_response_count(&pool).await, 0);
+}
+
+/// Archive a Set unanswered, through the store rather than through the viewer's
+/// endpoint: only a human may close a Set, and how they did it is not what these
+/// two are about. Its own channel, because no wait is being held over one here.
+async fn close_unanswered(pool: &SqlitePool, id: i64) {
+    store::archive_set(pool, &store::Settlements::new(1), id)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn a_response_outlives_a_restart() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("askance.db");

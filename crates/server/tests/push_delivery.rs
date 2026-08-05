@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use askance_schema::SetCreated;
-use askance_server::{open_database, router_with_ui, store};
+use askance_server::{open_database, router, store};
 use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
@@ -19,7 +19,6 @@ use axum::routing::post;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use http_body_util::BodyExt;
-use leptos::prelude::LeptosOptions;
 use p256::SecretKey;
 use p256::elliptic_curve::rand_core::OsRng;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
@@ -157,19 +156,13 @@ async fn nowhere() -> String {
     format!("http://{address}")
 }
 
-/// The UI's file locations, which these tests never reach.
-fn options() -> LeptosOptions {
-    LeptosOptions::builder()
-        .output_name("askance")
-        .site_root("target/site")
-        .build()
-}
-
-/// One router over a fresh database, as the binary serves it.
+/// One router over a fresh database, as the binary serves it: the Set arrives
+/// through the agents' half, and the devices it is pushed to were put on the list
+/// through the viewer's.
 async fn fresh_app() -> (tempfile::TempDir, SqlitePool, Router) {
     let dir = tempfile::tempdir().unwrap();
     let pool = open_database(&dir.path().join("askance.db")).await.unwrap();
-    let app = router_with_ui(pool.clone(), options());
+    let app = router(pool.clone());
     (dir, pool, app)
 }
 
@@ -225,11 +218,10 @@ async fn post_set(app: &Router, yaml: &str) -> (StatusCode, SetCreated) {
     (status, created)
 }
 
-/// Answer a Set the way the page does.
+/// Answer a Set the way the viewer does.
 async fn answer(app: &Router, id: i64) {
-    let args = serde_json::json!({
-        "id": id,
-        "response": { "answers": [{ "label": "Q1", "free_text": "In Redis." }] },
+    let response = serde_json::json!({
+        "answers": [{ "label": "Q1", "free_text": "In Redis." }],
     });
 
     let http = app
@@ -237,9 +229,9 @@ async fn answer(app: &Router, id: i64) {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/ui/submit-response")
+                .uri(format!("/api/ui/sets/{id}/response"))
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(serde_json::to_vec(&args).unwrap()))
+                .body(Body::from(serde_json::to_vec(&response).unwrap()))
                 .unwrap(),
         )
         .await
@@ -250,18 +242,16 @@ async fn answer(app: &Router, id: i64) {
     assert_eq!(status, StatusCode::OK, "answering failed: {body}");
 }
 
-/// Close a Set unanswered the way the page does.
+/// Close a Set unanswered the way the viewer does.
 async fn archive(app: &Router, id: i64) {
     let http = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/ui/archive-set")
+                .uri(format!("/api/ui/sets/{id}/archive"))
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&serde_json::json!({ "id": id })).unwrap(),
-                ))
+                .body(Body::from("{}"))
                 .unwrap(),
         )
         .await

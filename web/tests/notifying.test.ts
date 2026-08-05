@@ -1,8 +1,8 @@
 //! Where a device stands about notifications, and what has to be said about it.
 //!
-//! The judgement, kept apart from the browser it is made about: these are the
-//! assertions the Leptos control carried in Rust, and they belong wherever the
-//! decision is made rather than wherever the browser is asked.
+//! The judgement, kept apart from the browser it is made about: these assertions
+//! belong wherever the decision is made rather than wherever the browser is
+//! asked.
 
 import { describe, expect, it } from "vitest";
 

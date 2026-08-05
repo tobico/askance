@@ -13,33 +13,24 @@ serde.workspace = true
 time.workspace = true
 
 # The renderers, which are the server's alone: the browser is handed the HTML
-# they produce, so no markdown parser and no syntax highlighter ship to it. Off
-# under `default-features = false`, which is how the wasm half takes the view
-# types without the megabytes of syntax definitions behind them — see the `ssr`
-# feature.
-ammonia = { workspace = true, optional = true }
-pulldown-cmark = { workspace = true, optional = true }
-syntect = { workspace = true, optional = true }
-two-face = { workspace = true, optional = true }
+# they produce, so no markdown parser and no syntax highlighter ship to it.
+ammonia.workspace = true
+pulldown-cmark.workspace = true
+syntect.workspace = true
+two-face.workspace = true
 
 # The TypeScript emitter. It writes the viewer's types out of a test — see the
 # `typescript` feature — so nothing it produces is compiled into anything that
-# ships, and the wasm half of the UI never asks for it.
+# ships.
 ts-rs = { workspace = true, optional = true }
 
 [features]
-default = ["ssr", "typescript"]
-# Named as `askance-app`'s own halves are: `ssr` is the server's side of the
-# wire, and rendering only ever happens there. What is left with it off is the
-# view types, which both sides need — the server to build, the browser to
-# deserialize. Once the wasm half of the UI is gone the feature goes with it and
-# this crate is unconditionally the whole of what is here.
-ssr = ["dep:ammonia", "dep:pulldown-cmark", "dep:syntect", "dep:two-face"]
+default = ["typescript"]
 # What generates `web/src/api/types.ts`: every type on the viewer's side of the
 # wire is described here once and emitted as TypeScript, so the two languages
 # cannot drift. ts-rs does the writing from a test it generates, which is why
 # this is a default feature — a plain `cargo test` regenerates the bindings, and
 # git is what says whether anything moved. It is off wherever it would only be
-# weight: the wasm half takes this crate with `default-features = false`, and a
-# release build of the server does the same.
+# weight, which is every build that ships: the workspace takes this crate with
+# `default-features = false`, so a release binary carries none of it.
 typescript = ["askance-schema/typescript", "dep:ts-rs"]

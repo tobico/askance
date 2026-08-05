@@ -18,10 +18,6 @@
 //! [`askance_schema::QuestionSet`] and where the Set stands, [`set_view`] hands
 //! back the [`SetView`] the viewer draws — so whatever is serving that viewer,
 //! this is the one place the rendering happens.
-//!
-//! The types stand on their own and the renderers are behind `ssr`, because the
-//! wasm half of the UI needs the former and must not carry the latter — see the
-//! feature's note in the manifest.
 
 mod answering;
 mod lists;
@@ -35,16 +31,12 @@ pub use push::{PushKey, Subscribed, Subscription, Unsubscribe};
 pub use view::{Answered, AskView, DiffView, OptionView, QuestionView, SetView, Standing};
 pub use when::{relative_age, settled_when};
 
-#[cfg(feature = "ssr")]
 pub mod diff;
-#[cfg(feature = "ssr")]
 pub mod markdown;
-#[cfg(feature = "ssr")]
 pub use view::set_view;
 
 // The highlighter is shared by the two renderers above and wanted by nobody
 // else: what it produces reaches the page through them, already marked up.
-#[cfg(feature = "ssr")]
 mod highlight;
 
 // Where the TypeScript is written from, which is a test and nothing else: the

@@ -2,8 +2,8 @@
 //! them.
 //!
 //! The types themselves are shared by both ends of the wire — the server builds
-//! them, the viewer deserializes them — so they stand without the renderers. The
-//! building is the server's alone and is behind `ssr` with the rest of it.
+//! them, and the TypeScript generated from them is what the viewer reads them
+//! back as. The building is the server's alone.
 
 use askance_schema::{Liveness, Response};
 use serde::{Deserialize, Serialize};
@@ -152,7 +152,6 @@ pub struct Answered {
 /// `standing` is the caller's to decide — it comes from the store's settlement
 /// and the registry of held waits, neither of which is any of this crate's
 /// business. Everything else on the way out is rendering, which is all of it.
-#[cfg(feature = "ssr")]
 pub fn set_view(id: i64, set: askance_schema::QuestionSet, standing: Standing) -> SetView {
     use crate::{diff, markdown};
 
@@ -187,7 +186,6 @@ pub fn set_view(id: i64, set: askance_schema::QuestionSet, standing: Standing) -
 
 /// The Set's Questions as the page needs them: named as a Response answers them,
 /// with the agent's markdown rendered.
-#[cfg(feature = "ssr")]
 fn viewed(questions: Vec<askance_schema::Question>) -> Vec<QuestionView> {
     use crate::markdown;
 
@@ -223,7 +221,6 @@ fn viewed(questions: Vec<askance_schema::Question>) -> Vec<QuestionView> {
 /// Asked of the rendered HTML rather than of the markdown, which is what keeps
 /// this answer and the renderer's own reading of the page from ever disagreeing —
 /// see [`crate::markdown::holds_diagram`].
-#[cfg(feature = "ssr")]
 fn diagrammed(preface_html: Option<&str>, questions: &[QuestionView]) -> bool {
     use crate::markdown;
 
@@ -238,7 +235,6 @@ fn diagrammed(preface_html: Option<&str>, questions: &[QuestionView]) -> bool {
 /// One question's Options as the page draws them, in the order the agent offered
 /// them. Rendered inline: a row beside a radio has room for markup and none for
 /// a block.
-#[cfg(feature = "ssr")]
 fn offered_as(options: &[askance_schema::QuestionOption]) -> Vec<OptionView> {
     options
         .iter()

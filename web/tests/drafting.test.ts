@@ -2,9 +2,9 @@
 //! fields adds up to, which of them the submit warns about, and what survives a
 //! round trip through `localStorage`.
 //!
-//! These are the assertions the Leptos viewer made of the same three functions,
-//! ported as they stood: the arithmetic of a Response is the one part of
-//! answering that has nothing to do with how the page draws it.
+//! Asked of the three functions rather than of a rendered page: the arithmetic of
+//! a Response is the one part of answering that has nothing to do with how the
+//! page draws it.
 
 import { describe, expect, it } from "vitest";
 

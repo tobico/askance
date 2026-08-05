@@ -9,6 +9,10 @@ import { waitFor } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { drawDiagrams } from "../src/set/diagrams";
+// The stylesheet as text: the two rules asserted at the bottom are about a drawn
+// diagram, which is an SVG mermaid wrote and no component renders, so there is
+// nothing to query them off.
+import stylesheet from "../src/main.css?raw";
 
 /// A page carrying the source blocks the markdown renderer leaves behind —
 /// escaped, exactly as the server wrote them.
@@ -38,6 +42,31 @@ function scheme() {
       for (const listen of [...listeners]) listen();
     },
     watched: () => listeners.size,
+  };
+}
+
+/// The page's palette, as something a test can read back out of what mermaid was
+/// told. jsdom resolves no custom property, so `getComputedStyle` is stood in for:
+/// every `--name` asked for answers with a marker naming itself, which is what
+/// lets an assertion say *which* variable a theme colour was spent from.
+///
+/// It also records the asking, so the second half of the pairing can be checked:
+/// every property the renderer reaches for has to be one the stylesheet defines.
+function palette() {
+  const asked = new Set<string>();
+
+  vi.stubGlobal("getComputedStyle", () => ({
+    getPropertyValue: (name: string) => {
+      asked.add(name);
+      return ` spent(${name}) `;
+    },
+    fontFamily: "the page's own type",
+  }));
+
+  return {
+    asked: () => [...asked],
+    /// What a variable comes out as once the renderer has trimmed it.
+    spent: (name: string) => `spent(${name})`,
   };
 }
 
@@ -204,5 +233,143 @@ describe("the Diagrams on a page", () => {
     colours.flip();
     await Promise.resolve();
     expect(asked).toHaveLength(1);
+  });
+});
+
+describe("the colours a Diagram is drawn in", () => {
+  /// What mermaid was told before it drew, over a stood-in palette.
+  async function told() {
+    scheme();
+    const ink = palette();
+    const { bundle, configured } = renderer(drawn);
+    page("graph LR;\n  a--&gt;b;\n");
+
+    drawDiagrams({ bundle });
+    await waitFor(() => expect(configured).toHaveLength(1));
+
+    return { config: configured[0]!, ink };
+  }
+
+  it("is mermaid's one theme that brings no palette of its own", async () => {
+    const { config } = await told();
+
+    // `base` is the only mermaid theme that is all overrides. Every other one
+    // arrives with a palette, and a second palette on the page is the thing this
+    // is here to avoid.
+    expect(config.theme).toBe("base");
+  });
+
+  it("is the page's, read off the document rather than written out again", async () => {
+    const { config, ink } = await told();
+    const variables = config.themeVariables as Record<string, unknown>;
+
+    // Each of these is spent from a named variable rather than from a literal, so
+    // a diagram cannot drift from the page it sits on — including in the dark
+    // scheme, which the stylesheet is the only thing that knows about.
+    expect(variables.background).toBe(ink.spent("--card"));
+    expect(variables.primaryColor).toBe(ink.spent("--code-wash"));
+    expect(variables.primaryTextColor).toBe(ink.spent("--ink"));
+    expect(variables.lineColor).toBe(ink.spent("--ink-soft"));
+    expect(variables.clusterBkg).toBe(ink.spent("--hunk"));
+    expect(variables.clusterBorder).toBe(ink.spent("--edge"));
+    expect(variables.noteBkgColor).toBe(ink.spent("--marked"));
+
+    // The type too, so the font stack is written down in one place.
+    expect(variables.fontFamily).toBe("the page's own type");
+  });
+
+  it("marks a tagged node in the Diff's own colours", async () => {
+    const { config, ink } = await told();
+    const css = config.themeCSS as string;
+
+    // The three classes an agent puts on a node, and the pair of variables each
+    // spends: the wash behind the node and the saturated ink around it, which is
+    // the Diff's own pattern for a line it added or removed. `modified` is the one
+    // the Diff has no colour for — it marks lines, and a changed line there is an
+    // added one beside a removed one — so it takes the page's "look at this" wash,
+    // outlined in the accent.
+    for (const [tag, wash, edge] of [
+      ["new", "--added-wash", "--added"],
+      ["modified", "--marked", "--accent"],
+      ["removed", "--removed-wash", "--removed"],
+    ] as const) {
+      const mark = css
+        .split("\n")
+        .find((rule) => rule.includes(`.node.${tag} `));
+
+      expect(mark, `a \`${tag}\` node should be marked`).toBeTruthy();
+      expect(mark).toContain(`fill: ${ink.spent(wash)}`);
+      expect(mark).toContain(`stroke: ${ink.spent(edge)}`);
+    }
+
+    // Every selector is qualified by the class it marks, so a node nobody tagged
+    // is left exactly as the theme drew it.
+    expect(css).not.toMatch(/(^|[\s,]) *\.node +[a-z]+ *\{/);
+  });
+
+  it("spends nothing the stylesheet does not define", async () => {
+    const { ink } = await told();
+
+    // The other half of the pairing above: a variable the renderer reaches for and
+    // the stylesheet has never heard of resolves to nothing, and mermaid then
+    // derives a colour of its own by rotating a hue — which is how a colour that
+    // is on no palette at all ends up on the page.
+    for (const property of ink.asked()) {
+      expect(
+        stylesheet.includes(`${property}:`),
+        `${property} should be a variable the stylesheet defines`,
+      ).toBe(true);
+    }
+  });
+
+  it("has a value for every mark in each of the page's two schemes", async () => {
+    const { ink } = await told();
+
+    // The marks are the one part of the theme handed over as CSS, and a scheme
+    // that left one of them undefined would draw that mark as nothing at all.
+    for (const property of ink.asked()) {
+      expect(
+        stylesheet.split(`${property}:`).length - 1,
+        `${property} should be defined in both schemes`,
+      ).toBeGreaterThanOrEqual(2);
+    }
+  });
+});
+
+describe("a drawn Diagram on the page", () => {
+  /// The declarations of the block `selector` opens, which is what a rule about a
+  /// drawn diagram has to be read out of: the SVG is mermaid's and there is no
+  /// component to query it off.
+  function block(selector: string): string {
+    const opened = stylesheet.indexOf(`${selector} {`);
+    expect(opened, `the stylesheet should have a \`${selector}\` rule`).not.toBe(
+      -1,
+    );
+
+    return stylesheet.slice(opened, stylesheet.indexOf("}", opened));
+  }
+
+  it("fits the width it is given", () => {
+    const svg = block(".markdown .diagram svg");
+
+    // At a glance means the whole shape at once, so a diagram too wide for a phone
+    // scales down to fit rather than scrolling sideways inside a box — and never
+    // widens the page, which is the failure a narrow viewport shows first.
+    expect(svg).toContain("max-width: 100%");
+    // The height follows the width, which it only does if the height mermaid wrote
+    // onto the SVG is overridden.
+    expect(svg).toContain("height: auto");
+  });
+
+  it("holds still for anyone who asked it to", () => {
+    // A mermaid diagram can ask for animated edges, and the animation arrives
+    // inside the SVG in a stylesheet of mermaid's own — so this is the one place
+    // in the file where turning something off has to out-rank an author.
+    const reduced = stylesheet.slice(
+      stylesheet.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+
+    expect(reduced).toContain(".diagram");
+    expect(reduced).toContain("animation: none !important");
   });
 });

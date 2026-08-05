@@ -1,0 +1,7 @@
+{
+  "name": "Askance (fixture)",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+}

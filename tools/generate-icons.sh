@@ -2,8 +2,8 @@
 # Rasterize assets/icons/askance.svg into the PNG sizes the manifest and iOS ask
 # for.
 #
-# The PNGs are committed so that `cargo leptos build` needs nothing but cargo,
-# but they are never hand-edited: change the SVG and run this. The script lives
+# The PNGs are committed so that a build needs nothing but node and cargo, but
+# they are never hand-edited: change the SVG and run this. The script lives
 # outside assets/ because everything in there is copied into the served site
 # root, and a build script is not part of the site.
 #

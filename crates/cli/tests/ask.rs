@@ -89,17 +89,10 @@ impl Server {
     }
 
     fn bind(addr: SocketAddr, database: PathBuf) -> Self {
-        Self::serve(addr, database, false)
+        Self::serve(addr, database)
     }
 
-    /// The same server with the human's UI over it. Archiving lives there and
-    /// nowhere else: the agent API has no route for it, because only a human may
-    /// close a Set nobody is going to answer.
-    fn start_with_ui(database: PathBuf) -> Self {
-        Self::serve("127.0.0.1:0".parse().unwrap(), database, true)
-    }
-
-    fn serve(addr: SocketAddr, database: PathBuf, ui: bool) -> Self {
+    fn serve(addr: SocketAddr, database: PathBuf) -> Self {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
             .enable_all()
@@ -114,12 +107,7 @@ impl Server {
         });
 
         runtime.spawn(async move {
-            let router = if ui {
-                askance_server::router_with_ui(pool, askance_server::leptos_options())
-            } else {
-                askance_server::router(pool)
-            };
-            let _ = axum::serve(listener, router).await;
+            let _ = axum::serve(listener, askance_server::router(pool)).await;
         });
 
         Server {
@@ -185,12 +173,13 @@ impl Server {
         assert_eq!(reply.status().as_u16(), 201);
     }
 
-    /// Archive a Set unanswered the way the human's browser does, which needs a
-    /// server started with [`Server::start_with_ui`].
+    /// Archive a Set unanswered the way the human's browser does. It lives in the
+    /// viewer's namespace and nowhere else: the agent API has no route for it,
+    /// because only a human may close a Set nobody is going to answer.
     fn archive(&self, id: i64) {
-        let reply = ureq::post(format!("{}/api/ui/archive-set", self.url()))
+        let reply = ureq::post(format!("{}/api/ui/sets/{id}/archive", self.url()))
             .header("Content-Type", "application/json")
-            .send(format!("{{\"id\": {id}}}"))
+            .send("{}")
             .unwrap();
         assert_eq!(reply.status().as_u16(), 200);
     }
@@ -352,7 +341,7 @@ fn the_cli_reconnects_when_the_server_restarts_mid_wait() {
 #[test]
 fn a_set_archived_unanswered_ends_the_wait_for_good() {
     let tmp = tempfile::tempdir().unwrap();
-    let server = Server::start_with_ui(tmp.path().join("askance.db"));
+    let server = Server::start(tmp.path().join("askance.db"));
 
     let waiting = ask(&server, tmp.path(), SET);
     server.await_stored_set(1);
