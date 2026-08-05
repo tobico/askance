@@ -179,12 +179,22 @@ testers.runNixOSTest {
         directory = machine.succeed("stat -c %U:%G:%a /var/lib/askance").strip()
         assert directory == "askance:askance:750", f"the state directory is {directory}"
 
-    with subtest("the server run from the store serves the site it was built with"):
-        # Without the package's wrapper the server falls back to a *relative*
-        # `target/site` and a store-path binary serves no wasm and no CSS from
-        # anywhere. Nothing in-process can catch that.
-        for asset in ["pkg/askance.js", "pkg/askance.wasm", "pkg/askance.css"]:
-            machine.succeed(f"curl -sf -o /dev/null http://127.0.0.1:8422/{asset}")
+    with subtest("the server run from the store serves the viewer built into it"):
+        # The viewer is inside the binary rather than beside it, so there is
+        # nothing to point the server at and nothing that can be missing from the
+        # package — but a build that embedded an empty directory would still start,
+        # answer the API, and hand the phone a blank page. This is what catches
+        # that, and nothing in-process can: the tests there stand up a fixture site
+        # of their own precisely so they need no `pnpm build`.
+        document = machine.succeed("curl -sf http://127.0.0.1:8422/")
+        assert '<div id="app">' in document, f"no viewer at the root:\n{document}"
+
+        # And the bundles it names are there under the names it names them by,
+        # which is the half a document alone does not prove.
+        bundles = re.findall(r'(?:href|src)="(/assets/[^"]+)"', document)
+        assert bundles, f"the document names no bundle:\n{document}"
+        for bundle in bundles:
+            machine.succeed(f"curl -sf -o /dev/null http://127.0.0.1:8422{bundle}")
 
     # The repository an agent always asks from, and which the CLI reads
     # `project`, `branch` and the Diff out of by shelling out to git.
@@ -202,16 +212,17 @@ testers.runNixOSTest {
         ask("first")
         first = waiting("first")
 
-        # The human's page, server-side rendered, is where the Set surfaces —
-        # carrying what the CLI derived from the working directory rather than
-        # anything the Set claimed.
-        page = machine.succeed("curl -sf http://127.0.0.1:8422/")
-        assert "Does the module hold up in a VM?" in page, "the Set is not on the page"
-        assert "vm-project" in page, "the CLI did not derive the project"
-        assert BRANCH in page, "the CLI did not derive the branch"
+        # The viewer's own namespace is where the Set surfaces — carrying what the
+        # CLI derived from the working directory rather than anything the Set
+        # claimed. Asked of the API rather than of a page, because the page is
+        # drawn in the browser and a `curl` of it is the empty document above.
+        pending = machine.succeed("curl -sf http://127.0.0.1:8422/api/ui/pending")
+        assert "Does the module hold up in a VM?" in pending, "the Set is not listed"
+        assert "vm-project" in pending, "the CLI did not derive the project"
+        assert BRANCH in pending, "the CLI did not derive the branch"
 
-        # The third derived field is on the Set's own page rather than the list.
-        detail = machine.succeed(f"curl -sf http://127.0.0.1:8422/sets/{first}")
+        # The third derived field comes with the Set itself rather than with its row.
+        detail = machine.succeed(f"curl -sf http://127.0.0.1:8422/api/ui/sets/{first}")
         assert "uncommitted" in detail, "the CLI did not derive the Diff"
 
         answer(first, "first-response.yaml")

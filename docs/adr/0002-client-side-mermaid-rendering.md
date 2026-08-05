@@ -1,5 +1,9 @@
 # Client-side mermaid.js as a narrow carve-out from the no-JS principle
 
+**Status: superseded by [ADR-0003](0003-solid-spa-viewer.md)** — the SPA
+viewer requires JS, so the principle this carved out from is retired and
+mermaid is an ordinary dependency.
+
 The viewer renders all agent markdown on the server and ships no JS and no
 markdown parser to the browser — a principle stated in the renderer, the
 highlighter, and the README. Mermaid diagrams in Prefaces are worth having

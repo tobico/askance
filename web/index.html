@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Askance</title>
+    <!-- The manifest, the icons and the service worker are static files at the
+         site root, kept verbatim in the repo's `assets/` — see vite's
+         `publicDir`. A worker only controls the paths beneath the one it was
+         served from, so none of them may move under the bundle's directory. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#7a5c3e" />
+    <link rel="icon" href="/icons/askance.svg" type="image/svg+xml" />
+    <!-- iOS reads neither the manifest's icons nor an SVG favicon, so it gets
+         its own link, to a PNG of the size it wants. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>

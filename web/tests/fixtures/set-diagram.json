@@ -1,0 +1,85 @@
+{
+  "branch": "solid-viewer",
+  "diagrams": true,
+  "diff": null,
+  "id": 1,
+  "preface_html": "<p>Where the counter would live:</p>\n<pre class=\"mermaid\">graph LR;\n  client--&gt;api;\n  api--&gt;redis;\n</pre>",
+  "project": "askance",
+  "questions": [
+    {
+      "ask": {
+        "name": "Q1",
+        "options": [
+          {
+            "n": 1,
+            "recommended": false,
+            "text_html": "In-process, per instance."
+          },
+          {
+            "n": 2,
+            "recommended": true,
+            "text_html": "In Redis, shared across instances."
+          }
+        ],
+        "text_html": "<p>Where should the request counter live?</p>\n"
+      },
+      "nav_text": "Where should the request counter live?",
+      "subquestions": []
+    },
+    {
+      "ask": {
+        "name": "Q2",
+        "options": [
+          {
+            "n": 1,
+            "recommended": false,
+            "text_html": "A bare 429."
+          },
+          {
+            "n": 2,
+            "recommended": false,
+            "text_html": "A 429 plus RateLimit headers."
+          }
+        ],
+        "text_html": "<p>How should a throttled client be told to back off?</p>\n"
+      },
+      "nav_text": "How should a throttled client be told to back off?",
+      "subquestions": [
+        {
+          "name": "Q2a",
+          "options": [
+            {
+              "n": 1,
+              "recommended": false,
+              "text_html": "The exact number of seconds."
+            },
+            {
+              "n": 2,
+              "recommended": false,
+              "text_html": "A rounded number."
+            }
+          ],
+          "text_html": "<p>What should Retry-After say?</p>\n"
+        },
+        {
+          "name": "Q2b",
+          "options": [],
+          "text_html": "<p>Anything else about the headers?</p>\n"
+        }
+      ]
+    },
+    {
+      "ask": {
+        "name": "Q3",
+        "options": [],
+        "text_html": "<p>Anything I should know before starting?</p>\n"
+      },
+      "nav_text": "Anything I should know before starting?",
+      "subquestions": []
+    }
+  ],
+  "standing": {
+    "Waiting": "waiting"
+  },
+  "title": "Rate limiting for the public API"
+}

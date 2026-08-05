@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- Stands in for the document vite builds, so that what the tests beside it ask
+     of the server does not depend on the viewer having been built. Shaped like
+     the real one in the one way that matters here: it names its bundles under
+     `/assets/`, by content, which is what the year-long caching is granted on. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Askance</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/assets/index-TeStHaSh.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/assets/index-TeStHaSh.js"></script>
+  </body>
+</html>

@@ -1,9 +1,9 @@
 # Askance — plan
 
-A single-user Leptos web service that receives Question Sets from coding
-agents and lets the human answer them from any device on the tailnet; the
-agent blocks until the Response is submitted. See `CONTEXT.md` for the
-glossary and `docs/adr/` for recorded decisions.
+A single-user web service that receives Question Sets from coding agents and
+lets the human answer them from any device on the tailnet; the agent blocks
+until the Response is submitted. See `CONTEXT.md` for the glossary and
+`docs/adr/` for recorded decisions.
 
 ## Agent integration (CLI)
 
@@ -58,7 +58,8 @@ Response (mirrors the Set):
 
 ## Server
 
-- Axum + Leptos SSR, SQLite persistence.
+- Axum, SQLite persistence. Everything an agent wrote is rendered to sanitized
+  HTML server-side, in `askance-render`.
 - No app-level auth: binds for tailnet/localhost use only; Tailscale ACLs are
   the perimeter.
 - Sets are never auto-withdrawn. The UI shows Liveness ("agent waiting" /
@@ -68,6 +69,11 @@ Response (mirrors the Set):
 
 ## Frontend (responsive PWA)
 
+- A SolidJS SPA (TypeScript, vite, pnpm, TanStack Query) over a private
+  `/api/ui/` JSON namespace, built to static assets and embedded in the same
+  binary — see [ADR-0003](adr/0003-solid-spa-viewer.md), which retired both the
+  Leptos SSR/hydration viewer this was first built as and the no-JS principle
+  that went with it.
 - Pending list: title, project, branch, age, Liveness badge. Archive view.
 - Set view: rendered Preface, then Questions with radio Options and per-
   question free-text fields; Recommendations visually highlighted.

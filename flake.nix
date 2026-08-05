@@ -14,25 +14,23 @@
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # What building the two halves of the UI takes, wanted by the package and
-      # the dev shell alike — so named once rather than left to drift apart.
-      leptosTools =
+      # What the viewer under `web/` is built and tested with. Named here because
+      # the dev shell and the build both take it, and a pnpm in one that is not
+      # the pnpm in the other is a lockfile argument waiting to happen.
+      webTools =
         pkgs: with pkgs; [
-          # cargo-leptos drives the two-target build; nixpkgs' rustc already
-          # ships the wasm32 standard library, so there is no rustup in the
-          # picture.
-          cargo-leptos
-          # wasm-opt, which cargo-leptos runs over the wasm in release mode.
-          binaryen
-          # nixpkgs' rustc does not bundle rust-lld, and wasm32 links with lld
-          # or not at all.
-          lld
+          nodejs
+          pnpm
         ];
     in
     {
       packages = forAllSystems (pkgs: rec {
         default = askance;
-        askance = pkgs.callPackage ./nix/askance.nix { leptosTools = leptosTools pkgs; };
+        askance = pkgs.callPackage ./nix/askance.nix { inherit viewer; };
+        # The viewer's static files on their own. Nothing serves them from here —
+        # `askance` embeds them — but they are worth building alone when what is
+        # being looked at is the vite output.
+        viewer = pkgs.callPackage ./nix/web.nix { };
       });
 
       # The module runs the package above, so it closes over this flake rather
@@ -42,13 +40,16 @@
         askance = import ./nix/module.nix self;
       };
 
-      # `nix flake check` builds whatever is in here, so the VM test is offered
-      # only where a NixOS VM can be booted at all: it needs a Linux host to run
-      # the guest kernel on, and on Darwin the check is simply absent rather than
-      # a failure.
+      # `nix flake check` builds whatever is in here. The viewer's suite runs
+      # anywhere node does; the VM test is offered only where a NixOS VM can be
+      # booted at all, because it needs a Linux host to run the guest kernel on,
+      # and on Darwin that check is simply absent rather than a failure.
       checks = forAllSystems (
         pkgs:
-        nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        {
+          web = pkgs.callPackage ./nix/web.nix { runTests = true; };
+        }
+        // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
           module = pkgs.callPackage ./nix/vm-test.nix { module = self.nixosModules.askance; };
         }
       );
@@ -77,7 +78,7 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages =
-            (leptosTools pkgs)
+            (webTools pkgs)
             ++ (with pkgs; [
               cargo
               rustc

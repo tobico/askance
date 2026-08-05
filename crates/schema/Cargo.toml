@@ -7,3 +7,13 @@ rust-version.workspace = true
 [dependencies]
 serde.workspace = true
 serde-saphyr.workspace = true
+
+# The viewer's side of the wire is typed in TypeScript from these same
+# definitions — the generating is `askance-render`'s, and the types here are
+# reached as its dependencies. Optional and off by default: this crate is
+# compiled to wasm for the browser, which has no use for a TypeScript emitter.
+ts-rs = { workspace = true, optional = true }
+
+[features]
+# Turned on by `askance-render/typescript`, which owns the export.
+typescript = ["dep:ts-rs"]

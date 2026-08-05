@@ -1,6 +1,6 @@
 # Askance v1 roadmap
 
-Realizes [docs/PLAN.md](../../PLAN.md): a single-user Leptos web service plus
+Realizes [docs/PLAN.md](../../PLAN.md): a single-user web service plus
 blocking CLI through which coding agents put Question Sets to a human and wait
 for the Response — answerable from any tailnet device as a PWA with push.
 Decisions are recorded in the plan, [CONTEXT.md](../../../CONTEXT.md), and

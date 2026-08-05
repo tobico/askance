@@ -10,7 +10,8 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
-askance-app = { workspace = true, features = ["ssr"] }
+# The rendering behind the viewer's namespace, and the types it answers with.
+askance-render.workspace = true
 askance-schema.workspace = true
 askance-store.workspace = true
 axum = "0.8"
@@ -20,8 +21,6 @@ clap.workspace = true
 # crate that type comes from — shared with reqwest and axum, so it is the same
 # request all the way out.
 http = "1"
-leptos.workspace = true
-leptos_axum.workspace = true
 # Signing the VAPID header, which the store's keypair half of the dependency
 # does not need: `ecdsa` is what turns the stored private key into a signature.
 p256 = { workspace = true, features = ["ecdsa"] }
@@ -31,6 +30,16 @@ p256 = { workspace = true, features = ["ecdsa"] }
 # bundles, is all that reaching an https endpoint takes.
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
+] }
+# The viewer built into the binary — see `src/viewer.rs`. `mime-guess` is what
+# names each file's content type on the way out; `interpolate-folder-path` is what
+# lets the folder be written relative to this manifest rather than to whatever
+# directory cargo was run from. `debug-embed` is deliberately *off*: in a debug
+# build the files are then read off disk per request, so a `pnpm build` is visible
+# to a running `cargo run -p askance-server` without a recompile.
+rust-embed = { version = "8", features = [
+    "interpolate-folder-path",
+    "mime-guess",
 ] }
 serde.workspace = true
 serde-saphyr.workspace = true

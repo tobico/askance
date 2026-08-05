@@ -10,6 +10,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::set::is_false;
 
+// A Response is what the viewer submits, so its TypeScript is generated from
+// this definition along with the rest of the viewer's wire — see the note on
+// `askance-render`'s `typescript` feature. The attributes are gated because the
+// emitter has no business in the browser build.
+#[cfg(feature = "typescript")]
+use ts_rs::TS;
+
 /// The submitted collection of Answers and Unanswered markers for one Question
 /// Set, plus an optional set-level comment.
 ///
@@ -19,6 +26,7 @@ use crate::set::is_false;
 /// every entry is Unanswered carries no Answers at all — with a comment, that
 /// is the counter-question that redirects the discussion.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 #[serde(deny_unknown_fields)]
 pub struct Response {
     /// One entry per Question and Sub-question in the Set.
@@ -34,6 +42,7 @@ pub struct Response {
 /// and/or free text — or the Unanswered marker, saying the human chose to
 /// leave the question open.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 #[serde(deny_unknown_fields)]
 pub struct Answer {
     /// The question this resolves, by the name it answers to: `Q7` for a

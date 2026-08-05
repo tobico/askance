@@ -1,0 +1,14 @@
+# Where ts-rs writes the viewer's TypeScript, which it does from the tests
+# `#[ts(export)]` generates — see the `typescript` feature in `crates/render`.
+#
+# Named here rather than per type: the attribute's own path is relative to this,
+# and `relative = true` makes this relative to the repository root, so a
+# `cargo test` run from any crate's directory writes to the one place.
+[env]
+TS_RS_EXPORT_DIR = { value = "web/src/api", relative = true }
+# What an `i64` comes out as. ts-rs says `bigint` by default, on the grounds that
+# a 64-bit integer does not fit a JavaScript number — but the only one that
+# crosses this wire is a Set's id, which is a SQLite rowid, and `JSON.parse`
+# hands back a `number` for it whatever the type says. `bigint` would be a type
+# that disagreed with the value at runtime.
+TS_RS_LARGE_INT = "number"

@@ -6,25 +6,28 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use askance_app::{App, shell};
 use askance_store::{Settlements, Waits};
 use axum::Router;
 use axum::extract::{DefaultBodyLimit, FromRef};
 use axum::routing::{get, post};
-use leptos::prelude::{LeptosOptions, provide_context};
-use leptos_axum::{LeptosRoutes, generate_route_list};
 use sqlx::SqlitePool;
 
 mod push;
 mod reply;
 mod responses;
 mod sets;
+mod ui;
+mod viewer;
 
-/// Persistence lives in its own crate so the UI's server functions can reach
-/// it without depending on the binary that links them. It is re-exported here
+/// Persistence lives in its own crate so the viewer's endpoints can reach it
+/// without depending on the binary that links them. It is re-exported here
 /// because, from the API's side of things, it is still the server's store.
 pub use askance_store as store;
 pub use askance_store::open_database;
+
+/// What a site the server can serve is, for the tests that stand one up in place
+/// of the built viewer — see [`router_with_viewer`].
+pub use rust_embed::Embed;
 
 /// How large a submitted Question Set may be. Generous, because the CLI
 /// attaches the whole uncommitted Diff to every Set.
@@ -72,15 +75,12 @@ pub struct Config {
     pub listen: SocketAddr,
 }
 
-/// The agent-facing routes. REST lives under `/api/v1/` to stay clear of
-/// `/api/{fn_name}`, which Leptos server functions claim by default.
+/// Everything the server answers in a serialised format: the agents' contract
+/// under `/api/v1/`, and the viewer's own namespace under `/api/ui/`.
+///
+/// Both live under `/api/`, which is also the one prefix the viewer's fallback
+/// refuses to answer with the document — see [`viewer`].
 pub fn router(pool: SqlitePool) -> Router {
-    api(pool, Settlements::new(SETTLEMENT_BACKLOG), Waits::new())
-}
-
-/// The agent-facing routes over an already-made channel and registry, so the UI
-/// half can share the ones the waits are held on and recorded in.
-fn api(pool: SqlitePool, settlements: Settlements, waits: Waits) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
         .route(
@@ -91,10 +91,15 @@ fn api(pool: SqlitePool, settlements: Settlements, waits: Waits) -> Router {
             "/api/v1/sets/{id}/response",
             post(responses::submit_response).get(responses::wait_for_response),
         )
+        // The viewer's half. It shares this state rather than holding its own:
+        // a submit or an archiving from the browser has to reach an agent
+        // waiting on the endpoint above, and both halves have to agree about
+        // which Sets a wait is being held on.
+        .merge(ui::routes())
         .with_state(AppState {
             pool,
-            settlements,
-            waits,
+            settlements: Settlements::new(SETTLEMENT_BACKLOG),
+            waits: Waits::new(),
         })
 }
 
@@ -102,99 +107,25 @@ async fn health() -> &'static str {
     "ok"
 }
 
-/// Everything the one binary serves: the agent API above, plus the Leptos UI
-/// on every other path.
+/// Everything the one binary serves: the API above, plus the viewer built into
+/// it on every other path.
 ///
-/// The UI is merged in second and takes the fallback, so `/api/v1/` keeps its
-/// exact paths and anything unclaimed — pages, server functions, the wasm and
-/// CSS under `/pkg/` — reaches Leptos.
-pub fn router_with_ui(pool: SqlitePool, leptos_options: LeptosOptions) -> Router {
-    let routes = generate_route_list(App);
-    let settlements = Settlements::new(SETTLEMENT_BACKLOG);
-    let waits = Waits::new();
-
-    // Server functions run outside any axum handler, so what they need reaches
-    // them through the Leptos context rather than through router state. The
-    // channel and the registry are the same ones the API's waits are held on: a
-    // submit or an archiving from the browser has to reach an agent waiting on
-    // the REST endpoint, and the pages have to see the waits it is holding.
-    let context_pool = pool.clone();
-    let context_settlements = settlements.clone();
-    let context_waits = waits.clone();
-    let shell_options = leptos_options.clone();
-
-    // What the bundles are under, as a path prefix to match. Shared rather than
-    // cloned per request: it is the same string for the life of the server.
-    let pkg_dir: std::sync::Arc<str> = format!("/{}/", leptos_options.site_pkg_dir).into();
-
-    let ui = Router::new()
-        .leptos_routes_with_context(
-            &leptos_options,
-            routes,
-            move || {
-                provide_context(context_pool.clone());
-                provide_context(context_settlements.clone());
-                provide_context(context_waits.clone());
-            },
-            move || shell(shell_options.clone()),
-        )
-        .fallback(leptos_axum::file_and_error_handler(shell))
-        .layer(axum::middleware::from_fn(move |request, next| {
-            let pkg_dir = pkg_dir.clone();
-            async move { cached(&pkg_dir, request, next).await }
-        }))
-        .with_state(leptos_options);
-
-    api(pool, settlements, waits).merge(ui)
+/// The viewer takes the fallback, so `/api/v1/` and `/api/ui/` keep their exact
+/// paths and everything else — the document, the bundles, the app shell's own
+/// files — is [`viewer`]'s to answer.
+pub fn router_with_ui(pool: SqlitePool) -> Router {
+    router_with_viewer::<viewer::Built>(pool)
 }
 
-/// How long a bundle under `site-pkg-dir` may be kept: a year, which is as long
-/// as the specification lets anyone ask for, and unconditionally, since a hashed
-/// name is never reused. `hash-files` is what earns this — see the workspace's
-/// Leptos metadata.
-const KEEP: &str = "public, max-age=31536000, immutable";
-
-/// What everything else gets: kept, but never used without asking the server
-/// first. A page has to be revalidated because it *names* the hashed bundles —
-/// serving a stale one hands the browser the previous build's wasm and the
-/// hydration panic that comes with it. The service worker and the manifest have
-/// stable names for their own reasons and so cannot be kept either.
-const ASK: &str = "no-cache";
-
-/// Say how long each response may be reused for.
-///
-/// Nothing here set a `Cache-Control` before this, which left it to each
-/// browser's guess — and a browser guessing that a bundle under a stable name is
-/// still fresh is a browser that runs the last build's wasm against this build's
-/// HTML. Both halves of that are answered: the bundles are named by content and
-/// kept forever, and everything that names them is revalidated every time.
-///
-/// A handler that has said its own answer keeps it.
-async fn cached(
-    pkg_dir: &str,
-    request: axum::extract::Request,
-    next: axum::middleware::Next,
-) -> axum::response::Response {
-    use axum::http::header::CACHE_CONTROL;
-
-    let hashed = request.uri().path().starts_with(pkg_dir);
-
-    let mut response = next.run(request).await;
-
-    let headers = response.headers_mut();
-    if !headers.contains_key(CACHE_CONTROL) {
-        let policy = if hashed { KEEP } else { ASK };
-        headers.insert(CACHE_CONTROL, policy.try_into().expect("a valid header"));
-    }
-
-    response
+/// The same, over a site named by the caller, which is how the tests ask what the
+/// server does with one without waiting on `pnpm build` to produce it.
+pub fn router_with_viewer<V: Embed + 'static>(pool: SqlitePool) -> Router {
+    router(pool).fallback(viewer::serve::<V>)
 }
 
 /// Open the database and serve until the process is stopped.
 pub async fn run(config: Config) -> Result<()> {
     let pool = open_database(&config.database).await?;
-
-    let leptos_options = leptos_options();
 
     let listener = tokio::net::TcpListener::bind(config.listen)
         .await
@@ -206,33 +137,7 @@ pub async fn run(config: Config) -> Result<()> {
         "askance is listening",
     );
 
-    axum::serve(listener, router_with_ui(pool, leptos_options))
+    axum::serve(listener, router_with_ui(pool))
         .await
         .context("serving Askance")
-}
-
-/// Where the built UI's files are and what they are called.
-///
-/// Under `cargo leptos` this comes from the environment, which also carries
-/// what live reload needs. Built plainly the environment is empty, so fall back
-/// to the same site root and name the workspace's Leptos metadata configures —
-/// a `cargo run -p askance-server` then serves whatever `cargo leptos build`
-/// last produced, instead of refusing to start.
-pub fn leptos_options() -> LeptosOptions {
-    if std::env::var_os("LEPTOS_OUTPUT_NAME").is_some()
-        && let Ok(conf) = leptos::config::get_configuration(None)
-    {
-        return conf.leptos_options;
-    }
-
-    LeptosOptions::builder()
-        .output_name("askance")
-        .site_root("target/site")
-        // Matching the workspace's `hash-files`, since what this is falling back
-        // to is exactly what `cargo leptos build` left behind: without it the
-        // page would name a `pkg/askance.wasm` that no build writes any more.
-        // The file itself is found beside the binary, which is where cargo-leptos
-        // puts it.
-        .hash_files(true)
-        .build()
 }
