@@ -28,6 +28,16 @@
           # or not at all.
           lld
         ];
+
+      # What the SPA under `web/` is built and tested with. Named here for the
+      # same reason as above: the dev shell and the check both take it, and a
+      # pnpm in one that is not the pnpm in the other is a lockfile argument
+      # waiting to happen.
+      webTools =
+        pkgs: with pkgs; [
+          nodejs
+          pnpm
+        ];
     in
     {
       packages = forAllSystems (pkgs: rec {
@@ -42,13 +52,16 @@
         askance = import ./nix/module.nix self;
       };
 
-      # `nix flake check` builds whatever is in here, so the VM test is offered
-      # only where a NixOS VM can be booted at all: it needs a Linux host to run
-      # the guest kernel on, and on Darwin the check is simply absent rather than
-      # a failure.
+      # `nix flake check` builds whatever is in here. The viewer's suite runs
+      # anywhere node does; the VM test is offered only where a NixOS VM can be
+      # booted at all, because it needs a Linux host to run the guest kernel on,
+      # and on Darwin that check is simply absent rather than a failure.
       checks = forAllSystems (
         pkgs:
-        nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        {
+          web = pkgs.callPackage ./nix/web-tests.nix { };
+        }
+        // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
           module = pkgs.callPackage ./nix/vm-test.nix { module = self.nixosModules.askance; };
         }
       );
@@ -78,6 +91,7 @@
         default = pkgs.mkShell {
           packages =
             (leptosTools pkgs)
+            ++ (webTools pkgs)
             ++ (with pkgs; [
               cargo
               rustc
