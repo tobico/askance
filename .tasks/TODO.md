@@ -21,4 +21,4 @@ finish sequence.
 - [x] 02: The core Guide complete — [details](02-core-guide-content.md)
 - [x] 03: The gates Topic — [details](03-gates-topic.md)
 - [x] 04: The README tells it — [details](04-readme.md)
-- [ ] 05: The switch-over — [details](05-switch-over.md)
+- [x] 05: The switch-over — [details](05-switch-over.md)
