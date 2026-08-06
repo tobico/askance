@@ -40,13 +40,11 @@ pub fn ask(file: Option<&Path>, server: &str) -> Result<()> {
     set.branch = derived.branch;
     set.diff = derived.diff;
 
+    // A wait that goes to plan is silent. A harness runs this in the background
+    // and captures both streams into one file, so anything said here on the way
+    // would arrive ahead of the Response the agent came for.
     let client = Client::new(server);
     let created = client.submit(&set)?;
-    eprintln!(
-        "askance: Question Set {} is waiting for an answer",
-        created.id
-    );
-
     let response = client.wait(created.id)?;
 
     // The Response is the CLI's whole output: the agent parses stdout, so

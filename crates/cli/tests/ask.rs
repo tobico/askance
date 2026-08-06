@@ -304,6 +304,12 @@ fn the_response_is_delivered_on_stdout_as_yaml() {
         !printed.contains("askance:"),
         "the CLI's own chatter belongs on stderr, got:\n{printed}"
     );
+    assert!(
+        stderr(&output).is_empty(),
+        "a wait that goes to plan says nothing at all: a harness that merges the \
+         two streams into one file is handed the Response alone, got:\n{}",
+        stderr(&output)
+    );
 }
 
 #[test]
@@ -335,6 +341,15 @@ fn the_cli_reconnects_when_the_server_restarts_mid_wait() {
         stderr(&output).contains("retrying"),
         "the reconnection should be reported on stderr, got:\n{}",
         stderr(&output)
+    );
+
+    // A harness running the CLI in the background captures both streams into
+    // one file, so anything the CLI said on the way is read along with the
+    // Response. Saying it as a YAML comment is what keeps that file parseable.
+    let merged = format!("{}{}", stderr(&output), stdout(&output));
+    assert!(
+        Response::from_yaml(&merged).is_ok(),
+        "the two streams merged should still parse as the Response, got:\n{merged}"
     );
 }
 

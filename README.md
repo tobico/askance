@@ -65,12 +65,12 @@ itself, `pnpm dev` is the better half of this: see [Development](#development).
 
 ```console
 $ cargo run -p askance-cli -- ask examples/questions.yaml
-askance: Question Set 1 is waiting for an answer
 ```
 
-That line is on **stderr**, and so is everything else the CLI has to say.
+A wait that goes to plan is silent, and the little the CLI does have to say —
+reconnecting, or refusing a Set — is on **stderr**, written as a YAML comment.
 Stdout carries the Response and nothing else, so an agent can parse it as it
-stands.
+stands, even out of the one file its harness merged both streams into.
 
 The command does not return. It has submitted
 [`examples/questions.yaml`](examples/questions.yaml) — along with the project

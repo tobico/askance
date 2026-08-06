@@ -82,7 +82,8 @@ impl Client {
 
     /// Block until Set `id` has been answered, reconnecting for as long as it
     /// takes. Retries are reported on stderr, so stdout carries the Response
-    /// and nothing else.
+    /// and nothing else — and as a YAML comment, so that a harness merging the
+    /// two streams into one file still hands its agent something that parses.
     pub fn wait(&self, id: i64) -> Result<Response> {
         let mut backoff = FIRST_BACKOFF;
 
@@ -94,7 +95,7 @@ impl Client {
                 Err(Interrupted::Fatal(error)) => return Err(error),
                 Err(Interrupted::Transient(error)) => {
                     eprintln!(
-                        "askance: {error:#}; retrying in {}s",
+                        "# askance: {error:#}; retrying in {}s",
                         backoff.as_secs().max(1)
                     );
                     std::thread::sleep(backoff);

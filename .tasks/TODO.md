@@ -17,7 +17,7 @@ finish sequence.
 
 ## Tasks
 
-- [ ] 01: The Guide takes the stage — [details](01-guide-command.md)
+- [x] 01: The Guide takes the stage — [details](01-guide-command.md)
 - [ ] 02: The core Guide complete — [details](02-core-guide-content.md)
 - [ ] 03: The gates Topic — [details](03-gates-topic.md)
 - [ ] 04: The README tells it — [details](04-readme.md)
