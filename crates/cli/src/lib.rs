@@ -14,6 +14,7 @@ use clap::{Parser, Subcommand};
 
 mod ask;
 mod client;
+mod guide;
 pub mod repo;
 
 /// Where the server lives when nothing says otherwise. The tailnet is the
@@ -24,11 +25,15 @@ const DEFAULT_SERVER: &str = "http://127.0.0.1:8422";
 #[command(
     name = "askance",
     version,
-    about = "Put a Question Set to the human and wait for the answer"
+    about = "Put a Question Set to the human and wait for the answer.\n\n\
+             Run `askance guide` — or `askance` with no arguments — for the \
+             Guide: everything an agent needs in order to ask well."
 )]
 pub struct Cli {
+    /// No subcommand is the Guide: an agent that runs the binary to see what it
+    /// is gets the instructions rather than clap's usage error.
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -45,12 +50,24 @@ enum Command {
         #[arg(long, env = "ASKANCE_SERVER", default_value = DEFAULT_SERVER)]
         server: String,
     },
+
+    /// Print the Guide: everything an agent needs in order to ask well.
+    ///
+    /// Markdown on stdout, exit 0. With no topic, the core Guide — the same one
+    /// bare `askance` prints, which names the Topics and when each is required.
+    Guide {
+        /// A Topic of the Guide, required reading when its task is at hand.
+        /// Omit for the core Guide, which names them.
+        topic: Option<String>,
+    },
 }
 
 impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
-            Command::Ask { file, server } => ask::ask(file.as_deref(), &server),
+            Some(Command::Ask { file, server }) => ask::ask(file.as_deref(), &server),
+            Some(Command::Guide { topic }) => guide::guide(topic.as_deref()),
+            None => guide::guide(None),
         }
     }
 }

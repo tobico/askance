@@ -22,8 +22,11 @@ which needs HTTPS: see [On your phone](#on-your-phone) for the
 
 On the box the agents work on it runs as a NixOS service rather than out of a
 terminal — the flake carries the package and the module that does it, and
-[Deployment](#deployment) is the three steps to it. What is left is the skills
-that drive the tool — see [the roadmap](docs/roadmaps/v1/ROADMAP.md).
+[Deployment](#deployment) is the three steps to it. The agents are taught by the
+binary itself: [the Guide](#the-guide) ships inside it, so the whole integration
+is a single line in a global CLAUDE.md. What is left is driving that loop
+through a real session, from the phone — see
+[the roadmap](docs/roadmaps/v1/ROADMAP.md).
 
 ## Quickstart
 
@@ -65,12 +68,12 @@ itself, `pnpm dev` is the better half of this: see [Development](#development).
 
 ```console
 $ cargo run -p askance-cli -- ask examples/questions.yaml
-askance: Question Set 1 is waiting for an answer
 ```
 
-That line is on **stderr**, and so is everything else the CLI has to say.
+A wait that goes to plan is silent, and the little the CLI does have to say —
+reconnecting, or refusing a Set — is on **stderr**, written as a YAML comment.
 Stdout carries the Response and nothing else, so an agent can parse it as it
-stands.
+stands, even out of the one file its harness merged both streams into.
 
 The command does not return. It has submitted
 [`examples/questions.yaml`](examples/questions.yaml) — along with the project
@@ -399,6 +402,66 @@ means it survives the reboot alongside the service.
 `ASKANCE_DATABASE` below. A port other than the default also means giving the
 agents `ASKANCE_SERVER`, since the CLI's own default is `http://127.0.0.1:8422`
 and it does not learn otherwise from the module.
+
+## The Guide
+
+An agent that has never seen Askance still has to write a Set worth answering,
+run the CLI so the wait outlives its own tool timeout, and read the Response
+strictly enough not to invent an approval nobody gave. All of that ships inside
+the binary:
+
+```console
+$ askance guide
+```
+
+Bare `askance` prints the same thing rather than clap's usage error, so an agent
+that runs the command to find out what it is gets the instructions. Either way
+it is markdown on stdout and exit 0.
+
+The core Guide is everything any ask needs: how Questions, Sub-questions and
+Options are labelled and how the Recommendation is marked, how much to put in
+one Set and how fast to ask, running `askance ask` as a background command
+because the human is not at the terminal, and reading every field that can come
+back — `unanswered: true` above all, which means still open and never acceptance
+of the Recommendation.
+
+Then the Topics. A **Topic** is part of the Guide rather than an appendix to it,
+split out only so an agent pays its reading cost when the task that needs it
+arrives instead of before every ask:
+
+```console
+$ askance guide gates
+```
+
+`gates` is the one Topic so far, and it is required reading before an agent
+writes a **confirmation gate** — the degenerate Set, one question and a yes,
+that asks for approval to commit or to land. A gate is authored differently from
+an ordinary Set and its Response is read far more strictly, which is a lot of
+words to carry into every ask that is not one, and expensive to be missing at
+the moment it is: the cost of getting a gate wrong is work landing that nobody
+approved. The core Guide names the Topic and says when it is mandatory, so an
+agent that has read only the core still knows what it has not read yet.
+
+The text is markdown in this repository — [`crates/cli/guide/`](crates/cli/guide/)
+— embedded at compile time rather than assembled at run time, so what an agent
+reads is exactly what was reviewed and the binary alone is the documentation. A
+Topic that does not exist is an error naming the ones that do, never a quiet
+fallback to the core: an agent that asked for required reading must not be
+handed something else.
+
+### Installing it
+
+The whole of it is one line in the global CLAUDE.md — or whatever file the
+harness reads at the start of every session:
+
+> Never use the AskUserQuestion tool. Put all questions and approvals to me
+> through askance: run `askance` once per session for the guide and follow it,
+> including the topic guides it requires.
+
+That is the point of the Guide living in the binary. [Deployment](#deployment)
+already puts `askance` on every user's `PATH`, so the instructions arrive with
+the version of the tool that will run, and there is no vendored copy of them
+anywhere to drift out of step.
 
 ## Configuration
 
