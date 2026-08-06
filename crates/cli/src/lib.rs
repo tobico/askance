@@ -53,15 +53,21 @@ enum Command {
 
     /// Print the Guide: everything an agent needs in order to ask well.
     ///
-    /// Markdown on stdout, exit 0. The same Guide bare `askance` prints.
-    Guide,
+    /// Markdown on stdout, exit 0. With no topic, the core Guide — the same one
+    /// bare `askance` prints, which names the Topics and when each is required.
+    Guide {
+        /// A Topic of the Guide, required reading when its task is at hand.
+        /// Omit for the core Guide, which names them.
+        topic: Option<String>,
+    },
 }
 
 impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
             Some(Command::Ask { file, server }) => ask::ask(file.as_deref(), &server),
-            Some(Command::Guide) | None => guide::guide(),
+            Some(Command::Guide { topic }) => guide::guide(topic.as_deref()),
+            None => guide::guide(None),
         }
     }
 }

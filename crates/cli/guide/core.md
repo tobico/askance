@@ -124,6 +124,11 @@ set-level `comment`.
 
 ## Authoring the Set
 
+**If the Set asks for approval to proceed — to commit, to land, to ship — stop
+and run `askance guide gates` first.** A gate is written differently from
+everything below and its Response is read far more strictly, and the Topic is
+where both of those live.
+
 One Set is one round, budgeted as above. Because the round trip is expensive,
 sweep ahead: carry the Questions that would otherwise wait for the next round or
 two, provided none of them depends on an Answer in this one. A trailing open

@@ -140,14 +140,118 @@ fn the_topic_contract_binds_gates_to_the_guide() {
     );
 }
 
+#[test]
+fn the_authoring_section_sends_approval_asks_to_the_gates_topic() {
+    let guide = stdout(&run(&["guide"]));
+    let authoring = guide
+        .split_once("## Authoring the Set")
+        .expect("checked by the test above")
+        .1
+        .split("\n## ")
+        .next()
+        .unwrap();
+
+    assert!(
+        authoring.contains("askance guide gates"),
+        "the agent decides what to write in the authoring section, so that is \
+         where an approval ask has to be sent to the Topic, got:\n{authoring}"
+    );
+}
+
+#[test]
+fn the_gates_topic_prints_and_exits_zero() {
+    let output = run(&["guide", "gates"]);
+
+    assert!(
+        output.status.success(),
+        "`askance guide gates` should exit 0"
+    );
+    assert!(
+        stdout(&output).contains("# Confirmation gates"),
+        "the gates Topic should be on stdout, got:\n{}",
+        stdout(&output)
+    );
+}
+
+/// A Topic is not the core Guide: an agent that asks for one and gets the core
+/// back would read the wrong thing and never know.
+#[test]
+fn a_topic_is_not_the_core_guide() {
+    assert_ne!(
+        stdout(&run(&["guide", "gates"])),
+        stdout(&run(&["guide"])),
+        "`askance guide gates` should print the Topic, not the core Guide"
+    );
+}
+
+#[test]
+fn the_gates_topic_carries_the_whole_of_the_gates_guidance() {
+    let gates = stdout(&run(&["guide", "gates"]));
+
+    for phrase in [
+        // The degenerate Set, and the Preface left to carry it.
+        "one Question",
+        "`preface`",
+        // The delta Diagram rules.
+        "Diagram the delta, not the system",
+        "`new`",
+        "`removed`",
+        "before/after",
+        "sequence Diagram",
+        "```mermaid",
+        // The strict reading, and which way it fails.
+        "unanswered: true",
+        "counter-question",
+        "ambiguous",
+        "Fail closed",
+    ] {
+        assert!(
+            gates.contains(phrase),
+            "the gates Topic should cover {phrase:?} — it is the only thing an \
+             agent reads before writing a gate, got:\n{gates}"
+        );
+    }
+}
+
+/// An unknown Topic is a mistake worth catching loudly: the agent asked for
+/// required reading and there is none to give it.
+#[test]
+fn an_unknown_topic_is_an_error_naming_the_topics_that_exist() {
+    let output = run(&["guide", "nonsense"]);
+
+    assert!(
+        !output.status.success(),
+        "a Topic that does not exist should fail rather than print something else"
+    );
+    assert_eq!(
+        stdout(&output),
+        "",
+        "stdout stays clean, so nothing is mistaken for the Topic"
+    );
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("nonsense") && stderr.contains("gates"),
+        "the error should name what was asked for and the Topics that exist, \
+         got:\n{stderr}"
+    );
+}
+
 /// The Guide is the whole of what an agent reads, so it can't lean on a
 /// conversation it can't see: no chat to fall back to, no transport to detect,
 /// no reply grammar of its own, and no first person for a human who is
-/// somewhere else entirely.
+/// somewhere else entirely. That holds for a Topic as much as for the core.
 #[test]
 fn the_guide_stands_alone() {
-    let guide = stdout(&run(&["guide"]));
+    stands_alone(&stdout(&run(&["guide"])));
+}
 
+#[test]
+fn the_gates_topic_stands_alone() {
+    stands_alone(&stdout(&run(&["guide", "gates"])));
+}
+
+fn stands_alone(guide: &str) {
     for phrase in [
         "in chat",
         "chat fallback",
@@ -166,7 +270,7 @@ fn the_guide_stands_alone() {
         );
     }
 
-    let prose = prose(&guide);
+    let prose = prose(guide);
     let first_person: Vec<&str> = prose
         .split(|c: char| !c.is_alphanumeric() && c != '\'')
         .filter(|word| {
