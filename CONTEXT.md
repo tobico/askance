@@ -18,6 +18,13 @@ everything needed to understand the Questions without seeing the agent's
 session.
 _Avoid_: description, context, body
 
+**Postscript**:
+Optional markdown the agent closes a Question Set with, rendered above the
+set-level comment box — suggested discussion topics, or whatever else the
+human might take up in their comment. Not a Question: a blank comment beneath
+it means nothing to add, never Unanswered.
+_Avoid_: epilogue, closing, anything-else question
+
 **Question**:
 A single labelled decision put to the human. Carries an agent-supplied opaque
 label (e.g. `Q7`), markdown prose text, and optionally Options and
