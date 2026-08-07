@@ -516,9 +516,9 @@ questions:
         text: What should Retry-After say?
         options: [...]                    # same shape as a Question's
 postscript: |                             # optional markdown, drawn above the
-  What else the human might want to       #   set-level comment box. Never a
-  raise, and where "anything else?"       #   Question: an empty box under it
-  goes instead of a Question.             #   means nothing to add
+  Where "anything else?" goes instead     #   set-level comment box. Never a
+  of a Question — open invitations        #   Question: an empty box under it
+  only, never a decision.                 #   means nothing to add
 ```
 
 The rest of the grammar: a Set needs a non-empty title, labels are distinct

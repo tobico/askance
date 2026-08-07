@@ -63,11 +63,10 @@ questions:
 
 # The Postscript: markdown the Set closes with, drawn above the comment box.
 # Not a Question — it is where "anything else?" goes, and whatever the human
-# writes under it (or doesn't) is the set-level comment.
+# writes under it (or doesn't) is the set-level comment. Open invitations
+# only: a decision, however small, would be a Question above instead.
 postscript: |
-  Worth a word in the comment if you have one: whether the limiter should
-  ship behind a flag at all, and whether the noisy clients are better off
-  with allowlist entries than with a bigger bucket for everyone.
+  Anything else you'd like to add, such as:
 
-  Nothing here blocks the work. Leave the box empty if there's nothing to
-  add, and I'll take the cautious reading of both.
+  * Context on the noisy clients I can't see from here
+  * Anything about the rollout the Questions above miss
