@@ -23,7 +23,7 @@ then; the history audit (2026-08-07) cleared all of it for publication.
 
 ## Stages
 
-- [ ] 01: One binary — [brief](01-one-binary.md)
+- [ ] 01: One binary — [brief](01-one-binary.md) *(in progress — `one-binary`)*
 - [ ] 02: CI — [brief](02-ci.md)
 - [ ] 03: Release pipeline — [brief](03-release-pipeline.md)
 - [ ] 04: Binary flake — [brief](04-binary-flake.md)
