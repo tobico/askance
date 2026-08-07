@@ -12,4 +12,4 @@ reverses its standing advice that recommended the trailing catch-all.
 
 - [x] 01: The Postscript crosses the wire — [details](01-postscript-crosses-the-wire.md)
 - [x] 02: The viewer draws it — [details](02-the-viewer-draws-it.md)
-- [ ] 03: The Guide reverses its advice — [details](03-the-guide-reverses-its-advice.md)
+- [x] 03: The Guide reverses its advice — [details](03-the-guide-reverses-its-advice.md)

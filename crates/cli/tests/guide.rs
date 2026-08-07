@@ -41,6 +41,18 @@ fn quoted_after(guide: &str, heading: &str) -> String {
         .to_string()
 }
 
+/// Everything under `heading` up to the next one: the section in full, its
+/// examples and all.
+fn section<'a>(guide: &'a str, heading: &str) -> &'a str {
+    guide
+        .split_once(heading)
+        .unwrap_or_else(|| panic!("the Guide should have a {heading:?} section"))
+        .1
+        .split("\n## ")
+        .next()
+        .unwrap()
+}
+
 /// The Guide with its fenced blocks dropped — what it says in its own voice,
 /// as against what it quotes. An example Response is the human talking, and a
 /// human says "I".
@@ -211,6 +223,88 @@ fn the_gates_topic_carries_the_whole_of_the_gates_guidance() {
              agent reads before writing a gate, got:\n{gates}"
         );
     }
+}
+
+/// "Anything else?" is the Postscript's job: the comment box asks it on every
+/// Set, so a Question that asks it again spends a row the human then has to
+/// leave explicitly open. An agent that reads only the worked example copies
+/// whatever that example ends with, so the field has to be in it.
+#[test]
+fn the_guide_sends_the_catch_all_to_the_postscript() {
+    let guide = stdout(&run(&["guide"]));
+
+    let contract = section(&guide, "## The CLI contract");
+    assert!(
+        contract.contains("`postscript`"),
+        "the Set shape is where an agent checks which fields exist, so it has \
+         to list `postscript`, got:\n{contract}"
+    );
+
+    let authoring = section(&guide, "## Authoring the Set");
+    assert!(
+        authoring.contains("postscript:"),
+        "the worked example should close its Set with a `postscript`, got:\n{authoring}"
+    );
+    assert!(
+        authoring.contains("never a Question"),
+        "the authoring section should say outright that a catch-all is never a \
+         Question, got:\n{authoring}"
+    );
+    assert!(
+        !guide.contains("Anything worth knowing before this starts?")
+            && !guide.contains("often saves a whole round trip"),
+        "no passage should still recommend the trailing catch-all Question the \
+         Postscript replaced, got:\n{guide}"
+    );
+}
+
+/// The Response the Guide shows answers the Set the Guide shows. An example
+/// that answers a Question the example Set never asks teaches an agent to wait
+/// for an Answer that cannot arrive.
+#[test]
+fn the_example_response_answers_the_example_set() {
+    let guide = stdout(&run(&["guide"]));
+    let set = quoted_after(&guide, "## Authoring the Set");
+    let response = quoted_after(&guide, "## Reading the Response");
+
+    let mut asked: Vec<String> = Vec::new();
+    let mut parent = String::new();
+    for line in set.lines() {
+        let line = line.trim();
+        if let Some(label) = line.strip_prefix("- label: ") {
+            parent = label.trim().to_string();
+            asked.push(parent.clone());
+        } else if let Some(letter) = line.strip_prefix("- letter: ") {
+            asked.push(format!("{parent}{}", letter.trim()));
+        }
+    }
+
+    let answered: Vec<String> = response
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("- label: "))
+        .map(|label| label.trim().to_string())
+        .collect();
+
+    assert_eq!(
+        answered, asked,
+        "every Question and Sub-question comes back exactly once — the example \
+         Response should answer the example Set and nothing besides"
+    );
+}
+
+/// The comment box is always there and always optional, so an empty one is an
+/// answer of its own. An agent that reads it as an oversight asks again for
+/// something the human already declined to say.
+#[test]
+fn an_absent_comment_means_the_human_had_nothing_to_add() {
+    let guide = stdout(&run(&["guide"]));
+    let reading = section(&guide, "## Reading the Response");
+
+    assert!(
+        reading.contains("nothing to add"),
+        "the Response section should say what an absent `comment` means, \
+         got:\n{reading}"
+    );
 }
 
 /// An unknown Topic is a mistake worth catching loudly: the agent asked for
