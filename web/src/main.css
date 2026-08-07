@@ -84,7 +84,12 @@ body {
 }
 
 main {
-  max-width: 46rem;
+  /* The measure: the width a line of prose is read at, wherever on the page it
+     is set. The column is that, plus the padding a card puts either side of it
+     and the column's own — and where the column widens past the breakpoint
+     below, the measure is what the prose inside the cards keeps. */
+  --measure: 42rem;
+  max-width: calc(var(--measure) + 4rem);
   margin: 0 auto;
   padding: 1.25rem 1rem 3rem;
 }
@@ -529,60 +534,80 @@ p.meta .branch {
   }
 }
 
-/* Where the window is wide enough to spare it, the Diff — and only the Diff —
-   runs wider than the column everything else is read in. 46rem is a measure
-   chosen for prose, and code is not prose: it is written to a width of its own
-   — 104 columns here — and a diff that has to be scrolled sideways to read a
-   line that fitted in the editor it was written in is the column's problem
-   rather than the code's. The Preface and the Questions stay exactly where they
-   were.
+/* Where the window is wide enough to spare it, the column itself widens — and
+   what widens with it is the cards, not the reading. 46rem is a measure chosen
+   for prose, and a good deal of what a Set carries is not prose: code is written
+   to a width of its own — 104 columns here — a table is as wide as the axes it
+   compares along, and a Diagram is a shape rather than a line. So width becomes
+   a property of the block rather than of the page. The cards span the wide
+   column, the blocks inside them that were never prose take the room, and the
+   prose pulls back to the measure it is read at everywhere else.
 
-   Its own numbers reserve the room, so the two blocks below have to move
-   together in the same way the bar and the sidebar do: the Diff's edge is 29rem
-   from the middle where the column's is 23rem, and the nav is what gives way.
-   80rem is where there is room for both — the Diff at its widest, the nav still
-   wide enough to read a path in, and a margin at the window's edge. */
+   58rem of card is what the Diff asks for, and it is what the whole column is
+   given rather than the Diff alone breaking out of a narrower one: 104 columns
+   of code, the five the gutter takes and the padding around both come to 55rem
+   or so at the size and the faces monospace is usually set in. That is the same
+   reserve the Diff's own width was capped at when it did break out — so the
+   guarantee it made there, that a line written to the code's width is not cut
+   off, is the column's now, and the room is never less than it was.
+
+   The nav gives way to the column exactly as it gave way to the Diff: the
+   column's edge is 30rem from the middle, and the nav stops a gap short of that.
+   80rem is where there is room for both — the column at its widest, the nav
+   still wide enough to read a path in, and a margin at the window's edge. It is
+   the narrow windows in this range that pay for the column, at 8rem of nav where
+   the window is exactly 80rem; by 92rem it is back to the full width it wants. */
 @media (min-width: 80rem) {
-  .diff {
-    /* A font this element does not otherwise need, so that the width below can
-       be measured in the code's own: `ch` is the advance of `0`, which makes
-       109ch exactly 109 columns however the monospace font happens to measure,
-       and keeps it so if the size ever changes. Everything inside is handed the
-       page's own font straight back. */
-    font-family: ui-monospace, SFMono-Regular, monospace;
-    font-size: 0.8rem;
-
-    /* 104 columns of code, plus the five the gutter takes — four characters of
-       line number and the marker — plus the padding around them: 1.2rem inside
-       the number cell, 0.5rem inside the marker's, and 0.8rem at the end of the
-       line. The 2px is the file card's own border, which is the rest of what
-       stands between the two edges.
-
-       Capped at the 58rem the numbers below reserve, so a monospace font wider
-       than that reserve gives up its last column or two rather than running
-       underneath the nav. The reserve is well clear of what the usual faces
-       need — 55rem or so, at six-tenths of the size per column — because the
-       slack costs nothing at the width the nav is full anyway, and the whole
-       point of the block is that a line of code is not cut off. */
-    --diff-column: min(calc(109ch + 2.5rem + 2px), 58rem);
-    width: var(--diff-column);
-    /* A percentage margin is a percentage of the column, which is what lets a
-       box wider than the column still be centred on it. */
-    margin-inline: calc((100% - var(--diff-column)) / 2);
+  main {
+    /* The card, plus the column's own padding either side of it. */
+    max-width: 60rem;
   }
 
-  .diff > * {
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 1rem;
-  }
-
-  /* The nav, measured off the Diff's edge instead of the column's — 29rem from
-     the middle, and the nav a gap short of that. It is the narrow windows in
-     this range that pay for the reserve above, at 9rem of nav where the window
-     is exactly 80rem; by 90rem it is back to the full width it wants. */
   .contents {
-    right: calc(50% + 30rem);
-    width: min(14rem, calc(50vw - 31rem));
+    right: calc(50% + 31rem);
+    width: min(14rem, calc(50vw - 32rem));
+  }
+
+  /* Prose back to the measure, flush left rather than centred in the card: the
+     eye starts the next line where the last one began, and a column that sat
+     somewhere different under every block would make that a hunt.
+
+     Every block the markdown dialect reads in lines is named here, the rule that
+     parts two of them included, because what is left out is exactly what the
+     room was widened for: a table, a Diagram and a fence keep the card. */
+  .markdown > p,
+  .markdown > ul,
+  .markdown > ol,
+  .markdown > blockquote,
+  .markdown > h1,
+  .markdown > h2,
+  .markdown > h3,
+  .markdown > h4,
+  .markdown > h5,
+  .markdown > h6,
+  .markdown > hr,
+  /* The human's own words on the record are prose too, and read the same way. */
+  .ask.decided .answer-text,
+  .set-comment.decided .comment,
+  /* And what is written or chosen rather than read: a field is as wide as the
+     words going into it, and an Option is one line of words on offer. The Answer
+     Table is not an exception to this — it is a table, and takes what its
+     columns want. */
+  .grow,
+  .options {
+    max-width: var(--measure);
+  }
+
+  /* These stand where a card stands rather than inside one, so the measure alone
+     would leave them a card's padding short of the prose they sit under. What
+     they keep is the width they have below this breakpoint. */
+  .counter-question,
+  .submit button,
+  /* The two lists among them: a row carries a title and a line of provenance,
+     and neither ever wanted more room than the reading column. */
+  .page-head,
+  .set-list {
+    max-width: calc(var(--measure) + 2rem);
   }
 }
 
@@ -1434,9 +1459,24 @@ p.meta .branch {
 
 .ask .text {
   margin: 0 0 0.75rem;
+  /* The float below is the question's own: a Question whose text is empty would
+     otherwise leave the label hanging over the Options under it. */
+  display: flow-root;
 }
 
+/* Out of the flow, so that what it names is left an ordinary block. A float one
+   line tall shortens the lines beside it and not the box they are in, so the
+   first paragraph still runs on from the label the way the question's one line
+   always has — while staying a block that takes whatever width blocks are given
+   here, which is what lets a fence or a table in a Question's text have the room
+   one has anywhere else. */
 .ask .label {
+  float: left;
+  /* The page's own line, rather than the smaller one this name is set in: a
+     float is as tall as its content, and a block cleared past it — the last rule
+     below — has to start exactly where it would have with the label still in the
+     flow. */
+  line-height: 1.5rem;
   margin-right: 0.5rem;
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 0.85rem;
@@ -1447,14 +1487,19 @@ p.meta .branch {
 /* A Question's text is the agent's markdown, rendered by the server and styled
    with every other place that shows it. It is boxed so that filling it in
    wholesale cannot swallow the label beside it — and the box is dissolved again
-   here, so the first paragraph runs on from the label the way the question's one
-   line always has, and anything blockier than a paragraph starts below it. */
+   here, so every block of it is a block of the question, laid out and measured
+   with the Options and the field below rather than inside a wrapper of its
+   own. */
 .ask .text .markdown {
   display: contents;
 }
 
-.ask .text .markdown > p:first-child {
-  display: inline;
+/* Anything blockier than a paragraph starts below the label rather than beside
+   it: a list whose first entry sits alongside a name reads as an entry about the
+   name. Only the first block needs telling — everything after it already clears
+   a float one line tall. */
+.ask .text .markdown > :first-child:not(p) {
+  clear: left;
 }
 
 .options {
