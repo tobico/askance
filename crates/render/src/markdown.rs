@@ -27,6 +27,9 @@ fn dialect() -> Options {
 /// the same mermaid the agent wrote the fence for.
 pub const DIAGRAM: &str = "mermaid";
 
+/// The class on the frame around a block that is not prose — see [`framed`].
+const WIDE: &str = "wide";
+
 /// How a Diagram's block opens: what `block` writes and what
 /// [`holds_diagram`] looks for.
 fn diagram_block() -> String {
@@ -54,7 +57,7 @@ pub fn to_html(markdown: &str) -> String {
     let mut rendered = String::new();
     html::push_html(
         &mut rendered,
-        coloured(Parser::new_ext(markdown, dialect())).into_iter(),
+        coloured(framed(Parser::new_ext(markdown, dialect())).into_iter()).into_iter(),
     );
 
     sanitizer().clean(&rendered).to_string()
@@ -62,12 +65,13 @@ pub fn to_html(markdown: &str) -> String {
 
 /// What the agent's rendered markdown is cleaned by.
 ///
-/// Ammonia's defaults, widened by exactly two closed sets of class names: on a
-/// `span`, the handful the stylesheet colours; on a `pre`, [`DIAGRAM`] alone.
-/// That is the whole of what the highlighter and the Diagram renderer need to
-/// survive, and the narrowest widening that lets them — both tags could already
-/// come through, and every other class name, syntect's or the agent's, is dropped
-/// along with everything else ammonia does not recognise.
+/// Ammonia's defaults, widened by exactly three closed sets of class names: on a
+/// `span`, the handful the stylesheet colours; on a `pre`, [`DIAGRAM`] alone; on a
+/// `div`, [`WIDE`] alone. That is the whole of what the highlighter, the Diagram
+/// renderer and the frame need to survive, and the narrowest widening that lets
+/// them — all three tags could already come through, and every other class name,
+/// syntect's or the agent's, is dropped along with everything else ammonia does
+/// not recognise.
 ///
 /// `class` itself is deliberately not whitelisted as an attribute: ammonia panics
 /// if it is both, and the point is that the values are a closed set rather than
@@ -77,9 +81,47 @@ fn sanitizer() -> ammonia::Builder<'static> {
     sanitizer.allowed_classes(std::collections::HashMap::from([
         ("span", highlight::TOKEN_CLASSES.iter().copied().collect()),
         ("pre", std::collections::HashSet::from([DIAGRAM])),
+        ("div", std::collections::HashSet::from([WIDE])),
     ]));
 
     sanitizer
+}
+
+/// The same markdown with a frame around every block that is not prose: a table,
+/// and a code block of any kind — which is a fence the highlighter coloured, a
+/// fence it left alone, an indented block, and the block a Diagram is held in
+/// until mermaid draws over it.
+///
+/// The frame is there for the wide window, where a block that is not prose is
+/// allowed out of the reading column and into the Gutter — but only as far as it
+/// needs to go. That is a comparison between the block's own width and the room
+/// it has, and a stylesheet cannot make one: it can offset a block by a fixed
+/// amount or not at all. What it can do is lay a row out, and shrink one thing in
+/// the row before another. So the frame is the row, and it needs to exist in the
+/// markup for the stylesheet to have anything to say — see `.markdown .wide`,
+/// where it is nothing whatever until the window is wide enough to want it.
+///
+/// Before the colouring rather than after: that pass replaces a whole block with
+/// HTML of its own, and by then there is no block left here to recognise. Running
+/// first leaves the frame outside what it replaces, which is where it belongs.
+fn framed<'a>(events: impl Iterator<Item = Event<'a>>) -> Vec<Event<'a>> {
+    let mut out: Vec<Event<'a>> = Vec::new();
+
+    for event in events {
+        match &event {
+            Event::Start(Tag::Table(_) | Tag::CodeBlock(_)) => {
+                out.push(Event::Html(format!("<div class=\"{WIDE}\">").into()));
+                out.push(event);
+            }
+            Event::End(TagEnd::Table | TagEnd::CodeBlock) => {
+                out.push(event);
+                out.push(Event::Html("</div>".into()));
+            }
+            _ => out.push(event),
+        }
+    }
+
+    out
 }
 
 /// What a fenced block whose info string we act on is gathered for.
@@ -373,6 +415,70 @@ mod tests {
             html.contains("allowance"),
             "every word the agent wrote is still there:\n{html}"
         );
+    }
+
+    /// The frame as it opens, which is what every test below looks for.
+    const FRAME: &str = "<div class=\"wide\">";
+
+    #[test]
+    fn every_block_that_is_not_prose_comes_out_framed() {
+        // One of each kind there is: a table, a fence the highlighter colours, a
+        // fence it has no language for, an indented block, and a Diagram. All five
+        // are blocks the wide window lets out of the reading column, so all five
+        // need the frame — a rule that held for some of them would put the others
+        // in a different place on the page for no reason a reader could see.
+        for markdown in [
+            "| a | b |\n| - | - |\n| 1 | 2 |\n",
+            "```rust\nfn allowance() -> u32 { 600 }\n```\n",
+            "```\nsome unlabelled thing\n```\n",
+            "    an indented block\n",
+            "```mermaid\nflowchart LR\n  a --> b\n```\n",
+        ] {
+            let html = to_html(markdown);
+
+            assert!(html.contains(FRAME), "expected a frame around:\n{html}");
+            assert!(
+                html.ends_with("</div>"),
+                "expected the frame closed around it:\n{html}"
+            );
+        }
+    }
+
+    #[test]
+    fn prose_is_not_framed() {
+        // The frame is for what the wide window moves. Prose stays where it is,
+        // so a paragraph, a list, a heading and a quote have nothing to hang.
+        let html = to_html("# A heading\n\nA paragraph.\n\n- an entry\n\n> a quote\n");
+
+        assert!(!html.contains(FRAME), "{html}");
+    }
+
+    #[test]
+    fn the_frame_survives_the_sanitizer_and_its_class_is_the_only_one_a_div_can_carry() {
+        // The frame is markup of ours going into the agent's prose, so it has to
+        // come back out the other side of the cleaning — and it is the one value a
+        // `div` may carry, exactly as `mermaid` is for a `pre`.
+        let ours = to_html("```\ncode\n```\n");
+        assert!(ours.contains(FRAME), "our own frame stands:\n{ours}");
+
+        let theirs = to_html("<div class=\"evil\">careful</div>\n");
+        assert!(theirs.contains("careful"), "the words stay:\n{theirs}");
+        assert!(
+            !theirs.contains("evil"),
+            "the widening is one value, not the `class` attribute:\n{theirs}"
+        );
+    }
+
+    #[test]
+    fn a_framed_block_still_holds_what_it_always_held() {
+        // The frame goes around the block rather than into it: what the colouring
+        // and the escaping put inside is untouched by having a box around it.
+        let html = to_html("```rust\nlet evil = \"<script>\";\n```\n");
+
+        assert!(html.contains(FRAME), "{html}");
+        assert!(html.contains("<pre><code>"), "{html}");
+        assert!(html.contains("tok-string"), "{html}");
+        assert!(!html.contains("<script"), "{html}");
     }
 
     #[test]
