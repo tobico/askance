@@ -18,4 +18,4 @@ reading measure, and tables, Diagrams and code fences get past the measure.
 - [x] 02: The record reads the same table — [details](02-record-view.md)
 - [x] 03: Malformed declarations refuse the Set — [details](03-refuse-malformed.md)
 - [x] 04: Per-block width — [details](04-per-block-width.md)
-- [ ] 05: The Guide teaches the declaration — [details](05-guide.md)
+- [x] 05: The Guide teaches the declaration — [details](05-guide.md)

@@ -122,8 +122,8 @@ Options:
 ```
 
 Set shape — `title` (required), `preface`, `postscript`, and
-`questions[].{label, text, options[].{n, text, recommended},
-subquestions[].{letter, text, options}}`.
+`questions[].{label, text, columns, options[].{n, text, recommended, cells},
+subquestions[].{letter, text, columns, options}}`.
 
 Response shape — `answers[].{label, selected, free_text, unanswered}` plus a
 set-level `comment`.
@@ -229,8 +229,29 @@ That is a property of the writing rather than of the Questions:
   small — roughly ten nodes, so it stays legible on a phone. A fence degrades
   to the source text it was written as wherever it can't be drawn, so it is
   safe to send even to an older viewer.
-- **Prefer a comparison table where Options trade off on several axes** — one
-  row per Option, one column per axis, rather than a paragraph each.
+- **Declare a comparison table rather than writing one.** Where Options trade
+  off along several axes, the Question's — or the Sub-question's — `columns`
+  names the axes, and each Option's `cells` fills one per axis in that order.
+  The viewer draws those Options as the rows of the table itself, the Option's
+  `text` as the row's leading cell and the whole row as the tap target, so a
+  table written into the Question's `text` only has the human read the same
+  comparison twice, once as prose and again as the Options beneath it.
+
+  ```yaml
+  questions:
+    - label: Q12
+      text: Where should the rate-limit counter live?
+      columns: [Accuracy, Ops cost, Blast radius]
+      options:
+        - n: 1
+          text: In-process counter
+          cells: [Per-node, Nothing to run, One node]
+          recommended: true
+        - n: 2
+          text: Shared Redis counter
+          cells: [Exact, A service to run, Every node]
+  ```
+
 - **Bold the load-bearing phrases** so skimming lands on them.
 
 ## Running the ask
