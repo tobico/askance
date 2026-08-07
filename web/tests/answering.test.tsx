@@ -15,7 +15,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SetView, Submitted } from "../src/api/types";
 import { draftKey } from "../src/set/sheet";
-import { answering, sent, texts, withPostscript } from "./reading";
+import {
+  answering,
+  sent,
+  texts,
+  withHeading,
+  withPostscript,
+} from "./reading";
 import { json } from "./serving";
 import answered from "./fixtures/set-answered.json" with { type: "json" };
 import waiting from "./fixtures/set-answering.json" with { type: "json" };
@@ -150,7 +156,48 @@ describe("the sheet a waiting Set is answered on", () => {
     expect(page.querySelector('textarea[name="set-comment"]')).toBeTruthy();
   });
 
-  it("closes the sheet with the Postscript, immediately above the comment box", async () => {
+  it("gives a Heading no field, because it asks nothing", async () => {
+    const { page } = await answering(withHeading(WAITING));
+
+    // The text is still drawn — it is what the Sub-questions under it are read
+    // against — and it is still the anchor the nav jumps to.
+    expect(page.querySelector("#q2"), "expected Q2 still on the page").toBeTruthy();
+    expect(texts(page, ".ask.heading .label")).toEqual(["Q2"]);
+
+    expect(
+      page.querySelector('textarea[name="Q2-free-text"]'),
+      "a Heading with a field is a blank the human has nothing to put in",
+    ).toBeNull();
+    expect(
+      page.querySelector('input[name="Q2-option"]'),
+      "and it offers no Options either — that is what makes it a Heading",
+    ).toBeNull();
+
+    // Its Sub-questions are untouched: they are what there is to answer.
+    expect(page.querySelector('textarea[name="Q2b-free-text"]')).toBeTruthy();
+  });
+
+  it("sends no entry for a Heading, so nothing comes back open that was never asked", async () => {
+    const { page, fetching } = await answering(
+      withHeading(WAITING),
+      submitted("Accepted"),
+    );
+
+    fireEvent.click(option(page, "Q1", 1));
+    press(page, "Submit");
+    press(page, "Send anyway");
+
+    await waitFor(() => expect(fetching).toHaveBeenCalledTimes(2));
+    const response = sent(fetching) as { answers: Array<{ label: string }> };
+
+    expect(
+      response.answers.map((answer) => answer.label),
+      "everything there is to answer appears exactly once, and the Heading is " +
+        "not among it — an entry for one is refused by the grammar",
+    ).toEqual(["Q1", "Q2a", "Q2b", "Q3"]);
+  });
+
+  it("closes the sheet with the Postscript, wrapped around the comment box", async () => {
     const { page } = await answering(withPostscript(WAITING));
 
     const postscript = page.querySelector("section.postscript")!;
@@ -161,20 +208,28 @@ describe("the sheet a waiting Set is answered on", () => {
     expect(body.className).toContain("markdown");
     expect(body.innerHTML).toContain("<code>ops/export</code>");
 
-    // Immediately above the box it is introducing, with nothing in between.
-    expect(postscript.nextElementSibling!.className).toContain("set-comment");
+    // Inside the card rather than after it, directly under the prose that is
+    // inviting something into it: the two are one thing to read.
+    const comment = postscript.querySelector(".set-comment")!;
+    expect(comment, "expected the box inside the Postscript").toBeTruthy();
+    expect(body.nextElementSibling).toBe(comment);
 
     // And the box itself is untouched: it says what it always said.
-    const comment = page.querySelector<HTMLTextAreaElement>("#set-comment")!;
-    expect(comment.placeholder).toBe("Other comments");
-    expect(comment.getAttribute("aria-label")).toBe("Other comments");
+    const field = page.querySelector<HTMLTextAreaElement>("#set-comment")!;
+    expect(field.placeholder).toBe("Other comments");
+    expect(field.getAttribute("aria-label")).toBe("Other comments");
   });
 
-  it("draws nothing above the comment box for a Set that closed with none", async () => {
+  it("draws the card around the box for a Set that closed with none", async () => {
     const { page } = await answering(WAITING);
 
-    expect(page.querySelector(".postscript")).toBeNull();
-    expect(page.querySelector(".set-comment")).toBeTruthy();
+    const postscript = page.querySelector("section.postscript")!;
+    expect(
+      postscript,
+      "the box is on every Set, so the card holding it is too",
+    ).toBeTruthy();
+    expect(postscript.querySelector(".postscript-body")).toBeNull();
+    expect(postscript.querySelector(".set-comment")).toBeTruthy();
   });
 
   it("prompts every field by its placeholder and starts it one line tall", async () => {

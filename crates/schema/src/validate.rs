@@ -136,9 +136,20 @@ impl Response {
 
         // Every question the Response has to account for, in the order the
         // human saw them, each with the Options it offered.
+        //
+        // A Heading is not among them: it heads its Sub-questions rather than
+        // asking anything, so there is nothing for an Answer to resolve. Its
+        // label is kept aside so that an entry naming one can be told apart
+        // from an entry naming a Question the Set never asked — the two are
+        // different mistakes and only one of them is about a missing Question.
         let mut expected: Vec<(String, &[QuestionOption])> = Vec::new();
+        let mut headings: Vec<&str> = Vec::new();
         for question in &set.questions {
-            expected.push((question.name().to_string(), &question.options));
+            if question.heading() {
+                headings.push(question.name());
+            } else {
+                expected.push((question.name().to_string(), &question.options));
+            }
             for subquestion in &question.subquestions {
                 expected.push((subquestion.name(question), &subquestion.options));
             }
@@ -156,10 +167,16 @@ impl Response {
             }
 
             let Some((_, options)) = expected.iter().find(|(name, _)| name == label) else {
-                violations.push(Violation::at(
-                    label,
-                    "the Set has no such Question or Sub-question",
-                ));
+                violations.push(if headings.contains(&label) {
+                    Violation::at(
+                        label,
+                        "this Question heads its Sub-questions and asks nothing of \
+                         its own, so no entry comes back for it; its Sub-questions \
+                         are what there is to answer",
+                    )
+                } else {
+                    Violation::at(label, "the Set has no such Question or Sub-question")
+                });
                 continue;
             };
 

@@ -124,6 +124,19 @@ impl Question {
     pub fn name(&self) -> &str {
         &self.label
     }
+
+    /// Whether this Question is a Heading: Sub-questions under it, and no
+    /// Options of its own, so its text heads them rather than asking anything.
+    /// No Answer comes back for one.
+    ///
+    /// Read off the shape rather than declared, because the shape already says
+    /// it: a Question with Options is answerable whatever else it carries, and
+    /// one with neither Options nor Sub-questions is a bare clarifying Question
+    /// whose Answer is whatever the human writes. That leaves exactly one
+    /// arrangement with nothing to answer at this level, and it is this one.
+    pub fn heading(&self) -> bool {
+        self.options.is_empty() && !self.subquestions.is_empty()
+    }
 }
 
 impl Subquestion {

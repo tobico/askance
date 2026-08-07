@@ -19,10 +19,12 @@ session.
 _Avoid_: description, context, body
 
 **Postscript**:
-Optional markdown the agent closes a Question Set with, rendered above the
-set-level comment box — suggested discussion topics, or whatever else the
-human might take up in their comment. Not a Question: a blank comment beneath
-it means nothing to add, never Unanswered.
+Optional markdown the agent closes a Question Set with, rendered in the
+section that closes the page, above the set-level comment box it shares that
+section with — suggested discussion topics, or whatever else the human might
+take up in their comment. Named in the table of contents like the Preface,
+and headed for the box alone on a Set that closed without one. Not a
+Question: a blank comment beneath it means nothing to add, never Unanswered.
 _Avoid_: epilogue, closing, anything-else question
 
 **Question**:
@@ -35,6 +37,13 @@ _Avoid_: item, prompt
 A leaf Question nested one level under a Question, labelled by letter
 (e.g. `Q7a`). Sub-questions never have their own Sub-questions.
 _Avoid_: child question, part
+
+**Heading**:
+A Question carrying Sub-questions and no Options of its own. Its text heads
+them rather than asking anything: it is drawn without a field, and no Answer
+comes back for it — a Response carrying one is refused. Read off the shape,
+never declared.
+_Avoid_: group, parent question, section
 
 **Option**:
 One discrete choice offered on a Question or Sub-question, numbered `.1`,

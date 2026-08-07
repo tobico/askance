@@ -44,14 +44,17 @@ questions:
         text: How long before the first retry?
 ";
 
-/// A Response covering every question in [`SET`], with a multi-line comment so
-/// the block-scalar rendering can be checked on the way out.
+/// A Response covering everything in [`SET`] there is to answer, with a
+/// multi-line comment so the block-scalar rendering can be checked on the way
+/// out.
+///
+/// `Q2` is not among them and must not be: it carries a Sub-question and no
+/// Options, which makes it a Heading over `Q2a` rather than a question of its
+/// own, and the grammar refuses a Response that answers one.
 const COMPLETE: &str = "
 answers:
   - label: Q1
     selected: 1
-  - label: Q2
-    free_text: Retry, silently.
   - label: Q2a
     unanswered: true
 comment: |
@@ -292,9 +295,9 @@ fn the_response_is_delivered_on_stdout_as_yaml() {
     let printed = stdout(&output);
     let response = Response::from_yaml(&printed)
         .unwrap_or_else(|error| panic!("stdout should be a Response: {error}\n{printed}"));
-    assert_eq!(response.answers.len(), 3);
+    assert_eq!(response.answers.len(), 2);
     assert_eq!(response.answers[0].selected, Some(1));
-    assert!(response.answers[2].unanswered);
+    assert!(response.answers[1].unanswered);
 
     assert!(
         printed.contains("comment: |"),

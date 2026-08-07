@@ -171,6 +171,7 @@ describe("the table of contents", () => {
       "#q1",
       "#q2",
       "#q3",
+      "#postscript",
     ]);
     expect(
       nav.querySelector('a[href="#q2a"]'),
@@ -228,7 +229,7 @@ describe("the table of contents", () => {
     expect(
       jumps(nav),
       "the Questions are the one section every Set has",
-    ).toEqual(["#questions", "#q1", "#q2", "#q3"]);
+    ).toEqual(["#questions", "#q1", "#q2", "#q3", "#postscript"]);
   });
 
   it("is one nav, one bar and one list on every standing", async () => {
@@ -303,6 +304,7 @@ describe("the highlight", () => {
       "q1",
       "q2",
       "q3",
+      "postscript",
     ]);
     expect(
       spy().margin,

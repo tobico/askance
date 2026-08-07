@@ -324,15 +324,20 @@ function Questions(props: {
           what the agent closed with, so it belongs above the comment on a Set
           that has one and above where the comment would have been on a Set that
           does not — a Set closed unanswered has no Response and so never had
-          one. */}
-      <Postscript html={props.postscript} />
-      <Show when={comment()}>
-        {(comment) => (
-          <section class="set-comment decided">
-            <h2>On the Set as a whole</h2>
-            <p class="comment">{comment()}</p>
-          </section>
-        )}
+          one. The card is skipped only where there is neither, since an empty
+          one on the record would be a box drawn around nothing at all — where
+          the sheet always has its field to hold. */}
+      <Show when={props.postscript || comment()}>
+        <Postscript html={props.postscript}>
+          <Show when={comment()}>
+            {(comment) => (
+              <section class="set-comment decided">
+                <h2>On the Set as a whole</h2>
+                <p class="comment">{comment()}</p>
+              </section>
+            )}
+          </Show>
+        </Postscript>
       </Show>
     </>
   );
@@ -349,7 +354,24 @@ function Question(props: {
       class="question"
       id={anchor(props.question.ask.name, props.position)}
     >
-      <Ask ask={props.question.ask} response={props.response} />
+      {/* A Heading asked nothing, so there is nothing that became of it: it is
+          read as the words over its Sub-questions and never as a question left
+          open. A Set answered before Headings existed may still carry an entry
+          naming one; it is passed over here rather than drawn against a
+          Question that was never put. */}
+      <Show
+        when={!props.question.heading}
+        fallback={
+          <div class="ask heading">
+            <AskText
+              name={props.question.ask.name}
+              html={props.question.ask.text_html}
+            />
+          </div>
+        }
+      >
+        <Ask ask={props.question.ask} response={props.response} />
+      </Show>
       {/* Sub-questions get no anchor of their own: one scrolls into view with
           its parent. */}
       <Show when={props.question.subquestions.length > 0}>

@@ -184,7 +184,21 @@ export function Answering(props: {
         <For each={props.questions}>
           {(question, index) => (
             <li class="question" id={anchor(question.ask.name, index() + 1)}>
-              <Asking ask={question.ask} fields={fields(question.ask.name)} />
+              {/* A Heading is its text and nothing else — no Options, no field,
+                  nothing to leave open. What it heads is directly under it. */}
+              <Show
+                when={!question.heading}
+                fallback={
+                  <div class="ask heading">
+                    <AskText
+                      name={question.ask.name}
+                      html={question.ask.text_html}
+                    />
+                  </div>
+                }
+              >
+                <Asking ask={question.ask} fields={fields(question.ask.name)} />
+              </Show>
               {/* Sub-questions get no anchor of their own: one scrolls into
                   view with its parent. */}
               <Show when={question.subquestions.length > 0}>
@@ -205,23 +219,26 @@ export function Answering(props: {
           )}
         </For>
       </ol>
-      {/* The agent's closing word, above the box it is inviting something into:
-          what it suggests taking up is read on the way to writing, rather than
-          asked as a Question of its own. */}
-      <Postscript html={props.postscript} />
-      <section class="set-comment">
-        <div class="grow" data-value={sheet.comment}>
-          <textarea
-            id="set-comment"
-            name="set-comment"
-            rows="1"
-            placeholder="Other comments"
-            aria-label="Other comments"
-            value={sheet.comment}
-            onInput={(event) => setSheet("comment", event.currentTarget.value)}
-          />
-        </div>
-      </section>
+      {/* The agent's closing word, wrapped around the box it is inviting
+          something into: what it suggests taking up is read on the way to
+          writing, rather than asked as a Question of its own. A Set that closed
+          without one still draws the card, so the box is in the same place
+          either way. */}
+      <Postscript html={props.postscript}>
+        <section class="set-comment">
+          <div class="grow" data-value={sheet.comment}>
+            <textarea
+              id="set-comment"
+              name="set-comment"
+              rows="1"
+              placeholder="Other comments"
+              aria-label="Other comments"
+              value={sheet.comment}
+              onInput={(event) => setSheet("comment", event.currentTarget.value)}
+            />
+          </div>
+        </section>
+      </Postscript>
       <section class="submit">
         <button type="button" onClick={start} disabled={submit.isPending}>
           {submit.isPending ? "Sending…" : "Submit"}
@@ -398,7 +415,15 @@ function Offered(props: {
 /// in.
 function flatten(questions: QuestionView[]): Asked[] {
   return questions.flatMap((question) =>
-    [question.ask, ...question.subquestions].map((ask) => ({
+    [
+      // A Heading asks nothing of its own, so the sheet holds no field for it
+      // and the Response carries no entry: what there is to answer is the
+      // Sub-questions under it. Left in, it was a blank field the human had
+      // nothing to put in, coming back marked Unanswered — which tells the
+      // agent a decision is still open when none was ever put.
+      ...(question.heading ? [] : [question.ask]),
+      ...question.subquestions,
+    ].map((ask) => ({
       label: ask.name,
       multipleChoice: ask.options.length > 0,
     })),

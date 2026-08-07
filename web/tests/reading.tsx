@@ -93,6 +93,23 @@ export function withPostscript(set: SetView): SetView {
   return { ...set, postscript_html: POSTSCRIPT };
 }
 
+/// The same Set with `Q2` turned into a Heading — its own Options taken away,
+/// leaving the Sub-questions it heads.
+///
+/// The flag travels with the Set rather than being worked out here, exactly as
+/// it does on the wire: the server reads the shape once and the page takes its
+/// word for it, so the two cannot come to different readings of one Set.
+export function withHeading(set: SetView): SetView {
+  return {
+    ...set,
+    questions: set.questions.map((question) =>
+      question.ask.name === "Q2"
+        ? { ...question, heading: true, ask: { ...question.ask, options: [] } }
+        : question,
+    ),
+  };
+}
+
 /// The body of the last request the page sent, as JSON — what it actually put
 /// on the wire, rather than what it was asked to.
 export function sent(fetching: ReturnType<typeof serving>): unknown {

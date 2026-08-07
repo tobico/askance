@@ -24,6 +24,7 @@
         ],
         "text_html": "<p>Where should the request counter live?</p>\n"
       },
+      "heading": false,
       "nav_text": "Where should the request counter live?",
       "subquestions": []
     },
@@ -44,6 +45,7 @@
         ],
         "text_html": "<p>How should a throttled client be told to back off?</p>\n"
       },
+      "heading": false,
       "nav_text": "How should a throttled client be told to back off?",
       "subquestions": [
         {
@@ -75,6 +77,7 @@
         "options": [],
         "text_html": "<p>Anything I should know before starting?</p>\n"
       },
+      "heading": false,
       "nav_text": "Anything I should know before starting?",
       "subquestions": []
     }

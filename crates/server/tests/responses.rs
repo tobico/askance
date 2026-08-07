@@ -117,8 +117,6 @@ const COMPLETE: &str = "
 answers:
   - label: Q1
     selected: 1
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
     free_text: Empty body, no ambiguity.
@@ -138,8 +136,6 @@ async fn a_response_omitting_a_question_is_refused_naming_it() {
 answers:
   - label: Q1
     selected: 1
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
 ",
@@ -169,8 +165,6 @@ async fn a_response_leaving_every_question_unanswered_is_accepted() {
         "
 answers:
   - label: Q1
-    unanswered: true
-  - label: Q2
     unanswered: true
   - label: Q2a
     unanswered: true
@@ -224,7 +218,7 @@ async fn a_wait_opened_before_submission_receives_the_response() {
 
     assert_eq!(delivered.status(), StatusCode::OK);
     let response: Response = serde_saphyr::from_str(&body_text(delivered).await).unwrap();
-    assert_eq!(response.answers.len(), 4);
+    assert_eq!(response.answers.len(), 3);
     assert_eq!(response.answers[0].selected, Some(1));
 }
 
@@ -254,9 +248,9 @@ async fn a_wait_opened_after_submission_receives_the_response_immediately() {
     );
 
     let response: Response = serde_saphyr::from_str(&body_text(delivered).await).unwrap();
-    assert_eq!(response.answers[3].label, "Q2b");
+    assert_eq!(response.answers[2].label, "Q2b");
     assert_eq!(
-        response.answers[3].free_text.as_deref(),
+        response.answers[2].free_text.as_deref(),
         Some("Say nothing; the status is the message.")
     );
 }
@@ -310,8 +304,6 @@ async fn a_second_response_is_refused_and_the_first_one_stands() {
 answers:
   - label: Q1
     selected: 2
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 2
   - label: Q2b
@@ -351,8 +343,6 @@ async fn an_answer_naming_no_question_in_the_set_is_refused() {
 answers:
   - label: Q1
     selected: 1
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
   - label: Q2b
@@ -398,8 +388,6 @@ async fn a_multi_line_comment_survives_the_store_byte_for_byte() {
 answers:
   - label: Q1
     selected: 1
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
   - label: Q2b

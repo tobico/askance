@@ -15,7 +15,13 @@ import { screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Response as Decided, SetView } from "../src/api/types";
-import { mount, reading, texts, withPostscript } from "./reading";
+import {
+  mount,
+  reading,
+  texts,
+  withHeading,
+  withPostscript,
+} from "./reading";
 import { json, serving } from "./serving";
 import answered from "./fixtures/set-answered.json" with { type: "json" };
 import answering from "./fixtures/set-answering.json" with { type: "json" };
@@ -285,6 +291,22 @@ describe("the record of a settled Set", () => {
     ]);
   });
 
+  it("reads a Heading as the words over its Sub-questions and never as one left open", async () => {
+    const page = await reading(withHeading(ANSWERED));
+
+    const heading = page.querySelector(".ask.heading")!;
+    expect(heading, "expected the Heading drawn").toBeTruthy();
+    expect(heading.querySelector(".label")!.textContent).toBe("Q2");
+
+    // The fixture's Response still carries an entry naming Q2 — it was answered
+    // before Headings existed. Nothing is drawn from it: a Question that asked
+    // nothing cannot have been left open, and saying so would report a decision
+    // nobody was ever asked to make.
+    expect(heading.querySelector(".unanswered")).toBeNull();
+    expect(heading.querySelector(".answer-text")).toBeNull();
+    expect(heading.querySelector(".options")).toBeNull();
+  });
+
   it("says of a question that went back open that it went back unanswered", async () => {
     const page = await reading(ANSWERED);
 
@@ -310,7 +332,26 @@ describe("the record of a settled Set", () => {
     );
   });
 
-  it("closes an answered Set with the Postscript, above what was said about it", async () => {
+  it("heads the closing section for what it holds, and anchors it for the nav", async () => {
+    const withOne = await reading(withPostscript(ANSWERED));
+    const section = withOne.querySelector("section.postscript")!;
+
+    expect(section.id, "the id the table of contents jumps to").toBe(
+      "postscript",
+    );
+    expect(section.querySelector("h2.section-heading")!.textContent).toBe(
+      "Postscript",
+    );
+
+    // With no Postscript there is only the box, and the heading says so rather
+    // than naming something the agent never wrote.
+    const without = await reading(ANSWERED);
+    expect(
+      without.querySelector("section.postscript h2")!.textContent,
+    ).toBe("Comment");
+  });
+
+  it("closes an answered Set with the Postscript, wrapped around what was said about it", async () => {
     const page = await reading(withPostscript(ANSWERED));
 
     const postscript = page.querySelector("section.postscript")!;
@@ -319,7 +360,11 @@ describe("the record of a settled Set", () => {
     expect(body.className).toContain("markdown");
     expect(body.innerHTML).toContain("<code>ops/export</code>");
 
-    expect(postscript.nextElementSibling!.className).toContain("set-comment");
+    // Nested exactly as it is on the sheet, so the record reads the way the
+    // page it was filled in on did.
+    const comment = postscript.querySelector(".set-comment.decided")!;
+    expect(comment, "expected the comment inside the Postscript").toBeTruthy();
+    expect(body.nextElementSibling).toBe(comment);
   });
 
   it("closes a Set the human said nothing about with it just the same", async () => {
@@ -335,12 +380,22 @@ describe("the record of a settled Set", () => {
     expect(page.querySelector(".set-comment")).toBeNull();
   });
 
-  it("draws no Postscript for a settled Set that closed with none", async () => {
-    for (const settled of [ANSWERED, ARCHIVED]) {
-      const page = await reading(settled);
+  it("draws no card at all for a settled Set with nothing to close it", async () => {
+    // Archived unanswered and without a Postscript: no closing word from either
+    // side, so there is nothing for a card to hold and none is drawn.
+    const page = await reading(ARCHIVED);
 
-      expect(page.querySelector(".postscript")).toBeNull();
-    }
+    expect(page.querySelector(".postscript")).toBeNull();
+    expect(page.querySelector(".set-comment")).toBeNull();
+  });
+
+  it("keeps the card for a Set commented on without a Postscript", async () => {
+    const page = await reading(ANSWERED);
+
+    const postscript = page.querySelector("section.postscript")!;
+    expect(postscript, "the comment is still read in a card").toBeTruthy();
+    expect(postscript.querySelector(".postscript-body")).toBeNull();
+    expect(postscript.querySelector(".set-comment.decided")).toBeTruthy();
   });
 
   it("offers nothing to press", async () => {
@@ -451,11 +506,23 @@ describe("the record of a settled Set", () => {
       // Named so a jump from the table of contents lands somewhere the reader can
       // see they have arrived at. The Diff is named the same way when there is one
       // — and it is the waiting fixture that carries one.
-      expect(texts(page, "h2.section-heading")).toEqual(
-        set.diff === null
-          ? ["Preface", "Questions"]
-          : ["Preface", "Diff", "Questions"],
-      );
+      //
+      // The section closing the page is named for what it holds: none of these
+      // fixtures has a Postscript, so it is the box, and it is there on the Set
+      // still waiting to be filled in and on the one that came back with a
+      // comment. The Set archived unanswered has neither and so ends at the
+      // Questions.
+      const closes =
+        "Waiting" in set.standing ||
+        ("Answered" in set.standing &&
+          (set.standing.Answered.response.comment ?? "") !== "");
+
+      expect(texts(page, "h2.section-heading")).toEqual([
+        "Preface",
+        ...(set.diff === null ? [] : ["Diff"]),
+        "Questions",
+        ...(closes ? ["Comment"] : []),
+      ]);
       for (const id of ["preface", "questions", "q1"]) {
         expect(page.querySelector(`#${id}`), `expected #${id}`).toBeTruthy();
       }

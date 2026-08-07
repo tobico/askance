@@ -151,6 +151,16 @@ export type PushKey = { key: string, };
  */
 export type QuestionView = { ask: AskView, subquestions: Array<AskView>, 
 /**
+ * Whether this Question is a Heading — Sub-questions under it and no
+ * Options of its own — and so heads them rather than asking anything. The
+ * page draws its text without a field, and no Answer comes back for it.
+ *
+ * Answered here rather than worked out in the browser from the Options and
+ * Sub-questions beside it, so that the page and the grammar that refuses a
+ * Response cannot come to different readings of the same Set.
+ */
+heading: boolean, 
+/**
  * The Question's own text as plain words, for the line the table of
  * contents gives it.
  *

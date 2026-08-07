@@ -73,6 +73,15 @@ pub struct QuestionView {
     pub ask: AskView,
     pub subquestions: Vec<AskView>,
 
+    /// Whether this Question is a Heading — Sub-questions under it and no
+    /// Options of its own — and so heads them rather than asking anything. The
+    /// page draws its text without a field, and no Answer comes back for it.
+    ///
+    /// Answered here rather than worked out in the browser from the Options and
+    /// Sub-questions beside it, so that the page and the grammar that refuses a
+    /// Response cannot come to different readings of the same Set.
+    pub heading: bool,
+
     /// The Question's own text as plain words, for the line the table of
     /// contents gives it.
     ///
@@ -218,6 +227,7 @@ fn viewed(questions: Vec<askance_schema::Question>) -> Vec<QuestionView> {
                     options: offered_as(&subquestion.options),
                 })
                 .collect(),
+            heading: question.heading(),
             nav_text: markdown::to_plain(&question.text),
             ask: AskView {
                 name: question.name().to_owned(),

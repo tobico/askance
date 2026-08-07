@@ -439,6 +439,7 @@ p.meta .branch {
   .preface,
   .diff,
   #questions,
+  .postscript,
   .diff-file,
   .question {
     scroll-margin-top: 3.5rem;
@@ -521,9 +522,67 @@ p.meta .branch {
   .preface,
   .diff,
   #questions,
+  .postscript,
   .diff-file,
   .question {
     scroll-margin-top: 3.25rem;
+  }
+}
+
+/* Where the window is wide enough to spare it, the Diff — and only the Diff —
+   runs wider than the column everything else is read in. 46rem is a measure
+   chosen for prose, and code is not prose: it is written to a width of its own
+   — 104 columns here — and a diff that has to be scrolled sideways to read a
+   line that fitted in the editor it was written in is the column's problem
+   rather than the code's. The Preface and the Questions stay exactly where they
+   were.
+
+   Its own numbers reserve the room, so the two blocks below have to move
+   together in the same way the bar and the sidebar do: the Diff's edge is 29rem
+   from the middle where the column's is 23rem, and the nav is what gives way.
+   80rem is where there is room for both — the Diff at its widest, the nav still
+   wide enough to read a path in, and a margin at the window's edge. */
+@media (min-width: 80rem) {
+  .diff {
+    /* A font this element does not otherwise need, so that the width below can
+       be measured in the code's own: `ch` is the advance of `0`, which makes
+       109ch exactly 109 columns however the monospace font happens to measure,
+       and keeps it so if the size ever changes. Everything inside is handed the
+       page's own font straight back. */
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 0.8rem;
+
+    /* 104 columns of code, plus the five the gutter takes — four characters of
+       line number and the marker — plus the padding around them: 1.2rem inside
+       the number cell, 0.5rem inside the marker's, and 0.8rem at the end of the
+       line. The 2px is the file card's own border, which is the rest of what
+       stands between the two edges.
+
+       Capped at the 58rem the numbers below reserve, so a monospace font wider
+       than that reserve gives up its last column or two rather than running
+       underneath the nav. The reserve is well clear of what the usual faces
+       need — 55rem or so, at six-tenths of the size per column — because the
+       slack costs nothing at the width the nav is full anyway, and the whole
+       point of the block is that a line of code is not cut off. */
+    --diff-column: min(calc(109ch + 2.5rem + 2px), 58rem);
+    width: var(--diff-column);
+    /* A percentage margin is a percentage of the column, which is what lets a
+       box wider than the column still be centred on it. */
+    margin-inline: calc((100% - var(--diff-column)) / 2);
+  }
+
+  .diff > * {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 1rem;
+  }
+
+  /* The nav, measured off the Diff's edge instead of the column's — 29rem from
+     the middle, and the nav a gap short of that. It is the narrow windows in
+     this range that pay for the reserve above, at 9rem of nav where the window
+     is exactly 80rem; by 90rem it is back to the full width it wants. */
+  .contents {
+    right: calc(50% + 30rem);
+    width: min(14rem, calc(50vw - 31rem));
   }
 }
 
@@ -1012,12 +1071,13 @@ p.meta .branch {
    `.markdown` above holds the blocks' own rhythm, including the flush top and
    bottom edges that let this padding be the whole of the gap.
 
-   The Postscript's is the same box: both are the agent's own prose, said at
-   either end of the Set, and one drawn as a card while the other was loose prose
-   would read as two different kinds of thing. It is also what keeps the
-   Postscript from blending into the sheet's own fields directly under it. */
+   The Postscript's is the same box, drawn around the body rather than being it,
+   because the comment sits inside the card with it: both are the agent's own
+   prose, said at either end of the Set, and one drawn as a card while the other
+   was loose prose would read as two different kinds of thing. The heading stays
+   outside the card in both, which is what makes the two sections look alike. */
 .preface-body,
-.postscript-body {
+.postscript-card {
   padding: 1rem;
   background: var(--card);
   border: 1px solid var(--edge);
@@ -1119,6 +1179,34 @@ p.meta .branch {
   tab-size: 4;
 }
 
+/* On a phone the code alone is set smaller, which is worth more here than
+   anywhere else on the page: every column it buys is a column of a line that no
+   longer has to be scrolled to. The Diff's chrome around it — the path, the
+   hunk header, the tally — keeps its size, because there is one of each per
+   file and nothing is gained by making the few things that name a file harder
+   to read. A line long enough to overflow even so is what the wrap switch is
+   for. */
+@media (width < 40rem) {
+  .diff-lines {
+    font-size: 0.65rem;
+  }
+
+  /* And the line numbers go entirely, which is five more columns of code: on a
+     phone there is no room for a column that only says where you already are,
+     and the hunk header above still says where the lines start. The marker
+     stays — which side of the change a line is on is not something the colour
+     alone should have to carry. */
+  .diff-number {
+    display: none;
+  }
+
+  /* The gutter is the marker's alone once the numbers are gone, so a wrapped
+     line hangs off the code and not off a column that is no longer drawn. */
+  .diff-file {
+    --diff-number-width: 0px;
+  }
+}
+
 /* The lines are wrapped in a box as wide as the longest of them, which is what
    gives the line below a scrolled width to fill. Without it each line measured
    itself against the *visible* width instead — `code` is inline, so the `pre` was
@@ -1155,10 +1243,13 @@ p.meta .branch {
    have to indent by exactly the width of these two and a drift between them
    would show as code that does not line up with itself. */
 .diff-file {
-  /* As many digits as this file's highest line number needs — set per file by
-     the renderer, since a forty-line file should not carry a column cut for a
-     long one — plus the gutter either side of them. */
-  --diff-number-width: calc(var(--diff-digits, 3) * 1ch + 1.2rem);
+  /* Four characters, and the same four for every file on the page: the width
+     the reading column above reserves. Cut to each file's own highest line
+     instead, it put the code of a hundred-line file and a thousand-line one in
+     different places, and a Diff of both did not line up with itself. Four is
+     what a line number takes past the point where a file is long enough to need
+     more — the renderer gives 11234 as `11e3`. */
+  --diff-number-width: calc(4ch + 1.2rem);
   --diff-marker-width: calc(1ch + 0.5rem);
   --diff-gutter: calc(var(--diff-number-width) + var(--diff-marker-width));
 }
@@ -1418,11 +1509,18 @@ p.meta .branch {
    the least legible difference on the page. The `recommended` class stays: it is
    still true of the Option, and the ★ hangs off it. */
 
-/* What the agent closed the Set with, and the box it is introducing. The
-   Postscript takes the gap the box used to keep from the Questions, and what is
-   left between the two of them is only enough to keep them apart: they are one
-   thing to read, an invitation and the place to take it up. */
+/* What the agent closed the Set with, and the box it is introducing — one card
+   holding both, because they are one thing to read: an invitation and the place
+   to take it up. A box that followed the card read as a separate thing that
+   happened to come after it.
 
+   The card's own padding is the whole of the inset, so the comment inside it
+   keeps no margin of its own; what it does keep is a gap from the prose above,
+   on the Sets that closed with any. */
+
+/* A section like the Preface and the Questions now, and headed like them: the
+   heading is above the card rather than inside it, and the gap under it is
+   `.section-heading`'s own. */
 .postscript {
   margin-top: 1.5rem;
 }
@@ -1431,8 +1529,12 @@ p.meta .branch {
   margin-top: 1.5rem;
 }
 
-.postscript + .set-comment {
-  margin-top: 0.6rem;
+.postscript .set-comment {
+  margin-top: 0;
+}
+
+.postscript-body + .set-comment {
+  margin-top: 0.75rem;
 }
 
 /* The submit sits at the foot of the column, after the last thing there is to

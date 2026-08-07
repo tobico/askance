@@ -343,13 +343,8 @@ impl FileDiff {
     fn render(&self, out: &mut String, position: usize) {
         // Open, because a Diff is there to be read — but foldable, so a long
         // file can be got out of the way on a phone.
-        //
-        // The number column is sized here rather than in the stylesheet, because
-        // how wide it has to be is a property of this file and not of the page: a
-        // forty-line file would otherwise carry a column cut for five digits.
-        let digits = self.digits();
         out.push_str(&format!(
-            r#"<details class="diff-file" id="diff-{position}" style="--diff-digits: {digits}" open><summary><span class="diff-path">"#
+            r#"<details class="diff-file" id="diff-{position}" open><summary><span class="diff-path">"#
         ));
         out.push_str(&escaped(&self.path));
         out.push_str("</span>");
@@ -382,23 +377,6 @@ impl FileDiff {
         }
 
         out.push_str("</details>");
-    }
-
-    /// How many digits the number column has to hold: those of the highest line
-    /// number in the file.
-    ///
-    /// At least one, so a file with nothing numbered — a binary one, or a mode
-    /// change — still yields a width rather than a column of no width at all.
-    fn digits(&self) -> usize {
-        let highest = self
-            .hunks
-            .iter()
-            .flat_map(|hunk| &hunk.lines)
-            .filter_map(|line| line.number)
-            .max()
-            .unwrap_or_default();
-
-        highest.to_string().len()
     }
 
     /// How many lines this file gains and loses.
@@ -442,7 +420,7 @@ impl Line {
         // above and below it.
         out.push_str(r#"<span class="diff-number">"#);
         if let Some(number) = self.number {
-            out.push_str(&number.to_string());
+            out.push_str(&numbered(number));
         }
         out.push_str("</span>");
 
@@ -462,9 +440,32 @@ impl Line {
     }
 }
 
+/// A line number as it goes in the column, which is four characters wide for
+/// every file on the page.
+///
+/// The width is the page's business rather than each file's: a column cut to
+/// its own file's highest line put the code of a hundred-line file and a
+/// thousand-line one in different places, so a Diff of both did not line up
+/// with itself. Four characters is what the reading column reserves, alongside
+/// the marker and the code — see `--diff-number-width` in the stylesheet.
+///
+/// Past four digits the number is given as its leading two and the power of ten
+/// they stand in, which is four characters again: line 11234 reads `11e3`.
+/// Truncated rather than rounded, so it never names a line ahead of the one it
+/// stands for. That holds up to eleven digits, which is a file no disk holds.
+fn numbered(number: usize) -> String {
+    if number < 10_000 {
+        return number.to_string();
+    }
+
+    let exponent = number.to_string().len() - 2;
+    let leading = number / 10_usize.pow(exponent as u32);
+    format!("{leading}e{exponent}")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{files, to_html};
+    use super::{files, numbered, to_html};
 
     /// The markup for a Diff that has something in it — what most of these
     /// tests are looking at, the paths beside it being their own two tests.
@@ -637,17 +638,41 @@ mod tests {
     }
 
     #[test]
-    fn the_number_column_is_cut_for_the_files_highest_line() {
+    fn the_number_column_is_the_same_width_for_every_file() {
+        let html = rendered(TWO_HUNKS);
+
         assert!(
-            rendered(TWO_HUNKS).contains("--diff-digits: 2"),
-            "line 42 is the highest, so two digits is the whole width the \
-             column needs:\n{}",
-            rendered(TWO_HUNKS),
+            !html.contains("--diff-digits"),
+            "the column is cut once in the stylesheet, not per file: a file \
+             that sized its own put its code in a different place from the \
+             file above it, and the two did not line up:\n{html}",
         );
-        assert!(
-            rendered(MODIFIED_AND_NEW).contains("--diff-digits: 1"),
-            "a four-line file should not carry a column cut for a long one:\n{}",
-            rendered(MODIFIED_AND_NEW),
+    }
+
+    #[test]
+    fn a_line_number_past_four_digits_is_given_in_four_characters() {
+        assert_eq!(
+            numbered(1),
+            "1",
+            "a short file is numbered as it always was"
+        );
+        assert_eq!(numbered(9999), "9999", "four digits still fit as they are");
+        assert_eq!(
+            numbered(11234),
+            "11e3",
+            "past four digits the leading two and their power of ten say where \
+             the line is, in the four characters the column holds",
+        );
+        assert_eq!(
+            numbered(19999),
+            "19e3",
+            "truncated rather than rounded, so the column never names a line \
+             ahead of the one it stands for",
+        );
+        assert_eq!(
+            numbered(123_456),
+            "12e4",
+            "a longer file only moves the exponent, and the width is unchanged",
         );
     }
 
