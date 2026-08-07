@@ -1906,3 +1906,121 @@ p.meta .branch {
     align-items: center;
   }
 }
+
+/* The Gutter: the width every section of a Set page reserves down its left once
+   the window is wide, so that the marks which are *about* the content rather
+   than part of it have somewhere of their own to sit — a Question's label, the
+   radio and the number a row of an Answer Table is picked by, the Diff's line
+   numbers — and everything there is to read starts one axis past them. Prose, a
+   question's words, an Option's words and a line of code all begin in the same
+   place, however unalike the blocks holding them are, and the marks become a
+   column to run the eye down instead of a jog in the left edge of every third
+   block.
+
+   Three edges, and the page uses all three. The *column edge* is where a
+   section's heading sits and where its card is drawn. The *card edge* is the
+   card's own inset from that, 1rem, which nothing about the Gutter changes:
+   what was never prose — a table, a fence, a Diagram, the Answer Table's frame —
+   comes back out to it and takes the whole card, exactly as the widened column
+   above was widened to let it. The *content edge* is the Gutter's right edge, a
+   card edge plus one Gutter, and that is the axis.
+
+   4.5rem is what its widest residents ask for, and there are two of them within
+   half a rem of one another. The Diff wants four columns of line number and one
+   of marker, set in the 0.8rem monospace its lines are, plus the padding those
+   two cells carry between them: a little over 3.5rem in the faces monospace is
+   usually set in. The Answer Table's picking column wants a radio, a gap and an
+   Option's number, and that comes out about the same — a shade more once the
+   Option is numbered in three digits and the browser draws a fat radio, neither
+   of which the width may be caught out by, because a column that outgrows the
+   Gutter pushes the Option's words off the axis. 4.5rem is the round number
+   above both with room to spare.
+
+   Everything is cut to this rather than the page measuring itself against any of
+   them. The Diff's own width is written in `ch`, and a `ch` is only a length
+   inside the font it was measured for, which nothing outside the code is; the
+   Answer Table's is whatever a radio button happens to be today. One name and
+   everything else derived, for the reason the Diff's gutter is already one name:
+   two copies of a width drift, and a drift here is a page that does not line up
+   with itself.
+
+   Only at this width, and only on this page. Below it the column has no card
+   edge and Gutter to give away; and the two widths reach the list pages, because
+   they are named on the column, but nothing there reads them — a list row has no
+   marks to hang. */
+@media (min-width: 80rem) {
+  main {
+    --gutter: 4.5rem;
+    /* How far a block reaches back out of the Gutter to take the whole card.
+       Nothing does by default: it is the card that says how much there is to
+       come back out of. */
+    --bleed: 0px;
+  }
+
+  /* The sections that reserve it: the card's own inset, and the Gutter inside
+     that. A card with nothing to hang there reserves it empty and holds the
+     axis anyway — the Preface and the Postscript both — which is the whole of
+     why the width is the page's rather than each section's. */
+  .preface-body,
+  .postscript-card,
+  .question {
+    --bleed: var(--gutter);
+    padding-left: calc(1rem + var(--gutter));
+  }
+
+  /* A Sub-question is content, so it sits inside the content area entire, its
+     rule and its indent included, and nothing within it reaches back past the
+     axis its parent's text starts at. Its label stays inline with its words for
+     the same reason: the Gutter belongs to the Question. */
+  .subquestions {
+    --bleed: 0px;
+  }
+
+  /* Back out to the card edge: the blocks the column was widened for — see the
+     measure above, which names every block that is prose and leaves exactly
+     these out — and the Answer Table, which is one of them under another name.
+     The max-width goes with the margin because a block held to 100% of a box it
+     now starts outside of would come up a Gutter short on the right. */
+  .markdown > table,
+  .markdown > pre,
+  .markdown > .diagram,
+  .answer-table {
+    margin-left: calc(-1 * var(--bleed));
+    max-width: calc(100% + var(--bleed));
+  }
+
+  /* The Question's label out of the flow of its text and into the Gutter,
+     hanging at the card edge beside the question's first line.
+
+     Still a float, because a float is the one thing a block below it can clear,
+     and a first block too wide for prose has bled to the card edge and would
+     otherwise run in under the label: `clear: left` holds it below, which is
+     where it starts at every narrower width too.
+
+     The float shortens no line any more. A line box is cut only where a float's
+     margin box overlaps it, and this one lies wholly left of the text: the first
+     paragraph starts on the axis like every other block, with the label beside
+     it rather than in front of it. Which is why the margin that used to hold the
+     words off the label goes — the Gutter is the whole of the gap now. */
+  .question > .ask > .text > .label {
+    width: var(--gutter);
+    margin: 0 0 0 calc(-1 * var(--gutter));
+  }
+
+  /* The column a row is picked by, sized to the Gutter the table was pulled out
+     into, less the inset the cell beside it keeps its text at — so the Option's
+     words land on the axis rather than a padding past it, and the radio and the
+     number hold the Gutter the way the Diff's numbers do. */
+  .question > .ask .answer-table .pick {
+    width: calc(var(--gutter) - 0.55rem);
+  }
+
+  /* And the Diff's own gutter cut to the page's: the marker keeps the width it
+     measures for itself and the number column takes what is left, so the two
+     come to exactly a card edge and a Gutter and the code starts on the axis.
+     The numbers are set against the marker rather than out at the card edge, so
+     whatever room this leaves over shows as air to their left. */
+  .diff-file {
+    --diff-number-width: calc(1rem + var(--gutter) - var(--diff-marker-width));
+  }
+}
