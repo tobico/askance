@@ -4,7 +4,7 @@
   "diff": null,
   "id": 1,
   "postscript_html": null,
-  "preface_html": "<p>Where the counter would live:</p>\n<pre class=\"mermaid\">graph LR;\n  client--&gt;api;\n  api--&gt;redis;\n</pre>",
+  "preface_html": "<p>Where the counter would live:</p>\n<div class=\"wide\"><pre class=\"mermaid\">graph LR;\n  client--&gt;api;\n  api--&gt;redis;\n</pre></div>",
   "project": "askance",
   "questions": [
     {

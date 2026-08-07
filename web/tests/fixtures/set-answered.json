@@ -49,7 +49,7 @@
             "text_html": "A 429 plus RateLimit headers."
           }
         ],
-        "text_html": "<p>How should a throttled client be told to back off?</p>\n<pre><code><span class=\"\"><span class=\"\"><span class=\"\"><span class=\"tok-storage\">fn</span> </span><span class=\"tok-entity tok-name\">allowance</span></span><span class=\"\"><span class=\"\"><span class=\"\">(</span></span><span class=\"\"><span class=\"\"><span class=\"\">)</span></span></span></span><span class=\"\"> <span class=\"\"><span class=\"\">-&gt;</span> <span class=\"tok-storage\">u32</span></span> </span><span class=\"\"><span class=\"\"><span class=\"\">{</span> <span class=\"tok-constant\">600</span> </span><span class=\"\"><span class=\"\">}</span></span></span></span></code></pre>"
+        "text_html": "<p>How should a throttled client be told to back off?</p>\n<div class=\"wide\"><pre><code><span class=\"\"><span class=\"\"><span class=\"\"><span class=\"tok-storage\">fn</span> </span><span class=\"tok-entity tok-name\">allowance</span></span><span class=\"\"><span class=\"\"><span class=\"\">(</span></span><span class=\"\"><span class=\"\"><span class=\"\">)</span></span></span></span><span class=\"\"> <span class=\"\"><span class=\"\">-&gt;</span> <span class=\"tok-storage\">u32</span></span> </span><span class=\"\"><span class=\"\"><span class=\"\">{</span> <span class=\"tok-constant\">600</span> </span><span class=\"\"><span class=\"\">}</span></span></span></span></code></pre></div>"
       },
       "heading": false,
       "nav_text": "How should a throttled client be told to back off? fn allowance() -> u32 { 600 }",
@@ -71,7 +71,7 @@
               "text_html": "A rounded number."
             }
           ],
-          "text_html": "<p>What should Retry-After say?</p>\n<table><thead><tr><th>header</th><th>seconds</th></tr></thead><tbody>\n<tr><td>Retry-After</td><td>30</td></tr>\n</tbody></table>\n"
+          "text_html": "<p>What should Retry-After say?</p>\n<div class=\"wide\"><table><thead><tr><th>header</th><th>seconds</th></tr></thead><tbody>\n<tr><td>Retry-After</td><td>30</td></tr>\n</tbody></table>\n</div>"
         },
         {
           "columns": [],

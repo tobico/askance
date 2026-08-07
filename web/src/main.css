@@ -1059,6 +1059,20 @@ p.meta .branch {
   background: color-mix(in srgb, var(--hunk) 55%, transparent);
 }
 
+/* The frame the renderer puts around every block that is not prose — a table, a
+   fence, a Diagram. It is nothing at all here: `display: contents` leaves the
+   block inside it exactly the box it would have had without it, margins and
+   collapsing and all, so a narrow window is laid out as though the frame were not
+   in the markup. What it is for is the wide window, where it becomes a row — see
+   `.markdown > .wide` at the end of the file, which is also the only reason it
+   exists at all.
+
+   Two edge rules below have to reach through it, because a box that is not there
+   is not a box a margin can be set on. */
+.markdown .wide {
+  display: contents;
+}
+
 /* Quoted the way a Sub-question is nested: a rule beside the words rather than
    an indent deep enough to squeeze them on a phone. */
 .markdown blockquote {
@@ -1079,12 +1093,23 @@ p.meta .branch {
 }
 
 /* The block rhythm is between the blocks, so the outer edges are the box's to
-   set. Last, and by a pseudo-class, to outrank every margin above. */
-.markdown > :first-child {
+   set. Last, and by a pseudo-class, to outrank every margin above.
+
+   Where the first or last thing in the box is a table or a fence, what the markup
+   has there is the frame, so each edge takes three selectors rather than one. The
+   frame itself, because at the wide window it is a box with the rhythm on it — and
+   named with its class so that it outranks the rule that put the rhythm there.
+   And the block inside it, because until then the frame is `display: contents` and
+   has no margin to take this at all. */
+.markdown > :first-child,
+.markdown > .wide:first-child,
+.markdown > .wide:first-child > * {
   margin-top: 0;
 }
 
-.markdown > :last-child {
+.markdown > :last-child,
+.markdown > .wide:last-child,
+.markdown > .wide:last-child > * {
   margin-bottom: 0;
 }
 
@@ -1497,8 +1522,16 @@ p.meta .branch {
 /* Anything blockier than a paragraph starts below the label rather than beside
    it: a list whose first entry sits alongside a name reads as an entry about the
    name. Only the first block needs telling — everything after it already clears
-   a float one line tall. */
-.ask .text .markdown > :first-child:not(p) {
+   a float one line tall.
+
+   A question opening on a table or a fence has the frame first in the markup, so
+   this takes the frame both ways, as the edge margins above do. At the wide window
+   the frame is the box that clears: what is inside it there is a flex item, and
+   `clear` means nothing to one of those. Until then the frame is no box at all,
+   and the block inside it is what clears. */
+.ask .text .markdown > :first-child:not(p),
+.ask .text .markdown > .wide:first-child,
+.ask .text .markdown > .wide:first-child > * {
   clear: left;
 }
 
@@ -1919,11 +1952,24 @@ p.meta .branch {
 
    Three edges, and the page uses all three. The *column edge* is where a
    section's heading sits and where its card is drawn. The *card edge* is the
-   card's own inset from that, 1rem, which nothing about the Gutter changes:
-   what was never prose — a table, a fence, a Diagram, the Answer Table's frame —
-   comes back out to it and takes the whole card, exactly as the widened column
-   above was widened to let it. The *content edge* is the Gutter's right edge, a
-   card edge plus one Gutter, and that is the axis.
+   card's own inset from that, 1rem, which nothing about the Gutter changes: it is
+   how far out a block that was never prose — a table, a fence, a Diagram, the
+   Answer Table's frame — may come to take the whole card, exactly as the widened
+   column above was widened to let it. The *content edge* is the Gutter's right
+   edge, a card edge plus one Gutter, and that is the axis.
+
+   The Gutter is given up rather than spent, though: a table or a fence comes out
+   of it only as far as it will not otherwise fit, so one narrow enough to sit in
+   the content area stays on the axis with the prose and only one that would
+   overrun it reaches back, by exactly what it overruns by. See
+   `.markdown > .wide`, which is the row that works that out, and the frame in the
+   markup that exists for no other reason.
+
+   Two blocks take the whole card whether they need it or not, and for the same
+   reason inverted: neither has a width of its own to be measured against the room.
+   A Diagram fits whatever it is given, so it would never ask, and giving it less
+   only draws it smaller. The Answer Table's picking column has to be in the Gutter
+   or the Option's words come off the axis, which is what all of this is for.
 
    4.5rem is what its widest residents ask for, and there are two of them within
    half a rem of one another. The Diff wants four columns of line number and one
@@ -1976,17 +2022,97 @@ p.meta .branch {
     --bleed: 0px;
   }
 
-  /* Back out to the card edge: the blocks the column was widened for — see the
-     measure above, which names every block that is prose and leaves exactly
-     these out — and the Answer Table, which is one of them under another name.
-     The max-width goes with the margin because a block held to 100% of a box it
-     now starts outside of would come up a Gutter short on the right. */
-  .markdown > table,
-  .markdown > pre,
-  .markdown > .diagram,
+  /* The Answer Table out to the card edge. It is the viewer's own control rather
+     than the agent's markup, and it goes out whether it needs the room or not,
+     because the column a row is picked by has to be in the Gutter: that is what
+     puts the Option's words on the axis, which is the whole point. The max-width
+     goes with the margin because a block held to 100% of a box it now starts
+     outside of would come up a Gutter short on the right. */
   .answer-table {
     margin-left: calc(-1 * var(--bleed));
     max-width: calc(100% + var(--bleed));
+  }
+
+  /* And the agent's own blocks that were never prose — see the measure above,
+     which names every block that is prose and leaves exactly these out. These go
+     out only as far as they have to.
+
+     The frame is a row of two: the Gutter, as a spacer that may give way, and the
+     block, which may not. So the flex algorithm does the comparison a stylesheet
+     cannot write down. A block narrower than the content area leaves the spacer
+     its whole width and stays on the axis with the prose. One too wide for the
+     content area overflows the row by exactly what it overflows the content area
+     by, and the spacer — the only thing here that shrinks — gives up exactly
+     that much, so the block slides left as far as it needs and no further, and
+     lands flush against the right edge it was going to overrun. One too wide even
+     for the card is capped there, the spacer is gone, the block has the whole card
+     and scrolls inside itself as it always has.
+
+     The frame is the box in the flow now, so it carries the rhythm the block used
+     to: a flex container's margins collapse with its siblings' but never with its
+     children's, and a gap left on the block inside would be counted a second time
+     on top of the paragraph's above it. */
+  .markdown > .wide {
+    display: flex;
+    margin: 0.75rem 0;
+    margin-left: calc(-1 * var(--bleed));
+    max-width: calc(100% + var(--bleed));
+  }
+
+  /* A Diagram stands a little further out of the prose than a fence does — see
+     `.markdown .diagram` — and that spacing is the frame's now as well. Read off
+     the figure alone, because a Diagram is drawn from a `pre` of mermaid's source
+     and keeps that block's spacing until it is: which is what it did before the
+     frame existed, and a Diagram that draws while the page is being read should
+     not move anything that was not waiting on it. */
+  .markdown > .wide:has(> .diagram) {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .markdown > .wide::before {
+    content: "";
+    /* The one thing in the row that gives way — and it is the bleed rather than
+       the Gutter, so that where nothing may bleed there is nothing to give: inside
+       a Sub-question this is no spacer at all, and the block sits where it sits
+       today. It is the same length twice over, since the bleed is how far a block
+       may move and this is what it moves through. */
+    flex: 0 1 var(--bleed);
+  }
+
+  /* A Diagram is the one of these that always takes the whole card, and the row
+     above is the wrong instrument for it. A table or a fence has a width of its
+     own and overflows when it is not given it, which is the overflow the spacer
+     answers; a Diagram has a `viewBox` instead, so it fits whatever it is handed
+     and never overflows anything. Left to the row it would simply be drawn smaller
+     to fit the content area — and it is for taking in at a glance, so smaller for
+     no reason is the one thing it must not be. So there is no spacer here and the
+     figure takes the room the spacer would have had, which is what it had before
+     any of this.
+
+     Both the figure and the source it is drawn from, so that the width is settled
+     before mermaid runs: a Diagram that arrives mid-read grows into the space it
+     already had rather than shunting the page sideways as it lands. */
+  .markdown > .wide:has(> .diagram, > .mermaid)::before {
+    flex-basis: 0;
+  }
+
+  .markdown > .wide > .diagram,
+  .markdown > .wide > .mermaid {
+    flex-grow: 1;
+  }
+
+  .markdown > .wide > * {
+    /* Its own width, and never shrunk: the spacer is what gives. */
+    flex: 0 0 auto;
+    /* Capped at the card, and allowed to be narrower than its own contents so the
+       cap holds — a flex item's automatic minimum would otherwise hold it out at
+       its content's width and overrun the card instead of scrolling inside it. */
+    max-width: 100%;
+    min-width: 0;
+    /* The frame carries the rhythm; see above. */
+    margin-top: 0;
+    margin-bottom: 0;
   }
 
   /* The Question's label out of the flow of its text and into the Gutter,
