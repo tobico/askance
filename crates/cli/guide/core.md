@@ -41,6 +41,12 @@ label. Add Options where there are discrete choices, and then recommend one.
 - A Question **may carry both its own Options and Sub-questions.** Nothing is
   ambiguous, because an Answer at the Question level is a bare number and one at
   the Sub-question level always carries the letter.
+- A Question with **Sub-questions and no Options of its own is a Heading.** Its
+  text heads the Sub-questions under it rather than asking anything, so it is
+  drawn without a field and **no Answer comes back for it** — a Response that
+  carries one is refused, naming it. Use it for the framing a group of related
+  Sub-questions is read against; anything that genuinely needs answering at that
+  level takes Options, or becomes a Sub-question of its own.
 - **Two levels maximum.** A Sub-question is a leaf: it carries Options, it never
   branches further. A decision that feels deeper than that splits into separate
   top-level Questions.
@@ -116,8 +122,8 @@ Options:
 ```
 
 Set shape — `title` (required), `preface`, `postscript`, and
-`questions[].{label, text, options[].{n, text, recommended},
-subquestions[].{letter, text, options}}`.
+`questions[].{label, text, columns, options[].{n, text, recommended, cells},
+subquestions[].{letter, text, columns, options}}`.
 
 Response shape — `answers[].{label, selected, free_text, unanswered}` plus a
 set-level `comment`.
@@ -136,7 +142,8 @@ two, provided none of them depends on an Answer in this one.
 What can't be swept ahead — anything else worth knowing, whatever the human
 might want to raise before the work starts — closes the Set as the
 **`postscript`** and is **never a Question.** The `postscript` is markdown drawn
-directly above the set-level comment box, and that box is on every Set whether
+in the section closing the page, above the set-level comment box that shares it,
+and that box is on every Set whether
 or not one was written: a catch-all Question asks for a second time what the box
 already asks, and costs the human a row they then have to leave explicitly open.
 Suggest there what would be worth a word in the comment, and let the box take
@@ -185,7 +192,8 @@ Mapping from the labels:
   Sub-questions are leaves, as above — a third level is refused.
 - `recommended: true` is the `★`. At most one per Question or Sub-question.
 - Options are optional. A Question with none is a bare clarifying Question, and
-  the Answer is whatever the human writes.
+  the Answer is whatever the human writes — unless it carries Sub-questions, in
+  which case it is a Heading over them and takes no Answer at all.
 - `postscript` closes the Set after the last Question, and carries no label
   because nothing answers it directly: what it raises comes back in the
   set-level `comment`, in the box drawn beneath it.
@@ -221,8 +229,29 @@ That is a property of the writing rather than of the Questions:
   small — roughly ten nodes, so it stays legible on a phone. A fence degrades
   to the source text it was written as wherever it can't be drawn, so it is
   safe to send even to an older viewer.
-- **Prefer a comparison table where Options trade off on several axes** — one
-  row per Option, one column per axis, rather than a paragraph each.
+- **Declare a comparison table rather than writing one.** Where Options trade
+  off along several axes, the Question's — or the Sub-question's — `columns`
+  names the axes, and each Option's `cells` fills one per axis in that order.
+  The viewer draws those Options as the rows of the table itself, the Option's
+  `text` as the row's leading cell and the whole row as the tap target, so a
+  table written into the Question's `text` only has the human read the same
+  comparison twice, once as prose and again as the Options beneath it.
+
+  ```yaml
+  questions:
+    - label: Q12
+      text: Where should the rate-limit counter live?
+      columns: [Accuracy, Ops cost, Blast radius]
+      options:
+        - n: 1
+          text: In-process counter
+          cells: [Per-node, Nothing to run, One node]
+          recommended: true
+        - n: 2
+          text: Shared Redis counter
+          cells: [Exact, A service to run, Every node]
+  ```
+
 - **Bold the load-bearing phrases** so skimming lands on them.
 
 ## Running the ask
@@ -285,8 +314,10 @@ the two streams land together: a wait that goes to plan is silent, and the
 little the CLI has to say while reconnecting is written as a YAML comment. Hand
 the whole thing to a parser.
 
-Every Question and Sub-question in the Set comes back exactly once, so there is
-never anything to infer about what the human passed over:
+Every Question and Sub-question the Set actually asked comes back exactly once,
+so there is never anything to infer about what the human passed over. A Heading
+asked nothing and so has no entry — its absence is the grammar rather than an
+omission, and there is nothing there to follow up:
 
 - `selected` → the number of the Option they picked; `selected: 1` on `Q11` is
   `Q11.1`.

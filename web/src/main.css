@@ -84,7 +84,12 @@ body {
 }
 
 main {
-  max-width: 46rem;
+  /* The measure: the width a line of prose is read at, wherever on the page it
+     is set. The column is that, plus the padding a card puts either side of it
+     and the column's own — and where the column widens past the breakpoint
+     below, the measure is what the prose inside the cards keeps. */
+  --measure: 42rem;
+  max-width: calc(var(--measure) + 4rem);
   margin: 0 auto;
   padding: 1.25rem 1rem 3rem;
 }
@@ -439,6 +444,7 @@ p.meta .branch {
   .preface,
   .diff,
   #questions,
+  .postscript,
   .diff-file,
   .question {
     scroll-margin-top: 3.5rem;
@@ -521,9 +527,87 @@ p.meta .branch {
   .preface,
   .diff,
   #questions,
+  .postscript,
   .diff-file,
   .question {
     scroll-margin-top: 3.25rem;
+  }
+}
+
+/* Where the window is wide enough to spare it, the column itself widens — and
+   what widens with it is the cards, not the reading. 46rem is a measure chosen
+   for prose, and a good deal of what a Set carries is not prose: code is written
+   to a width of its own — 104 columns here — a table is as wide as the axes it
+   compares along, and a Diagram is a shape rather than a line. So width becomes
+   a property of the block rather than of the page. The cards span the wide
+   column, the blocks inside them that were never prose take the room, and the
+   prose pulls back to the measure it is read at everywhere else.
+
+   58rem of card is what the Diff asks for, and it is what the whole column is
+   given rather than the Diff alone breaking out of a narrower one: 104 columns
+   of code, the five the gutter takes and the padding around both come to 55rem
+   or so at the size and the faces monospace is usually set in. That is the same
+   reserve the Diff's own width was capped at when it did break out — so the
+   guarantee it made there, that a line written to the code's width is not cut
+   off, is the column's now, and the room is never less than it was.
+
+   The nav gives way to the column exactly as it gave way to the Diff: the
+   column's edge is 30rem from the middle, and the nav stops a gap short of that.
+   80rem is where there is room for both — the column at its widest, the nav
+   still wide enough to read a path in, and a margin at the window's edge. It is
+   the narrow windows in this range that pay for the column, at 8rem of nav where
+   the window is exactly 80rem; by 92rem it is back to the full width it wants. */
+@media (min-width: 80rem) {
+  main {
+    /* The card, plus the column's own padding either side of it. */
+    max-width: 60rem;
+  }
+
+  .contents {
+    right: calc(50% + 31rem);
+    width: min(14rem, calc(50vw - 32rem));
+  }
+
+  /* Prose back to the measure, flush left rather than centred in the card: the
+     eye starts the next line where the last one began, and a column that sat
+     somewhere different under every block would make that a hunt.
+
+     Every block the markdown dialect reads in lines is named here, the rule that
+     parts two of them included, because what is left out is exactly what the
+     room was widened for: a table, a Diagram and a fence keep the card. */
+  .markdown > p,
+  .markdown > ul,
+  .markdown > ol,
+  .markdown > blockquote,
+  .markdown > h1,
+  .markdown > h2,
+  .markdown > h3,
+  .markdown > h4,
+  .markdown > h5,
+  .markdown > h6,
+  .markdown > hr,
+  /* The human's own words on the record are prose too, and read the same way. */
+  .ask.decided .answer-text,
+  .set-comment.decided .comment,
+  /* And what is written or chosen rather than read: a field is as wide as the
+     words going into it, and an Option is one line of words on offer. The Answer
+     Table is not an exception to this — it is a table, and takes what its
+     columns want. */
+  .grow,
+  .options {
+    max-width: var(--measure);
+  }
+
+  /* These stand where a card stands rather than inside one, so the measure alone
+     would leave them a card's padding short of the prose they sit under. What
+     they keep is the width they have below this breakpoint. */
+  .counter-question,
+  .submit button,
+  /* The two lists among them: a row carries a title and a line of provenance,
+     and neither ever wanted more room than the reading column. */
+  .page-head,
+  .set-list {
+    max-width: calc(var(--measure) + 2rem);
   }
 }
 
@@ -1012,12 +1096,13 @@ p.meta .branch {
    `.markdown` above holds the blocks' own rhythm, including the flush top and
    bottom edges that let this padding be the whole of the gap.
 
-   The Postscript's is the same box: both are the agent's own prose, said at
-   either end of the Set, and one drawn as a card while the other was loose prose
-   would read as two different kinds of thing. It is also what keeps the
-   Postscript from blending into the sheet's own fields directly under it. */
+   The Postscript's is the same box, drawn around the body rather than being it,
+   because the comment sits inside the card with it: both are the agent's own
+   prose, said at either end of the Set, and one drawn as a card while the other
+   was loose prose would read as two different kinds of thing. The heading stays
+   outside the card in both, which is what makes the two sections look alike. */
 .preface-body,
-.postscript-body {
+.postscript-card {
   padding: 1rem;
   background: var(--card);
   border: 1px solid var(--edge);
@@ -1119,6 +1204,34 @@ p.meta .branch {
   tab-size: 4;
 }
 
+/* On a phone the code alone is set smaller, which is worth more here than
+   anywhere else on the page: every column it buys is a column of a line that no
+   longer has to be scrolled to. The Diff's chrome around it — the path, the
+   hunk header, the tally — keeps its size, because there is one of each per
+   file and nothing is gained by making the few things that name a file harder
+   to read. A line long enough to overflow even so is what the wrap switch is
+   for. */
+@media (width < 40rem) {
+  .diff-lines {
+    font-size: 0.65rem;
+  }
+
+  /* And the line numbers go entirely, which is five more columns of code: on a
+     phone there is no room for a column that only says where you already are,
+     and the hunk header above still says where the lines start. The marker
+     stays — which side of the change a line is on is not something the colour
+     alone should have to carry. */
+  .diff-number {
+    display: none;
+  }
+
+  /* The gutter is the marker's alone once the numbers are gone, so a wrapped
+     line hangs off the code and not off a column that is no longer drawn. */
+  .diff-file {
+    --diff-number-width: 0px;
+  }
+}
+
 /* The lines are wrapped in a box as wide as the longest of them, which is what
    gives the line below a scrolled width to fill. Without it each line measured
    itself against the *visible* width instead — `code` is inline, so the `pre` was
@@ -1155,10 +1268,13 @@ p.meta .branch {
    have to indent by exactly the width of these two and a drift between them
    would show as code that does not line up with itself. */
 .diff-file {
-  /* As many digits as this file's highest line number needs — set per file by
-     the renderer, since a forty-line file should not carry a column cut for a
-     long one — plus the gutter either side of them. */
-  --diff-number-width: calc(var(--diff-digits, 3) * 1ch + 1.2rem);
+  /* Four characters, and the same four for every file on the page: the width
+     the reading column above reserves. Cut to each file's own highest line
+     instead, it put the code of a hundred-line file and a thousand-line one in
+     different places, and a Diff of both did not line up with itself. Four is
+     what a line number takes past the point where a file is long enough to need
+     more — the renderer gives 11234 as `11e3`. */
+  --diff-number-width: calc(4ch + 1.2rem);
   --diff-marker-width: calc(1ch + 0.5rem);
   --diff-gutter: calc(var(--diff-number-width) + var(--diff-marker-width));
 }
@@ -1343,9 +1459,24 @@ p.meta .branch {
 
 .ask .text {
   margin: 0 0 0.75rem;
+  /* The float below is the question's own: a Question whose text is empty would
+     otherwise leave the label hanging over the Options under it. */
+  display: flow-root;
 }
 
+/* Out of the flow, so that what it names is left an ordinary block. A float one
+   line tall shortens the lines beside it and not the box they are in, so the
+   first paragraph still runs on from the label the way the question's one line
+   always has — while staying a block that takes whatever width blocks are given
+   here, which is what lets a fence or a table in a Question's text have the room
+   one has anywhere else. */
 .ask .label {
+  float: left;
+  /* The page's own line, rather than the smaller one this name is set in: a
+     float is as tall as its content, and a block cleared past it — the last rule
+     below — has to start exactly where it would have with the label still in the
+     flow. */
+  line-height: 1.5rem;
   margin-right: 0.5rem;
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 0.85rem;
@@ -1356,14 +1487,19 @@ p.meta .branch {
 /* A Question's text is the agent's markdown, rendered by the server and styled
    with every other place that shows it. It is boxed so that filling it in
    wholesale cannot swallow the label beside it — and the box is dissolved again
-   here, so the first paragraph runs on from the label the way the question's one
-   line always has, and anything blockier than a paragraph starts below it. */
+   here, so every block of it is a block of the question, laid out and measured
+   with the Options and the field below rather than inside a wrapper of its
+   own. */
 .ask .text .markdown {
   display: contents;
 }
 
-.ask .text .markdown > p:first-child {
-  display: inline;
+/* Anything blockier than a paragraph starts below the label rather than beside
+   it: a list whose first entry sits alongside a name reads as an entry about the
+   name. Only the first block needs telling — everything after it already clears
+   a float one line tall. */
+.ask .text .markdown > :first-child:not(p) {
+  clear: left;
 }
 
 .options {
@@ -1418,11 +1554,93 @@ p.meta .branch {
    the least legible difference on the page. The `recommended` class stays: it is
    still true of the Option, and the ★ hangs off it. */
 
-/* What the agent closed the Set with, and the box it is introducing. The
-   Postscript takes the gap the box used to keep from the Questions, and what is
-   left between the two of them is only enough to keep them apart: they are one
-   thing to read, an invitation and the place to take it up. */
+/* A question whose Options the agent declared with tabular data: the table
+   itself is the choice, drawn where the list would have been.
 
+   Styled here rather than with `.markdown table`, because this is the viewer's
+   own control and not the agent's markup — what it borrows is the look, so a
+   comparison read on this page reads the same wherever it was written. A row
+   keeps the `option` class the list entry has, which is what the number and the
+   ★ hang off in both. */
+.answer-table {
+  /* Wide enough to widen the page and it scrolls inside itself instead, the way
+     a written table does — see `.markdown table` for what `display: block`
+     buys. */
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0 0 0.75rem;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.answer-table th,
+.answer-table td {
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  vertical-align: baseline;
+  border: 1px solid var(--edge);
+}
+
+.answer-table th {
+  font-weight: 600;
+  background: var(--hunk);
+}
+
+/* No label to wrap the row in, so the row itself is the tap target — and it
+   says so. On the record there is nothing to tap, so it does not. */
+.ask:not(.decided) .answer-table tbody tr {
+  cursor: pointer;
+}
+
+/* The accent treatment the selected Option card takes, spread along the row: the
+   borders collapse, so colouring every cell's draws one outline around the whole
+   of it. */
+.answer-table tbody tr:has(input:checked) > td {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.answer-table tbody tr:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The radio and the number travel together and never wrap apart. The record
+   keeps the column with the radio gone — it is the same column, so it has the
+   same name. */
+.answer-table .pick {
+  white-space: nowrap;
+}
+
+.answer-table .pick input {
+  margin: 0 0.4rem 0 0;
+  accent-color: var(--accent);
+}
+
+/* The ★ has a column to itself here rather than the end of a flex row, so it
+   drops what pushed it there. */
+.answer-table .star-cell {
+  text-align: center;
+}
+
+.answer-table .star {
+  margin: 0;
+  padding: 0;
+}
+
+/* What the agent closed the Set with, and the box it is introducing — one card
+   holding both, because they are one thing to read: an invitation and the place
+   to take it up. A box that followed the card read as a separate thing that
+   happened to come after it.
+
+   The card's own padding is the whole of the inset, so the comment inside it
+   keeps no margin of its own; what it does keep is a gap from the prose above,
+   on the Sets that closed with any. */
+
+/* A section like the Preface and the Questions now, and headed like them: the
+   heading is above the card rather than inside it, and the gap under it is
+   `.section-heading`'s own. */
 .postscript {
   margin-top: 1.5rem;
 }
@@ -1431,8 +1649,12 @@ p.meta .branch {
   margin-top: 1.5rem;
 }
 
-.postscript + .set-comment {
-  margin-top: 0.6rem;
+.postscript .set-comment {
+  margin-top: 0;
+}
+
+.postscript-body + .set-comment {
+  margin-top: 0.75rem;
 }
 
 /* The submit sits at the foot of the column, after the last thing there is to
@@ -1495,8 +1717,12 @@ p.meta .branch {
 }
 
 /* There is no radio to wrap here, so the row itself carries what the label
-   carried in the form. */
-.ask.decided .option {
+   carried in the form.
+
+   The list entry alone: an Option drawn as a row of an Answer Table keeps the
+   same `option` class, and laying a `tr` out as a flex row would take the table
+   apart. What the record does to those is below. */
+.ask.decided li.option {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
@@ -1511,10 +1737,29 @@ p.meta .branch {
 /* The one Option that is not history keeps the page's ink and takes the outline
    the form gave a selected radio. That outline is the whole of what says this is
    the one — see `.chose` below for what that costs and how it is paid. */
-.ask.decided .option.chosen {
+.ask.decided li.option.chosen {
   color: var(--ink);
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* The same table on the record, read rather than filled in. Every row is kept
+   and fades the way a turned-down card does; the row that was chosen keeps the
+   page's ink and takes the accent the sheet gave the row it was selected on, so
+   what the human saw when they picked it is what they see when they come back
+   to it. The borders collapse, so colouring every cell's draws one outline
+   around the whole row. */
+.ask.decided .answer-table tbody tr {
+  color: var(--ink-soft);
+}
+
+.ask.decided .answer-table tbody tr.chosen {
+  color: var(--ink);
+}
+
+.ask.decided .answer-table tbody tr.chosen > td {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 /* Out of the layout, still in the document.

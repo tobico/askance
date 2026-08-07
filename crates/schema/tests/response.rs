@@ -3,8 +3,12 @@
 
 use askance_schema::{QuestionSet, Response};
 
-/// A Set whose questions are `Q1`, `Q2`, `Q2a` and `Q2b` — one Question with
-/// Options, one with Sub-questions, one Sub-question without Options.
+/// A Set of one Question with Options, one Heading over two Sub-questions, and
+/// a Sub-question without Options of its own.
+///
+/// What there is to answer is `Q1`, `Q2a` and `Q2b`. `Q2` is not among them:
+/// Sub-questions and no Options of its own make it a Heading, which asks
+/// nothing and takes no entry.
 const SET: &str = r#"
 title: How should the wait end?
 questions:
@@ -41,8 +45,6 @@ fn a_full_response_parses_into_its_parts() {
 answers:
   - label: Q1
     selected: 1
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
     free_text: Empty body, no ambiguity.
@@ -56,8 +58,11 @@ comment: Happy with all of this.
     )
     .expect("the example Response should parse");
 
-    let [q1, q2, q2a, q2b] = &response.answers[..] else {
-        panic!("expected four entries, got {}", response.answers.len());
+    let [q1, q2a, q2b] = &response.answers[..] else {
+        panic!(
+            "expected an entry per answerable question, got {}",
+            response.answers.len()
+        );
     };
 
     assert_eq!(q1.label, "Q1");
@@ -65,12 +70,6 @@ comment: Happy with all of this.
     assert_eq!(q1.free_text, None);
     assert!(!q1.unanswered);
     assert!(q1.is_answer());
-
-    assert!(q2.unanswered);
-    assert!(
-        !q2.is_answer(),
-        "the Unanswered marker carries no Answer at all"
-    );
 
     assert_eq!(q2a.selected, Some(1));
     assert_eq!(q2a.free_text.as_deref(), Some("Empty body, no ambiguity."));
@@ -95,8 +94,6 @@ fn a_response_leaving_every_question_unanswered_is_valid() {
         "
 answers:
   - label: Q1
-    unanswered: true
-  - label: Q2
     unanswered: true
   - label: Q2a
     unanswered: true
@@ -140,8 +137,6 @@ fn a_missing_question_is_rejected_naming_it() {
 answers:
   - label: Q1
     selected: 1
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
 ",
@@ -157,14 +152,56 @@ answers:
 }
 
 #[test]
-fn a_missing_sub_question_is_rejected_even_when_its_parent_is_answered() {
+fn a_heading_takes_no_entry_of_its_own() {
     let error = Response::from_yaml(
         "
 answers:
   - label: Q1
     selected: 1
   - label: Q2
-    free_text: Answered the parent and stopped there.
+    free_text: Answered the heading and stopped there.
+  - label: Q2a
+    selected: 1
+  - label: Q2b
+    unanswered: true
+",
+    )
+    .unwrap()
+    .validate(&set())
+    .expect_err("Q2 heads its Sub-questions and asks nothing");
+
+    assert!(error.names("Q2"), "got: {error}");
+    assert!(
+        error.to_string().contains("heads its Sub-questions"),
+        "the refusal should say why there is nothing to answer, got: {error}"
+    );
+}
+
+#[test]
+fn a_response_that_passes_over_a_heading_entirely_is_complete() {
+    Response::from_yaml(
+        "
+answers:
+  - label: Q1
+    selected: 1
+  - label: Q2a
+    selected: 1
+  - label: Q2b
+    unanswered: true
+",
+    )
+    .unwrap()
+    .validate(&set())
+    .expect("a Heading is not missing from a Response that never had to carry it");
+}
+
+#[test]
+fn a_missing_sub_question_is_rejected_even_where_its_heading_is_passed_over() {
+    let error = Response::from_yaml(
+        "
+answers:
+  - label: Q1
+    selected: 1
 ",
     )
     .unwrap()
@@ -181,8 +218,14 @@ fn an_empty_response_names_every_question_it_missed() {
         .validate(&set())
         .expect_err("explicitness means every question appears");
 
-    assert_eq!(error.violations.len(), 4, "got: {error}");
-    assert!(error.names("Q1") && error.names("Q2") && error.names("Q2a") && error.names("Q2b"));
+    // Three, not four: the Heading is not among the questions a Response has to
+    // account for, so there is nothing missing where it stands.
+    assert_eq!(error.violations.len(), 3, "got: {error}");
+    assert!(error.names("Q1") && error.names("Q2a") && error.names("Q2b"));
+    assert!(
+        !error.names("Q2"),
+        "a Heading is never missing, got: {error}"
+    );
 }
 
 #[test]
@@ -217,8 +260,6 @@ fn a_question_that_is_neither_answered_nor_marked_unanswered_is_rejected() {
         "
 answers:
   - label: Q1
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
   - label: Q2b
@@ -239,8 +280,6 @@ fn blank_free_text_is_not_an_answer() {
 answers:
   - label: Q1
     free_text: '   '
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
   - label: Q2b
@@ -262,8 +301,6 @@ answers:
   - label: Q1
     selected: 1
     unanswered: true
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
   - label: Q2b
@@ -284,8 +321,6 @@ fn selecting_an_option_the_question_does_not_offer_is_rejected() {
 answers:
   - label: Q1
     selected: 7
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
   - label: Q2b
@@ -310,8 +345,6 @@ fn selecting_an_option_on_a_question_with_none_is_rejected() {
 answers:
   - label: Q1
     selected: 1
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
   - label: Q2b
@@ -332,8 +365,6 @@ fn free_text_alone_answers_a_question_that_offers_options() {
 answers:
   - label: Q1
     free_text: Neither; make it configurable.
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 2
     free_text: But say why in the body.
@@ -364,8 +395,8 @@ answers:
     .validate(&set())
     .unwrap_err();
 
-    // Q1 selects an Option that is not offered, Q2 is answered and unanswered
-    // at once, Q9 is not in the Set, and Q2a and Q2b are missing entirely.
+    // Q1 selects an Option that is not offered, Q2 is a Heading and takes no
+    // entry, Q9 is not in the Set, and Q2a and Q2b are missing entirely.
     assert_eq!(
         error.violations.len(),
         5,
@@ -380,8 +411,6 @@ fn a_multi_line_comment_round_trips_through_yaml() {
 answers:
   - label: Q1
     selected: 1
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
   - label: Q2b
@@ -411,8 +440,6 @@ fn complete_but(extra: &str) -> Result<(), askance_schema::ValidationError> {
 answers:
   - label: Q1
     selected: 1
-  - label: Q2
-    unanswered: true
   - label: Q2a
     selected: 1
   - label: Q2b

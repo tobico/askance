@@ -3,6 +3,8 @@
 
 use std::process::{Command, Output};
 
+use askance_schema::QuestionSet;
+
 /// Run the binary with `args` and insist it had something to say.
 fn run(args: &[&str]) -> Output {
     let output = Command::new(env!("CARGO_BIN_EXE_askance"))
@@ -39,6 +41,27 @@ fn quoted_after(guide: &str, heading: &str) -> String {
         .expect("the fence should close")
         .0
         .to_string()
+}
+
+/// The bodies of every fenced block in `text`, in order, without their info
+/// strings — for a section that shows more than one example. A fence indented
+/// under a list item counts, and comes back with that indent removed, so the
+/// body is the YAML as it would be pasted.
+fn fenced_blocks(text: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut open: Option<(usize, Vec<&str>)> = None;
+    for line in text.lines() {
+        let indent = line.len() - line.trim_start().len();
+        if line.trim_start().starts_with("```") {
+            match open.take() {
+                None => open = Some((indent, Vec::new())),
+                Some((_, body)) => blocks.push(body.join("\n")),
+            }
+        } else if let Some((indent, body)) = open.as_mut() {
+            body.push(line.get(*indent..).unwrap_or(line.trim_start()));
+        }
+    }
+    blocks
 }
 
 /// Everything under `heading` up to the next one: the section in full, its
@@ -256,6 +279,80 @@ fn the_guide_sends_the_catch_all_to_the_postscript() {
         "no passage should still recommend the trailing catch-all Question the \
          Postscript replaced, got:\n{guide}"
     );
+}
+
+/// The Set shape is where an agent checks which fields exist before it
+/// serializes one. A shape that omits the Answer Table's fields is a shape that
+/// says they aren't there.
+#[test]
+fn the_set_shape_names_the_answer_table_fields() {
+    let guide = stdout(&run(&["guide"]));
+    let contract = section(&guide, "## The CLI contract");
+
+    assert!(
+        contract.contains("columns") && contract.contains("cells"),
+        "the Set shape should list `columns` and `cells`, so the shape an agent \
+         serializes is complete at a glance, got:\n{contract}"
+    );
+}
+
+/// The Guide is the only place the Answer Table is discoverable, and the old
+/// pattern — a markdown table in the Question's text, echoed as a list of
+/// Options below it — is what an agent writes without it.
+#[test]
+fn the_guide_teaches_the_answer_table_declaration() {
+    let guide = stdout(&run(&["guide"]));
+    let authoring = section(&guide, "## Authoring the Set");
+
+    for phrase in ["`columns`", "`cells`", "leading cell"] {
+        assert!(
+            authoring.contains(phrase),
+            "the authoring section should teach the declaration and mention \
+             {phrase} — no other Topic covers it, got:\n{authoring}"
+        );
+    }
+    assert!(
+        !guide.contains("Prefer a comparison table where Options trade off"),
+        "the old bullet steered an agent to a table it wrote itself — the \
+         declaration replaces it, got:\n{guide}"
+    );
+}
+
+/// An example of a declaration only teaches it if it is one: pasted into a Set
+/// it has to parse, pass the grammar, and come out a table rather than a list.
+#[test]
+fn the_answer_table_example_round_trips() {
+    let guide = stdout(&run(&["guide"]));
+    let example = fenced_blocks(section(&guide, "## Authoring the Set"))
+        .into_iter()
+        .find(|block| block.contains("columns:"))
+        .expect("the authoring section should show the declaration as YAML");
+
+    let set = QuestionSet::from_yaml(&format!("title: Pasted out of the Guide\n{example}"))
+        .expect("the example should parse as the Questions of a Set");
+    set.validate()
+        .expect("the example should pass the grammar the server holds Sets to");
+
+    let question = set
+        .questions
+        .iter()
+        .find(|question| !question.columns.is_empty())
+        .expect("the example should declare an Answer Table");
+    assert!(
+        question.options.len() > 1,
+        "a table of one row teaches nothing about the axes it compares along"
+    );
+    for option in &question.options {
+        assert_eq!(
+            option.cells.len(),
+            question.columns.len(),
+            "every Option fills every column — that is what makes the rows a table"
+        );
+        assert!(
+            !option.text.trim().is_empty(),
+            "the Option's `text` is the row's leading cell, so every row has one"
+        );
+    }
 }
 
 /// The Response the Guide shows answers the Set the Guide shows. An example

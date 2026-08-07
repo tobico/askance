@@ -15,7 +15,14 @@ import { screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Response as Decided, SetView } from "../src/api/types";
-import { mount, reading, texts, withPostscript } from "./reading";
+import {
+  mount,
+  reading,
+  texts,
+  withHeading,
+  withPostscript,
+  withTable,
+} from "./reading";
 import { json, serving } from "./serving";
 import answered from "./fixtures/set-answered.json" with { type: "json" };
 import answering from "./fixtures/set-answering.json" with { type: "json" };
@@ -285,6 +292,22 @@ describe("the record of a settled Set", () => {
     ]);
   });
 
+  it("reads a Heading as the words over its Sub-questions and never as one left open", async () => {
+    const page = await reading(withHeading(ANSWERED));
+
+    const heading = page.querySelector(".ask.heading")!;
+    expect(heading, "expected the Heading drawn").toBeTruthy();
+    expect(heading.querySelector(".label")!.textContent).toBe("Q2");
+
+    // The fixture's Response still carries an entry naming Q2 — it was answered
+    // before Headings existed. Nothing is drawn from it: a Question that asked
+    // nothing cannot have been left open, and saying so would report a decision
+    // nobody was ever asked to make.
+    expect(heading.querySelector(".unanswered")).toBeNull();
+    expect(heading.querySelector(".answer-text")).toBeNull();
+    expect(heading.querySelector(".options")).toBeNull();
+  });
+
   it("says of a question that went back open that it went back unanswered", async () => {
     const page = await reading(ANSWERED);
 
@@ -310,7 +333,26 @@ describe("the record of a settled Set", () => {
     );
   });
 
-  it("closes an answered Set with the Postscript, above what was said about it", async () => {
+  it("heads the closing section for what it holds, and anchors it for the nav", async () => {
+    const withOne = await reading(withPostscript(ANSWERED));
+    const section = withOne.querySelector("section.postscript")!;
+
+    expect(section.id, "the id the table of contents jumps to").toBe(
+      "postscript",
+    );
+    expect(section.querySelector("h2.section-heading")!.textContent).toBe(
+      "Postscript",
+    );
+
+    // With no Postscript there is only the box, and the heading says so rather
+    // than naming something the agent never wrote.
+    const without = await reading(ANSWERED);
+    expect(
+      without.querySelector("section.postscript h2")!.textContent,
+    ).toBe("Comment");
+  });
+
+  it("closes an answered Set with the Postscript, wrapped around what was said about it", async () => {
     const page = await reading(withPostscript(ANSWERED));
 
     const postscript = page.querySelector("section.postscript")!;
@@ -319,7 +361,11 @@ describe("the record of a settled Set", () => {
     expect(body.className).toContain("markdown");
     expect(body.innerHTML).toContain("<code>ops/export</code>");
 
-    expect(postscript.nextElementSibling!.className).toContain("set-comment");
+    // Nested exactly as it is on the sheet, so the record reads the way the
+    // page it was filled in on did.
+    const comment = postscript.querySelector(".set-comment.decided")!;
+    expect(comment, "expected the comment inside the Postscript").toBeTruthy();
+    expect(body.nextElementSibling).toBe(comment);
   });
 
   it("closes a Set the human said nothing about with it just the same", async () => {
@@ -335,12 +381,22 @@ describe("the record of a settled Set", () => {
     expect(page.querySelector(".set-comment")).toBeNull();
   });
 
-  it("draws no Postscript for a settled Set that closed with none", async () => {
-    for (const settled of [ANSWERED, ARCHIVED]) {
-      const page = await reading(settled);
+  it("draws no card at all for a settled Set with nothing to close it", async () => {
+    // Archived unanswered and without a Postscript: no closing word from either
+    // side, so there is nothing for a card to hold and none is drawn.
+    const page = await reading(ARCHIVED);
 
-      expect(page.querySelector(".postscript")).toBeNull();
-    }
+    expect(page.querySelector(".postscript")).toBeNull();
+    expect(page.querySelector(".set-comment")).toBeNull();
+  });
+
+  it("keeps the card for a Set commented on without a Postscript", async () => {
+    const page = await reading(ANSWERED);
+
+    const postscript = page.querySelector("section.postscript")!;
+    expect(postscript, "the comment is still read in a card").toBeTruthy();
+    expect(postscript.querySelector(".postscript-body")).toBeNull();
+    expect(postscript.querySelector(".set-comment.decided")).toBeTruthy();
   });
 
   it("offers nothing to press", async () => {
@@ -451,15 +507,163 @@ describe("the record of a settled Set", () => {
       // Named so a jump from the table of contents lands somewhere the reader can
       // see they have arrived at. The Diff is named the same way when there is one
       // — and it is the waiting fixture that carries one.
-      expect(texts(page, "h2.section-heading")).toEqual(
-        set.diff === null
-          ? ["Preface", "Questions"]
-          : ["Preface", "Diff", "Questions"],
-      );
+      //
+      // The section closing the page is named for what it holds: none of these
+      // fixtures has a Postscript, so it is the box, and it is there on the Set
+      // still waiting to be filled in and on the one that came back with a
+      // comment. The Set archived unanswered has neither and so ends at the
+      // Questions.
+      const closes =
+        "Waiting" in set.standing ||
+        ("Answered" in set.standing &&
+          (set.standing.Answered.response.comment ?? "") !== "");
+
+      expect(texts(page, "h2.section-heading")).toEqual([
+        "Preface",
+        ...(set.diff === null ? [] : ["Diff"]),
+        "Questions",
+        ...(closes ? ["Comment"] : []),
+      ]);
       for (const id of ["preface", "questions", "q1"]) {
         expect(page.querySelector(`#${id}`), `expected #${id}`).toBeTruthy();
       }
     }
+  });
+});
+
+describe("the record of a question whose Options were declared as a table", () => {
+  /// The Answer Table drawn for the question named `label`.
+  ///
+  /// Found from the question's own label rather than from a radio the way the
+  /// sheet's tests find it: there are no radios here, which is half of what
+  /// makes this the record.
+  function table(page: ParentNode, label: string): HTMLTableElement {
+    const drawn = named(page, label)
+      .closest(".ask")
+      ?.querySelector("table.answer-table");
+    expect(drawn, `expected an Answer Table on ${label}`).toBeTruthy();
+    return drawn as HTMLTableElement;
+  }
+
+  /// The row of Option `n`. The rows are the Options in the order the agent
+  /// offered them, so the position is the number — which the row says itself,
+  /// and which the assertions read back.
+  function row(page: ParentNode, label: string, n: number): HTMLTableRowElement {
+    const rows = table(page, label).querySelectorAll<HTMLTableRowElement>(
+      "tbody tr",
+    );
+    expect(rows[n - 1], `expected Option ${n} of ${label}`).toBeTruthy();
+    return rows[n - 1]!;
+  }
+
+  it("draws the table the sheet drew, with nothing left to fill in", async () => {
+    const page = await reading(withTable(ANSWERED));
+
+    // The same columns in the same order as on the sheet: empty over the
+    // number, **Option** over the Option's own text, the agent's axes, and an
+    // empty header over the ★.
+    expect(texts(table(page, "Q1"), "thead th")).toEqual([
+      "",
+      "Option",
+      "Latency",
+      "ops cost",
+      "",
+    ]);
+    // The row that was not chosen, which is the shape of a row and nothing
+    // else: its number, its text, its cells, and the ★ column it left empty.
+    expect(texts(row(page, "Q1", 2), "td")).toEqual([
+      "2",
+      "In Redis, shared across instances.",
+      "A hop",
+      "A box to run",
+      "★",
+    ]);
+    // Inline markup survives in a cell as it does in an Option's own text.
+    expect(row(page, "Q1", 1).querySelector("td:nth-child(3)")!.innerHTML).toContain(
+      "<code>ms</code>",
+    );
+
+    // Read rather than filled in: a record is not a sheet, and there is nothing
+    // on it to press.
+    expect(table(page, "Q1").querySelectorAll("input")).toHaveLength(0);
+  });
+
+  it("marks the row that was chosen, visually and in as many words", async () => {
+    const page = await reading(withTable(ANSWERED));
+
+    // Q1 was answered with Option 1, and it is Option 2 that carries the ★ —
+    // the class is what the treatment hangs off and the word is what a reader
+    // who cannot see one is told.
+    const chosen = row(page, "Q1", 1);
+    expect(chosen.className).toContain("chosen");
+    expect(chosen.querySelector(".chose")!.textContent).toBe("chosen");
+    expect(chosen.querySelector(".star")).toBeNull();
+
+    const recommended = row(page, "Q1", 2);
+    expect(recommended.className).toContain("recommended");
+    expect(recommended.querySelector(".star")).toBeTruthy();
+    expect(
+      recommended.querySelector(".chose"),
+      "the Recommendation was not taken, and the row must not read as if it was",
+    ).toBeNull();
+
+    // Every row is kept: what was turned down is half of what the decision was.
+    expect(table(page, "Q1").querySelectorAll("tbody tr")).toHaveLength(2);
+  });
+
+  it("heads no ★ column on a question the agent recommended nothing on", async () => {
+    const page = await reading(withTable(ANSWERED));
+
+    expect(texts(table(page, "Q2a"), "thead th")).toEqual([
+      "",
+      "Option",
+      "Precision",
+    ]);
+    expect(texts(row(page, "Q2a", 1), "td")).toEqual([
+      "1",
+      "The exact number of seconds.",
+      "Exact",
+    ]);
+  });
+
+  it("says of a table-mode question that went back open that it did", async () => {
+    const page = await reading(withTable(ANSWERED));
+
+    // Q2a is a table and was left Unanswered: the table changes how its Options
+    // are shown, not how the outcome is said.
+    const asked = named(page, "Q2a").closest(".ask")!;
+    expect(asked.querySelector("tr.chosen")).toBeNull();
+    expect(asked.querySelector(".chose")).toBeNull();
+    expect(asked.querySelector(".unanswered")!.textContent).toBe(
+      "Unanswered — the agent was told this one is still open.",
+    );
+  });
+
+  it("marks no row on a Set archived unanswered, under the same account", async () => {
+    const page = await reading(withTable(ARCHIVED));
+
+    // The table is drawn, because what was asked is still worth reading — and
+    // nothing on it is marked chosen, because nobody chose.
+    expect(table(page, "Q1").querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(page.querySelector("tr.chosen")).toBeNull();
+    expect(page.querySelector(".chose")).toBeNull();
+    expect(page.querySelectorAll(".unanswered")).toHaveLength(0);
+
+    // The head-of-page account is the one it has always been.
+    expect(page.querySelector(".counter-question")!.textContent).toContain(
+      "This Set was archived unanswered",
+    );
+    // The Recommendation is still the agent's, and still marked on its row.
+    expect(row(page, "Q1", 2).querySelector(".star")).toBeTruthy();
+  });
+
+  it("leaves a question that declared no axes the list it always was", async () => {
+    const page = await reading(withTable(ANSWERED));
+
+    // Q2 declared none, so nothing about how its record reads moved.
+    const asked = named(page, "Q2").closest(".ask")!;
+    expect(asked.querySelector("ul.options"), "expected Q2 still a list").toBeTruthy();
+    expect(page.querySelectorAll("ul.options")).toHaveLength(1);
   });
 });
 

@@ -141,9 +141,45 @@ export function outline(set: SetView): Section[] {
     })),
   });
 
+  const close = closes(set);
+  if (close !== null) {
+    sections.push({ anchor: "postscript", name: close, entries: [] });
+  }
+
   // Sub-questions are not listed: one scrolls into view with its parent, and a
   // nav that listed them would be the page again rather than a way around it.
   return sections;
+}
+
+/// What the section closing the page is called: the Postscript where the agent
+/// wrote one, and otherwise the box that is the whole of it.
+///
+/// Both the heading and the nav line come through here, so the name in the
+/// margin and the name it jumps to cannot come out different.
+export function closing(postscript: string | null): string {
+  return postscript ? "Postscript" : "Comment";
+}
+
+/// The name of the closing section, and `null` for a Set that has no such
+/// section to offer.
+///
+/// A waiting Set always has one: the comment box is on every Set, so there is
+/// always something down there to reach. A settled one has it only where
+/// something was actually said — a Postscript, a comment, or both. Archived
+/// unanswered with neither, the page ends at the Questions and so does the nav.
+function closes(set: SetView): string | null {
+  const standing = set.standing;
+
+  if ("Waiting" in standing) {
+    return closing(set.postscript_html);
+  }
+
+  const said =
+    "Answered" in standing
+      ? (standing.Answered.response.comment ?? "").trim()
+      : "";
+
+  return set.postscript_html || said !== "" ? closing(set.postscript_html) : null;
 }
 
 /// The class that sets one line's words: a Question's label and prose in the

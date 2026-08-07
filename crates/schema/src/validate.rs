@@ -11,7 +11,12 @@
 //! - Sub-questions are leaves, so two levels is the maximum;
 //! - at most one Option per Question or Sub-question is the Recommendation;
 //! - Option numbers are distinct within a question, because an Answer selects
-//!   by number.
+//!   by number;
+//! - an Answer Table is rectangular: a question declaring `columns` has every
+//!   Option fill every one of them, and `cells` without `columns` have nothing
+//!   to fill. An empty `columns` list is not a table with no axes — the wire
+//!   format cannot tell it from an absent one — so it reads as no declaration
+//!   at all, and the question is drawn as the list it always was.
 //!
 //! Multi-select needs no rule: the format gives no way to express it — an
 //! Answer carries one `selected` number.
@@ -136,9 +141,20 @@ impl Response {
 
         // Every question the Response has to account for, in the order the
         // human saw them, each with the Options it offered.
+        //
+        // A Heading is not among them: it heads its Sub-questions rather than
+        // asking anything, so there is nothing for an Answer to resolve. Its
+        // label is kept aside so that an entry naming one can be told apart
+        // from an entry naming a Question the Set never asked — the two are
+        // different mistakes and only one of them is about a missing Question.
         let mut expected: Vec<(String, &[QuestionOption])> = Vec::new();
+        let mut headings: Vec<&str> = Vec::new();
         for question in &set.questions {
-            expected.push((question.name().to_string(), &question.options));
+            if question.heading() {
+                headings.push(question.name());
+            } else {
+                expected.push((question.name().to_string(), &question.options));
+            }
             for subquestion in &question.subquestions {
                 expected.push((subquestion.name(question), &subquestion.options));
             }
@@ -156,10 +172,16 @@ impl Response {
             }
 
             let Some((_, options)) = expected.iter().find(|(name, _)| name == label) else {
-                violations.push(Violation::at(
-                    label,
-                    "the Set has no such Question or Sub-question",
-                ));
+                violations.push(if headings.contains(&label) {
+                    Violation::at(
+                        label,
+                        "this Question heads its Sub-questions and asks nothing of \
+                         its own, so no entry comes back for it; its Sub-questions \
+                         are what there is to answer",
+                    )
+                } else {
+                    Violation::at(label, "the Set has no such Question or Sub-question")
+                });
                 continue;
             };
 
@@ -261,7 +283,7 @@ fn check_question<'a>(
         violations.push(Violation::at(label, "a Question needs text"));
     }
 
-    check_options(label, &question.options, violations);
+    check_options(label, &question.columns, &question.options, violations);
 
     let mut seen_letters = HashSet::new();
     for subquestion in &question.subquestions {
@@ -305,10 +327,20 @@ fn check_subquestion<'a>(
         ));
     }
 
-    check_options(&name, &subquestion.options, violations);
+    check_options(
+        &name,
+        &subquestion.columns,
+        &subquestion.options,
+        violations,
+    );
 }
 
-fn check_options(name: &str, options: &[QuestionOption], violations: &mut Vec<Violation>) {
+fn check_options(
+    name: &str,
+    columns: &[String],
+    options: &[QuestionOption],
+    violations: &mut Vec<Violation>,
+) {
     let recommended: Vec<u32> = options
         .iter()
         .filter(|option| option.recommended)
@@ -346,6 +378,60 @@ fn check_options(name: &str, options: &[QuestionOption], violations: &mut Vec<Vi
                 format!("Option {} needs text", option.n),
             ));
         }
+    }
+
+    check_cells(name, columns, options, violations);
+}
+
+/// The Answer Table has to be rectangular: the question names the axes and every
+/// Option fills every one of them, or there is no table.
+///
+/// An empty `columns` list is no declaration at all — the wire format cannot tell
+/// it from an absent one, so it reads as the list a question has always been, and
+/// `cells` beside it are refused for having no columns to fill.
+fn check_cells(
+    name: &str,
+    columns: &[String],
+    options: &[QuestionOption],
+    violations: &mut Vec<Violation>,
+) {
+    if columns.is_empty() {
+        for option in options.iter().filter(|option| !option.cells.is_empty()) {
+            violations.push(Violation::at(
+                name,
+                format!(
+                    "Option {} carries {}, but this question declares no `columns` \
+                     for a row to fill; an Answer Table names its axes on the question",
+                    option.n,
+                    count(option.cells.len(), "cell", "cells")
+                ),
+            ));
+        }
+        return;
+    }
+
+    for option in options {
+        if option.cells.len() != columns.len() {
+            violations.push(Violation::at(
+                name,
+                format!(
+                    "this question declares {}, but Option {} carries {}; declaring \
+                     `columns` makes the Options a table, and every row fills every column",
+                    count(columns.len(), "axis", "axes"),
+                    option.n,
+                    count(option.cells.len(), "cell", "cells")
+                ),
+            ));
+        }
+    }
+}
+
+/// `2 cells`, `1 axis`, `no cells` — the plural the violations read with.
+fn count(n: usize, one: &str, many: &str) -> String {
+    match n {
+        0 => format!("no {many}"),
+        1 => format!("1 {one}"),
+        n => format!("{n} {many}"),
     }
 }
 

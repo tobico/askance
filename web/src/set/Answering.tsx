@@ -27,6 +27,7 @@ import type {
 import { AskText } from "./AskText";
 import { Postscript } from "./Postscript";
 import { anchor } from "./outline";
+import { Head, starred } from "./table";
 import {
   clearDraft,
   clicked,
@@ -184,7 +185,21 @@ export function Answering(props: {
         <For each={props.questions}>
           {(question, index) => (
             <li class="question" id={anchor(question.ask.name, index() + 1)}>
-              <Asking ask={question.ask} fields={fields(question.ask.name)} />
+              {/* A Heading is its text and nothing else — no Options, no field,
+                  nothing to leave open. What it heads is directly under it. */}
+              <Show
+                when={!question.heading}
+                fallback={
+                  <div class="ask heading">
+                    <AskText
+                      name={question.ask.name}
+                      html={question.ask.text_html}
+                    />
+                  </div>
+                }
+              >
+                <Asking ask={question.ask} fields={fields(question.ask.name)} />
+              </Show>
               {/* Sub-questions get no anchor of their own: one scrolls into
                   view with its parent. */}
               <Show when={question.subquestions.length > 0}>
@@ -205,23 +220,26 @@ export function Answering(props: {
           )}
         </For>
       </ol>
-      {/* The agent's closing word, above the box it is inviting something into:
-          what it suggests taking up is read on the way to writing, rather than
-          asked as a Question of its own. */}
-      <Postscript html={props.postscript} />
-      <section class="set-comment">
-        <div class="grow" data-value={sheet.comment}>
-          <textarea
-            id="set-comment"
-            name="set-comment"
-            rows="1"
-            placeholder="Other comments"
-            aria-label="Other comments"
-            value={sheet.comment}
-            onInput={(event) => setSheet("comment", event.currentTarget.value)}
-          />
-        </div>
-      </section>
+      {/* The agent's closing word, wrapped around the box it is inviting
+          something into: what it suggests taking up is read on the way to
+          writing, rather than asked as a Question of its own. A Set that closed
+          without one still draws the card, so the box is in the same place
+          either way. */}
+      <Postscript html={props.postscript}>
+        <section class="set-comment">
+          <div class="grow" data-value={sheet.comment}>
+            <textarea
+              id="set-comment"
+              name="set-comment"
+              rows="1"
+              placeholder="Other comments"
+              aria-label="Other comments"
+              value={sheet.comment}
+              onInput={(event) => setSheet("comment", event.currentTarget.value)}
+            />
+          </div>
+        </section>
+      </Postscript>
       <section class="submit">
         <button type="button" onClick={start} disabled={submit.isPending}>
           {submit.isPending ? "Sending…" : "Submit"}
@@ -296,18 +314,29 @@ function Asking(props: { ask: AskView; fields: Fields }): JSX.Element {
   return (
     <div class="ask">
       <AskText name={props.ask.name} html={props.ask.text_html} />
+      {/* The Options, as a table where the agent declared the axes to compare
+          them along and as the list they have always been where it did not. The
+          declaration is the whole of what decides it: nothing is read off the
+          Options themselves, so the two cannot be confused for one another. */}
       <Show when={options().length > 0}>
-        <ul class="options">
-          <For each={options()}>
-            {(option) => (
-              <Offered
-                option={option}
-                group={group()}
-                fields={props.fields}
-              />
-            )}
-          </For>
-        </ul>
+        <Show
+          when={props.ask.columns.length > 0}
+          fallback={
+            <ul class="options">
+              <For each={options()}>
+                {(option) => (
+                  <Offered
+                    option={option}
+                    group={group()}
+                    fields={props.fields}
+                  />
+                )}
+              </For>
+            </ul>
+          }
+        >
+          <Tabulated ask={props.ask} group={group()} fields={props.fields} />
+        </Show>
       </Show>
       {/* The prompt is the placeholder rather than a label above the field: one
           line of small print per question, times five questions, was more of the
@@ -393,12 +422,110 @@ function Offered(props: {
   );
 }
 
+/// The Options as the Answer Table the question declared: one row per Option,
+/// compared across the axes the agent named.
+///
+/// The table *is* the choice rather than an illustration of one drawn above it,
+/// so the row is what the human picks. The columns fixed around the agent's are
+/// the record's too — see [`Head`].
+function Tabulated(props: {
+  ask: AskView;
+  group: string;
+  fields: Fields;
+}): JSX.Element {
+  const marked = () => starred(props.ask.options);
+
+  return (
+    <table class="answer-table">
+      <Head columns={props.ask.columns} starred={marked()} />
+      <tbody>
+        <For each={props.ask.options}>
+          {(option) => (
+            <Row
+              option={option}
+              group={props.group}
+              fields={props.fields}
+              starred={marked()}
+            />
+          )}
+        </For>
+      </tbody>
+    </table>
+  );
+}
+
+/// One Option as a row of the Answer Table: the same radio the list offers, in
+/// the same group, with the row itself as the tap target.
+///
+/// A row cannot be wrapped in a label the way a list entry is, so the click sits
+/// on the row and the radio is named by the cell holding its text — which is the
+/// accessible name a wrapping label would have given it. A click on the radio
+/// bubbles to the row like any other, so both reach the same handler exactly
+/// once, and the gestures are the list's: a click selects or clears, an arrow
+/// key only moves.
+function Row(props: {
+  option: OptionView;
+  group: string;
+  fields: Fields;
+  starred: boolean;
+}): JSX.Element {
+  const n = () => props.option.n;
+  const naming = () => `${props.group}-${n()}-text`;
+
+  return (
+    <tr
+      class={props.option.recommended ? "option recommended" : "option"}
+      onClick={() => props.fields.pick(n())}
+    >
+      <td class="pick">
+        <input
+          type="radio"
+          id={`${props.group}-${n()}`}
+          name={props.group}
+          value={n()}
+          checked={props.fields.selected() === n()}
+          aria-labelledby={naming()}
+          // The click is the row's, so only the arrow key's change is answered
+          // here — see `Offered` for what the two gestures are between them.
+          onChange={() => props.fields.move(n())}
+        />
+        <span class="n">{n()}</span>
+      </td>
+      <td
+        id={naming()}
+        class="option-text markdown"
+        innerHTML={props.option.text_html}
+      />
+      <For each={props.option.cells}>
+        {(cell) => <td class="markdown" innerHTML={cell} />}
+      </For>
+      <Show when={props.starred}>
+        <td class="star-cell">
+          <Show when={props.option.recommended}>
+            <span class="star" title="the agent's Recommendation">
+              ★
+            </span>
+          </Show>
+        </td>
+      </Show>
+    </tr>
+  );
+}
+
 /// Every question of the Set in the order it was asked, Sub-questions under the
 /// Question that asked them — which is the order a Response accounts for them
 /// in.
 function flatten(questions: QuestionView[]): Asked[] {
   return questions.flatMap((question) =>
-    [question.ask, ...question.subquestions].map((ask) => ({
+    [
+      // A Heading asks nothing of its own, so the sheet holds no field for it
+      // and the Response carries no entry: what there is to answer is the
+      // Sub-questions under it. Left in, it was a blank field the human had
+      // nothing to put in, coming back marked Unanswered — which tells the
+      // agent a decision is still open when none was ever put.
+      ...(question.heading ? [] : [question.ask]),
+      ...question.subquestions,
+    ].map((ask) => ({
       label: ask.name,
       multipleChoice: ask.options.length > 0,
     })),

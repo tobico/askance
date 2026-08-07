@@ -47,6 +47,7 @@ import { Postscript } from "./Postscript";
 import { Standing } from "./Standing";
 import { drawDiagrams } from "./diagrams";
 import { anchor, outline, spied } from "./outline";
+import { Head, starred } from "./table";
 import { settledWhen } from "./when";
 
 /// One Question Set, as the URL names it.
@@ -324,15 +325,20 @@ function Questions(props: {
           what the agent closed with, so it belongs above the comment on a Set
           that has one and above where the comment would have been on a Set that
           does not — a Set closed unanswered has no Response and so never had
-          one. */}
-      <Postscript html={props.postscript} />
-      <Show when={comment()}>
-        {(comment) => (
-          <section class="set-comment decided">
-            <h2>On the Set as a whole</h2>
-            <p class="comment">{comment()}</p>
-          </section>
-        )}
+          one. The card is skipped only where there is neither, since an empty
+          one on the record would be a box drawn around nothing at all — where
+          the sheet always has its field to hold. */}
+      <Show when={props.postscript || comment()}>
+        <Postscript html={props.postscript}>
+          <Show when={comment()}>
+            {(comment) => (
+              <section class="set-comment decided">
+                <h2>On the Set as a whole</h2>
+                <p class="comment">{comment()}</p>
+              </section>
+            )}
+          </Show>
+        </Postscript>
       </Show>
     </>
   );
@@ -349,7 +355,24 @@ function Question(props: {
       class="question"
       id={anchor(props.question.ask.name, props.position)}
     >
-      <Ask ask={props.question.ask} response={props.response} />
+      {/* A Heading asked nothing, so there is nothing that became of it: it is
+          read as the words over its Sub-questions and never as a question left
+          open. A Set answered before Headings existed may still carry an entry
+          naming one; it is passed over here rather than drawn against a
+          Question that was never put. */}
+      <Show
+        when={!props.question.heading}
+        fallback={
+          <div class="ask heading">
+            <AskText
+              name={props.question.ask.name}
+              html={props.question.ask.text_html}
+            />
+          </div>
+        }
+      >
+        <Ask ask={props.question.ask} response={props.response} />
+      </Show>
       {/* Sub-questions get no anchor of their own: one scrolls into view with
           its parent. */}
       <Show when={props.question.subquestions.length > 0}>
@@ -410,12 +433,24 @@ function Ask(props: {
   return (
     <div class="ask decided">
       <AskText name={props.ask.name} html={props.ask.text_html} />
+      {/* The Options as the sheet showed them: the table where the agent
+          declared the axes to compare them along, and the list they have always
+          been where it did not. The declaration is the whole of what decides it
+          here as there — a record that drew a different shape from the sheet it
+          was filled in on would be a second reading of one decision. */}
       <Show when={props.ask.options.length > 0}>
-        <ul class="options">
-          <For each={props.ask.options}>
-            {(option) => <Offered option={option} selected={selected()} />}
-          </For>
-        </ul>
+        <Show
+          when={props.ask.columns.length > 0}
+          fallback={
+            <ul class="options">
+              <For each={props.ask.options}>
+                {(option) => <Offered option={option} selected={selected()} />}
+              </For>
+            </ul>
+          }
+        >
+          <Tabulated ask={props.ask} selected={selected()} />
+        </Show>
       </Show>
       <Show when={said()}>
         {(said) => (
@@ -452,18 +487,13 @@ function Offered(props: {
 }): JSX.Element {
   const chosen = () => props.selected === props.option.n;
 
-  const marks = () =>
-    ["option", chosen() && "chosen", props.option.recommended && "recommended"]
-      .filter(Boolean)
-      .join(" ");
-
   // The text is filled in wholesale, and it is inline markup all the way down —
   // the rendering flattened anything blockier on the way here, because an Option
   // is one line beside its number. It is marked as rendered markdown all the
   // same: what did survive, a code span above all, is drawn as it is everywhere
   // else.
   return (
-    <li class={marks()}>
+    <li class={marks(props.option, chosen())}>
       <span class="n">{props.option.n}</span>
       <span
         class="option-text markdown"
@@ -478,6 +508,87 @@ function Offered(props: {
         <span class="chose">chosen</span>
       </Show>
     </li>
+  );
+}
+
+/// What one Option is marked as: an Option, the one that was chosen, the one
+/// that was recommended — any two of which may be the same Option and often are
+/// not. Shared by the list entry and the table row, because the marks are the
+/// Option's rather than the shape's.
+function marks(option: OptionView, chosen: boolean): string {
+  return ["option", chosen && "chosen", option.recommended && "recommended"]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/// The Options as the Answer Table the question declared, read rather than
+/// filled in: the same columns the sheet drew — see [`Head`] — with the radios
+/// gone and what was decided marked on the row that took it.
+///
+/// Every row is kept, chosen or not, exactly as every list entry is.
+function Tabulated(props: {
+  ask: AskView;
+  selected: number | null;
+}): JSX.Element {
+  const marked = () => starred(props.ask.options);
+
+  return (
+    <table class="answer-table">
+      <Head columns={props.ask.columns} starred={marked()} />
+      <tbody>
+        <For each={props.ask.options}>
+          {(option) => (
+            <Chose
+              option={option}
+              selected={props.selected}
+              starred={marked()}
+            />
+          )}
+        </For>
+      </tbody>
+    </table>
+  );
+}
+
+/// One Option as a row of the record's Answer Table: numbered and worded as the
+/// agent wrote it, compared along their axes, marked if they recommended it, and
+/// marked apart from that if this is the row the human chose.
+///
+/// The two marks are the list's two marks, and are as deliberately different to
+/// read here: the ★ is what was suggested and the row's treatment is what was
+/// decided. "chosen" is written beside the number for the same reason it is
+/// written in the list — an outline says nothing at all to a reader not looking
+/// at one, and the stylesheet takes the word out of the layout rather than out
+/// of the page. See `.ask.decided .chose`.
+function Chose(props: {
+  option: OptionView;
+  selected: number | null;
+  starred: boolean;
+}): JSX.Element {
+  const chosen = () => props.selected === props.option.n;
+
+  return (
+    <tr class={marks(props.option, chosen())}>
+      <td class="pick">
+        <span class="n">{props.option.n}</span>
+        <Show when={chosen()}>
+          <span class="chose">chosen</span>
+        </Show>
+      </td>
+      <td class="option-text markdown" innerHTML={props.option.text_html} />
+      <For each={props.option.cells}>
+        {(cell) => <td class="markdown" innerHTML={cell} />}
+      </For>
+      <Show when={props.starred}>
+        <td class="star-cell">
+          <Show when={props.option.recommended}>
+            <span class="star" title="the agent's Recommendation">
+              ★
+            </span>
+          </Show>
+        </td>
+      </Show>
+    </tr>
   );
 }
 

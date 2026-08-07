@@ -82,7 +82,17 @@ name: string,
 /**
  * The text as HTML, rendered and sanitized by the server on the way out.
  */
-text_html: string, options: Array<OptionView>, };
+text_html: string, 
+/**
+ * The axes the Options are compared along, each already inline HTML, in the
+ * order the agent declared them. Empty on a question that declared none —
+ * which is what tells the page to draw the list rather than the table, so
+ * the two never have to be told apart by looking at the Options.
+ *
+ * Rendered here beside everything else the agent wrote, so the browser
+ * still needs no markdown parser to draw a header.
+ */
+columns: Array<string>, options: Array<OptionView>, };
 
 /**
  * The Diff as the browser receives it: the HTML the server rendered, and the
@@ -124,7 +134,16 @@ export type OptionView = { n: number,
  * The text as inline HTML, rendered and sanitized by the server on the way
  * out.
  */
-text_html: string, recommended: boolean, };
+text_html: string, recommended: boolean, 
+/**
+ * This Option's row of the Answer Table, one cell per axis the question
+ * declared, in that order, each already inline HTML. Empty wherever the
+ * question declared no axes.
+ *
+ * Inline for the reason `text_html` is: the whole row is the tap target,
+ * and a block in one of its cells would break the row apart.
+ */
+cells: Array<string>, };
 
 /**
  * One row of the pending list.
@@ -150,6 +169,16 @@ export type PushKey = { key: string, };
  * under it.
  */
 export type QuestionView = { ask: AskView, subquestions: Array<AskView>, 
+/**
+ * Whether this Question is a Heading — Sub-questions under it and no
+ * Options of its own — and so heads them rather than asking anything. The
+ * page draws its text without a field, and no Answer comes back for it.
+ *
+ * Answered here rather than worked out in the browser from the Options and
+ * Sub-questions beside it, so that the page and the grammar that refuses a
+ * Response cannot come to different readings of the same Set.
+ */
+heading: boolean, 
 /**
  * The Question's own text as plain words, for the line the table of
  * contents gives it.

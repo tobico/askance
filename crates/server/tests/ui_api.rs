@@ -49,8 +49,10 @@ questions:
         text: Anything else about the headers?
 "#;
 
-/// Every question in [`SET`], in the order a Response has to account for them.
-const QUESTIONS: [&str; 4] = ["Q1", "Q2", "Q2a", "Q2b"];
+/// Everything in [`SET`] there is to answer, in the order a Response has to
+/// account for it. `Q2` is not among them: it heads its Sub-questions and asks
+/// nothing of its own, so no entry comes back for it.
+const QUESTIONS: [&str; 3] = ["Q1", "Q2a", "Q2b"];
 
 /// One router over a fresh database, shared by every request in a test: a wait
 /// held through one clone has to hear a submit made through another, which is
@@ -194,12 +196,7 @@ fn left_open(label: &str) -> Answer {
 /// about the three they left alone.
 fn confirmed_with_three_left_open() -> Response {
     Response {
-        answers: vec![
-            answered("Q1", Some(2)),
-            left_open("Q2"),
-            left_open("Q2a"),
-            left_open("Q2b"),
-        ],
+        answers: vec![answered("Q1", Some(2)), left_open("Q2a"), left_open("Q2b")],
         comment: None,
     }
 }
@@ -528,7 +525,7 @@ async fn a_response_that_misses_a_question_comes_back_naming_it() {
     // Q2b is unaccounted for, which the viewer should never let happen — so it
     // is carried back and shown rather than swallowed.
     let short = Response {
-        answers: vec![answered("Q1", Some(1)), left_open("Q2"), left_open("Q2a")],
+        answers: vec![answered("Q1", Some(1)), left_open("Q2a")],
         comment: None,
     };
 

@@ -73,6 +73,15 @@ pub struct QuestionView {
     pub ask: AskView,
     pub subquestions: Vec<AskView>,
 
+    /// Whether this Question is a Heading — Sub-questions under it and no
+    /// Options of its own — and so heads them rather than asking anything. The
+    /// page draws its text without a field, and no Answer comes back for it.
+    ///
+    /// Answered here rather than worked out in the browser from the Options and
+    /// Sub-questions beside it, so that the page and the grammar that refuses a
+    /// Response cannot come to different readings of the same Set.
+    pub heading: bool,
+
     /// The Question's own text as plain words, for the line the table of
     /// contents gives it.
     ///
@@ -104,6 +113,15 @@ pub struct AskView {
     /// The text as HTML, rendered and sanitized by the server on the way out.
     pub text_html: String,
 
+    /// The axes the Options are compared along, each already inline HTML, in the
+    /// order the agent declared them. Empty on a question that declared none —
+    /// which is what tells the page to draw the list rather than the table, so
+    /// the two never have to be told apart by looking at the Options.
+    ///
+    /// Rendered here beside everything else the agent wrote, so the browser
+    /// still needs no markdown parser to draw a header.
+    pub columns: Vec<String>,
+
     pub options: Vec<OptionView>,
 }
 
@@ -123,6 +141,14 @@ pub struct OptionView {
     pub text_html: String,
 
     pub recommended: bool,
+
+    /// This Option's row of the Answer Table, one cell per axis the question
+    /// declared, in that order, each already inline HTML. Empty wherever the
+    /// question declared no axes.
+    ///
+    /// Inline for the reason `text_html` is: the whole row is the tap target,
+    /// and a block in one of its cells would break the row apart.
+    pub cells: Vec<String>,
 }
 
 /// How a Set stands: still waiting on the human, answered, or closed unanswered.
@@ -215,13 +241,16 @@ fn viewed(questions: Vec<askance_schema::Question>) -> Vec<QuestionView> {
                 .map(|subquestion| AskView {
                     name: subquestion.name(&question),
                     text_html: markdown::to_html(&subquestion.text),
+                    columns: inline_each(&subquestion.columns),
                     options: offered_as(&subquestion.options),
                 })
                 .collect(),
+            heading: question.heading(),
             nav_text: markdown::to_plain(&question.text),
             ask: AskView {
                 name: question.name().to_owned(),
                 text_html: markdown::to_html(&question.text),
+                columns: inline_each(&question.columns),
                 options: offered_as(&question.options),
             },
         })
@@ -263,6 +292,17 @@ fn offered_as(options: &[askance_schema::QuestionOption]) -> Vec<OptionView> {
             n: option.n,
             text_html: crate::markdown::to_inline_html(&option.text),
             recommended: option.recommended,
+            cells: inline_each(&option.cells),
         })
+        .collect()
+}
+
+/// The Answer Table's own words — its headers and its cells — rendered the way
+/// an Option's text is, and for the same reason: the row is the tap target, and
+/// a block anywhere in it would break the row apart.
+fn inline_each(written: &[String]) -> Vec<String> {
+    written
+        .iter()
+        .map(|words| crate::markdown::to_inline_html(words))
         .collect()
 }

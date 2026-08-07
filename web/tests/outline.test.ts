@@ -47,6 +47,7 @@ function everySection(): SetView {
           {
             name: "Q2a",
             text_html: "<p>What should Retry-After say?</p>",
+            columns: [],
             options: [],
           },
         ],
@@ -59,8 +60,9 @@ function everySection(): SetView {
 
 function question(name: string, words: string): QuestionView {
   return {
-    ask: { name, text_html: `<p>${words}</p>`, options: [] },
+    ask: { name, text_html: `<p>${words}</p>`, columns: [], options: [] },
     subquestions: [],
+    heading: false,
     nav_text: words,
   };
 }
@@ -121,7 +123,16 @@ describe("the parts of the page the spy watches", () => {
       anchors(everySection()),
       "each section's own heading, then whatever is under it — which is the " +
         "order the page has them in, and what the highlight moves along",
-    ).toEqual(["preface", "diff", "diff-1", "diff-2", "questions", "q1", "q2"]);
+    ).toEqual([
+      "preface",
+      "diff",
+      "diff-1",
+      "diff-2",
+      "questions",
+      "q1",
+      "q2",
+      "postscript",
+    ]);
   });
 
   it("each know which section they are in", () => {
@@ -136,6 +147,7 @@ describe("the parts of the page the spy watches", () => {
       null,
       "Questions",
       "Questions",
+      null,
     ]);
   });
 
@@ -146,7 +158,7 @@ describe("the parts of the page the spy watches", () => {
     expect(
       spied(outline(everySection())).map((watched) => watched.section === "diff"),
       "the Diff's heading and both its files, and nothing else",
-    ).toEqual([false, true, true, true, false, false, false]);
+    ).toEqual([false, true, true, true, false, false, false, false]);
   });
 
   it("offer it nowhere on a Set with no Diff", () => {
@@ -164,7 +176,7 @@ describe("the parts of the page the spy watches", () => {
     expect(
       anchors(set),
       "the Questions are the one section every Set has",
-    ).toEqual(["questions", "q1", "q2"]);
+    ).toEqual(["questions", "q1", "q2", "postscript"]);
   });
 
   it("each carry the name the nav gives them", () => {
@@ -186,6 +198,7 @@ describe("the parts of the page the spy watches", () => {
       [null, "Questions"],
       ["Q1", "Where should the request counter live?"],
       ["Q2", "How should a throttled client be told?"],
+      [null, "Comment"],
     ]);
   });
 
@@ -202,6 +215,7 @@ describe("the parts of the page the spy watches", () => {
       "contents-section",
       "contents-question",
       "contents-question",
+      "contents-section",
     ]);
   });
 
@@ -253,6 +267,7 @@ describe("what a line of the nav answers for", () => {
       { at: 0, through: 0 },
       { at: 1, through: 3 },
       { at: 4, through: 6 },
+      { at: 7, through: 7 },
     ]);
   });
 

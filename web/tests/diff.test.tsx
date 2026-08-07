@@ -97,8 +97,9 @@ describe("the attached Diff", () => {
     expect(page.querySelector("#diff-1")).toBeNull();
     expect(
       texts(page, "h2.section-heading"),
-      "with no Diff there is no heading to draw either",
-    ).toEqual(["Preface", "Questions"]);
+      "with no Diff there is no heading to draw either — the closing section " +
+        "is headed for the box it holds, this Set having no Postscript",
+    ).toEqual(["Preface", "Questions", "Comment"]);
     expect(
       page.querySelector(".switch"),
       "and nowhere for word wrap to belong: it governs a Diff, and there is none",

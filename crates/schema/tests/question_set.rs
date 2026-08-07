@@ -398,3 +398,236 @@ postscript: Anything else about the release goes in the comment.
     set.validate()
         .expect("a Postscript is prose: there is nothing in it to refuse");
 }
+
+#[test]
+fn a_question_may_declare_the_axes_its_options_are_compared_along() {
+    let set = QuestionSet::from_yaml(
+        "
+title: Where the counter lives
+questions:
+  - label: Q1
+    text: Where should the request counter live?
+    columns:
+      - Latency
+      - '`ops` cost'
+    options:
+      - n: 1
+        text: In-process
+        cells:
+          - Sub-`ms`
+          - None
+      - n: 2
+        text: In Redis
+        recommended: true
+        cells:
+          - A hop
+          - A box to run
+    subquestions:
+      - letter: a
+        text: And the eviction policy?
+        columns:
+          - Memory
+        options:
+          - n: 1
+            text: LRU
+            cells:
+              - Bounded
+",
+    )
+    .expect("a Set declaring an Answer Table should parse");
+
+    let q1 = &set.questions[0];
+    assert_eq!(q1.columns, ["Latency", "`ops` cost"]);
+    assert_eq!(q1.options[0].cells, ["Sub-`ms`", "None"]);
+    assert_eq!(q1.options[1].cells, ["A hop", "A box to run"]);
+
+    let q1a = &q1.subquestions[0];
+    assert_eq!(q1a.columns, ["Memory"]);
+    assert_eq!(q1a.options[0].cells, ["Bounded"]);
+
+    set.validate()
+        .expect("a well-formed Answer Table is a legal Set");
+}
+
+#[test]
+fn a_question_without_columns_declares_no_table() {
+    let set = QuestionSet::from_yaml(FULL_SET).unwrap();
+
+    assert!(
+        set.questions[0].columns.is_empty(),
+        "the presence of `columns` is what makes an Answer Table"
+    );
+    assert!(set.questions[0].options[0].cells.is_empty());
+
+    set.validate()
+        .expect("a Set that declares no table is untouched by the table's rules");
+}
+
+#[test]
+fn a_row_short_of_the_declared_axes_is_rejected_naming_the_question() {
+    let set = QuestionSet::from_yaml(
+        "
+title: Where the counter lives
+questions:
+  - label: Q1
+    text: Where should the request counter live?
+    columns: [Latency, Cost]
+    options:
+      - n: 1
+        text: In-process
+        cells: [Sub-ms, None]
+      - n: 2
+        text: In Redis
+        cells: [A hop]
+",
+    )
+    .unwrap();
+
+    let error = set
+        .validate()
+        .expect_err("a row that does not fill every column is a broken table");
+
+    assert!(error.names("Q1"), "the error should name Q1, got: {error}");
+}
+
+#[test]
+fn cells_without_columns_are_rejected_naming_the_question() {
+    let set = QuestionSet::from_yaml(
+        "
+title: Cells with nowhere to go
+questions:
+  - label: Q2
+    text: Where should the request counter live?
+    options:
+      - n: 1
+        text: In-process
+        cells: [Sub-ms]
+",
+    )
+    .unwrap();
+
+    let error = set
+        .validate()
+        .expect_err("cells fill columns; without any declared there is no table to fill");
+
+    assert!(error.names("Q2"), "the error should name Q2, got: {error}");
+}
+
+#[test]
+fn a_table_only_some_options_have_rows_for_is_rejected() {
+    let set = QuestionSet::from_yaml(
+        "
+title: Half a table
+questions:
+  - label: Q3
+    text: Where should the request counter live?
+    columns: [Latency]
+    options:
+      - n: 1
+        text: In-process
+        cells: [Sub-ms]
+      - n: 2
+        text: In Redis
+",
+    )
+    .unwrap();
+
+    let error = set
+        .validate()
+        .expect_err("declaring columns commits every Option to a row");
+
+    assert!(error.names("Q3"), "the error should name Q3, got: {error}");
+}
+
+#[test]
+fn a_malformed_table_on_a_sub_question_is_rejected_naming_it() {
+    let set = QuestionSet::from_yaml(
+        "
+title: Nested table
+questions:
+  - label: Q4
+    text: Where should the request counter live?
+    subquestions:
+      - letter: a
+        text: And the eviction policy?
+        columns: [Memory, Cost]
+        options:
+          - n: 1
+            text: LRU
+            cells: [Bounded]
+",
+    )
+    .unwrap();
+
+    let error = set
+        .validate()
+        .expect_err("a Sub-question declares its own table and answers for it");
+
+    assert!(
+        error.names("Q4a"),
+        "the error should name Q4a, got: {error}"
+    );
+}
+
+#[test]
+fn an_empty_columns_list_declares_no_table_at_all() {
+    let set = QuestionSet::from_yaml(
+        "
+title: No axes named
+questions:
+  - label: Q5
+    text: Where should the request counter live?
+    columns: []
+    options:
+      - n: 1
+        text: In-process
+",
+    )
+    .unwrap();
+
+    set.validate()
+        .expect("an empty `columns` is indistinguishable from none, and reads as none");
+
+    let with_cells = QuestionSet::from_yaml(
+        "
+title: No axes named
+questions:
+  - label: Q5
+    text: Where should the request counter live?
+    columns: []
+    options:
+      - n: 1
+        text: In-process
+        cells: [Sub-ms]
+",
+    )
+    .unwrap();
+
+    let error = with_cells
+        .validate()
+        .expect_err("reading as none means cells beside it have no columns to fill");
+
+    assert!(error.names("Q5"), "the error should name Q5, got: {error}");
+}
+
+#[test]
+fn an_answer_table_round_trips_through_yaml() {
+    let set = QuestionSet::from_yaml(
+        "
+title: Where the counter lives
+questions:
+  - label: Q1
+    text: Where should the request counter live?
+    columns: [Latency]
+    options:
+      - n: 1
+        text: In-process
+        cells: [Sub-ms]
+",
+    )
+    .unwrap();
+    let yaml = set.to_yaml().expect("a Set should serialise");
+    let reparsed = QuestionSet::from_yaml(&yaml).expect("our own YAML should parse");
+
+    assert_eq!(reparsed, set);
+}

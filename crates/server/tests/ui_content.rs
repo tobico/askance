@@ -39,6 +39,7 @@ fn option(n: u32, text: &str, recommended: bool) -> QuestionOption {
         n,
         text: text.to_owned(),
         recommended,
+        cells: Vec::new(),
     }
 }
 
@@ -46,6 +47,7 @@ fn subquestion(letter: &str, text: &str, options: Vec<QuestionOption>) -> Subque
     Subquestion {
         letter: letter.to_owned(),
         text: text.to_owned(),
+        columns: Vec::new(),
         options,
         subquestions: Vec::new(),
     }
@@ -67,6 +69,7 @@ fn full_grammar_set() -> QuestionSet {
             Question {
                 label: "Q1".to_owned(),
                 text: "Where should the request counter live?".to_owned(),
+                columns: Vec::new(),
                 options: vec![
                     option(1, "In-process, per instance.", false),
                     option(2, "In Redis, shared across instances.", true),
@@ -76,6 +79,7 @@ fn full_grammar_set() -> QuestionSet {
             Question {
                 label: "Q2".to_owned(),
                 text: "How should a throttled client be told to back off?".to_owned(),
+                columns: Vec::new(),
                 options: vec![
                     option(1, "A bare 429.", false),
                     option(2, "A 429 plus RateLimit headers.", false),
@@ -95,6 +99,7 @@ fn full_grammar_set() -> QuestionSet {
             Question {
                 label: "Q3".to_owned(),
                 text: "Anything I should know before starting?".to_owned(),
+                columns: Vec::new(),
                 options: Vec::new(),
                 subquestions: Vec::new(),
             },
@@ -137,6 +142,28 @@ fn marked_up_set() -> QuestionSet {
          | --- | --- |\n\
          | Retry-After | 30 |\n"
         .to_owned();
+
+    set
+}
+
+/// The same Set with its Options declared as Answer Tables: axes on `Q1` and on
+/// the Sub-question `Q2a`, a row on each of their Options, and markup in the
+/// headers and the cells alike.
+///
+/// The labels and the Option numbers are untouched, so a Response resolving
+/// [`full_grammar_set`] resolves this too.
+fn tabulated_set() -> QuestionSet {
+    let mut set = full_grammar_set();
+
+    set.questions[0].columns = vec!["Latency".to_owned(), "`ops` cost".to_owned()];
+    set.questions[0].options[0].text = "In-process, per instance.".to_owned();
+    set.questions[0].options[0].cells = vec!["Sub-`ms`".to_owned(), "None".to_owned()];
+    set.questions[0].options[1].cells = vec!["**A hop**".to_owned(), "A box to run".to_owned()];
+
+    set.questions[1].subquestions[0].columns = vec!["Memory".to_owned()];
+    set.questions[1].subquestions[0].options[0].text = "LRU".to_owned();
+    set.questions[1].subquestions[0].options[0].cells = vec!["Bounded".to_owned()];
+    set.questions[1].subquestions[0].options[1].cells = vec!["Unbounded".to_owned()];
 
     set
 }
@@ -607,6 +634,98 @@ async fn block_markdown_in_an_option_is_flattened_rather_than_dropped() {
         flattened.contains("no headers") && flattened.contains("no body"),
         "flattened, not dropped: every word the agent wrote is still there:\n{flattened}"
     );
+}
+
+#[tokio::test]
+async fn a_question_declaring_columns_hands_the_viewer_the_table_it_declared() {
+    let (_dir, pool, app) = fresh_app().await;
+
+    let (set, _) = set_json(&app, &pool, &tabulated_set()).await;
+
+    // The axes in the order the agent declared them, and each Option's row
+    // beside them in the same order — the viewer draws the table from these two
+    // and never parses one out of anything.
+    assert_eq!(
+        set.questions[0].ask.columns,
+        ["Latency", "<code>ops</code> cost"]
+    );
+    assert_eq!(
+        option_with(&set, "In-process").cells,
+        ["Sub-<code>ms</code>", "None"]
+    );
+    assert_eq!(
+        option_with(&set, "In Redis").cells,
+        ["<strong>A hop</strong>", "A box to run"]
+    );
+
+    // A Sub-question declares its own table exactly as a Question does.
+    assert_eq!(set.questions[1].subquestions[0].columns, ["Memory"]);
+    assert_eq!(option_with(&set, "LRU").cells, ["Bounded"]);
+}
+
+#[tokio::test]
+async fn a_question_declaring_no_columns_is_the_list_it_always_was() {
+    let (_dir, pool, app) = fresh_app().await;
+
+    let (set, _) = set_json(&app, &pool, &marked_up_set()).await;
+
+    for ask in set
+        .questions
+        .iter()
+        .flat_map(|question| std::iter::once(&question.ask).chain(&question.subquestions))
+    {
+        assert!(
+            ask.columns.is_empty(),
+            "{} declared no axes, so it is no Answer Table",
+            ask.name
+        );
+        for option in &ask.options {
+            assert!(option.cells.is_empty(), "and no Option of it has a row");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_header_and_a_cell_are_rendered_inline_like_an_options_own_text() {
+    let (_dir, pool, app) = fresh_app().await;
+    let mut asking = tabulated_set();
+    asking.questions[0].columns[0] = "Latency\n\n- and jitter\n".to_owned();
+    asking.questions[0].options[0].cells[0] = "Sub-ms\n\n- on a warm cache\n".to_owned();
+
+    let (set, json) = set_json(&app, &pool, &asking).await;
+
+    // A cell is a cell: a block inside one would break the row that is the tap
+    // target, exactly as it would inside an Option's own label.
+    assert!(
+        !json.contains("<li>and jitter</li>") && !json.contains("<li>on a warm cache</li>"),
+        "a header or a cell may not carry a block:\n{json}"
+    );
+    assert!(
+        set.questions[0].ask.columns[0].contains("and jitter"),
+        "flattened, not dropped: {:?}",
+        set.questions[0].ask.columns[0]
+    );
+    assert!(
+        option_with(&set, "In-process").cells[0].contains("on a warm cache"),
+        "flattened, not dropped"
+    );
+}
+
+#[tokio::test]
+async fn markdown_that_would_run_in_the_browser_does_not_reach_a_header_or_a_cell() {
+    let (_dir, pool, app) = fresh_app().await;
+    let running = "Careful now. <script>alert('pwned')</script> \
+         <img src=\"x\" onerror=\"alert('pwned')\"> \
+         [click me](javascript:alert('pwned'))";
+    let mut asking = tabulated_set();
+    asking.questions[0].columns[0] = running.to_owned();
+    asking.questions[0].options[0].cells[0] = running.to_owned();
+
+    let (view, json) = set_json(&app, &pool, &asking).await;
+
+    assert!(view.questions[0].ask.columns[0].contains("Careful now."));
+    assert!(option_with(&view, "In-process").cells[0].contains("Careful now."));
+    assert_sanitised(&json, "the Answer Table");
 }
 
 #[tokio::test]
