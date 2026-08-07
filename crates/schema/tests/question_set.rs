@@ -37,6 +37,11 @@ questions:
             text: UUID
       - letter: b
         text: Should the id appear in URLs?
+postscript: |
+  Whichever way this goes, the Archive view is the part I'd want a second
+  opinion on.
+
+  Anything else about the store is worth saying here.
 "#;
 
 #[test]
@@ -52,6 +57,14 @@ fn a_full_set_parses_into_its_parts() {
         Some(
             "We need to settle how Sets are stored before the UI lands.\n\n\
              The candidates differ mainly in how much SQL the Archive view needs.\n"
+        )
+    );
+    assert_eq!(
+        set.postscript.as_deref(),
+        Some(
+            "Whichever way this goes, the Archive view is the part I'd want a second\n\
+             opinion on.\n\n\
+             Anything else about the store is worth saying here.\n"
         )
     );
 
@@ -92,6 +105,7 @@ questions:
     .expect("a Set without a preface should parse");
 
     assert_eq!(set.preface, None);
+    assert_eq!(set.postscript, None);
     assert_eq!(set.project, None);
     assert_eq!(set.branch, None);
     assert_eq!(set.diff, None);
@@ -346,15 +360,41 @@ questions:
 }
 
 #[test]
-fn a_multi_line_preface_round_trips_through_yaml() {
+fn a_multi_line_preface_and_postscript_round_trip_through_yaml() {
     let set = QuestionSet::from_yaml(FULL_SET).unwrap();
     let yaml = set.to_yaml().expect("a Set should serialise");
     let reparsed = QuestionSet::from_yaml(&yaml).expect("our own YAML should parse");
 
     assert_eq!(reparsed.preface, set.preface);
+    assert_eq!(reparsed.postscript, set.postscript);
     assert_eq!(reparsed.questions.len(), set.questions.len());
     assert!(
         yaml.contains("preface: |"),
         "the markdown Preface should ride in a block scalar, got:\n{yaml}"
     );
+    assert!(
+        yaml.contains("postscript: |"),
+        "the markdown Postscript should ride in one too, got:\n{yaml}"
+    );
+}
+
+#[test]
+fn a_set_may_close_with_a_postscript_and_nothing_else_new() {
+    let set = QuestionSet::from_yaml(
+        "
+title: Just the one
+questions:
+  - label: Q1
+    text: Ship it?
+postscript: Anything else about the release goes in the comment.
+",
+    )
+    .expect("a Set with a Postscript should parse");
+
+    assert_eq!(
+        set.postscript.as_deref(),
+        Some("Anything else about the release goes in the comment.")
+    );
+    set.validate()
+        .expect("a Postscript is prose: there is nothing in it to refuse");
 }

@@ -122,11 +122,12 @@ answers:
 - label: Q2a
   unanswered: true
 - label: Q3
-  free_text: |
-    The nightly export job in `ops/export` hammers the endpoint on
-    purpose. Give it an allowlist entry rather than a bigger bucket.
+  free_text: acct_8f21c3, the nightly export job in `ops/export`.
 comment: |
   Ship it behind a flag and turn it on for the one noisy client first.
+
+  That export job hammers the endpoint on purpose, so give it an allowlist
+  entry rather than a bigger bucket for everyone.
 
   On Q2a I genuinely don't know — pick whatever our SDK's retry logic
   already understands, and say in the PR which one that was.

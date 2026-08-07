@@ -14,9 +14,9 @@ use ts_rs::TS;
 /// One Question Set as the browser receives it.
 ///
 /// Everything the agent wrote — the Preface, every Question's and Sub-question's
-/// text, and every Option's — arrives as HTML rather than as its source, and so
-/// does the Diff: the server has the markdown parser and the diff highlighter,
-/// and this way the browser needs neither.
+/// text, every Option's, and the Postscript — arrives as HTML rather than as its
+/// source, and so does the Diff: the server has the markdown parser and the diff
+/// highlighter, and this way the browser needs neither.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "typescript", derive(TS), ts(export_to = "types.ts"))]
 pub struct SetView {
@@ -27,6 +27,11 @@ pub struct SetView {
     pub preface_html: Option<String>,
     pub diff: Option<DiffView>,
     pub questions: Vec<QuestionView>,
+
+    /// What the agent closed the Set with, for the page to draw above the
+    /// set-level comment box. Rendered here like the Preface, because it is the
+    /// same kind of thing said at the other end of the Set.
+    pub postscript_html: Option<String>,
 
     /// Whether anything the agent wrote here came out as a Diagram, and so
     /// whether this page carries the client-side renderer at all.
@@ -153,16 +158,13 @@ pub struct Answered {
 /// and the registry of held waits, neither of which is any of this crate's
 /// business. Everything else on the way out is rendering, which is all of it.
 pub fn set_view(id: i64, set: askance_schema::QuestionSet, standing: Standing) -> SetView {
-    use crate::{diff, markdown};
+    use crate::diff;
 
     // An empty Preface is the same as none at all: no point drawing the section
-    // for it.
-    let preface_html = set
-        .preface
-        .as_deref()
-        .map(str::trim)
-        .filter(|preface| !preface.is_empty())
-        .map(markdown::to_html);
+    // for it. The Postscript is nothing but the same thing said at the other end
+    // of the Set, so it is rendered the same way.
+    let preface_html = rendered(set.preface.as_deref());
+    let postscript_html = rendered(set.postscript.as_deref());
 
     let questions = viewed(set.questions);
 
@@ -171,10 +173,15 @@ pub fn set_view(id: i64, set: askance_schema::QuestionSet, standing: Standing) -
         title: set.title,
         project: set.project,
         branch: set.branch,
-        // Asked of the two of them together, and before either is given away:
-        // one Diagram anywhere on the page is what the renderer is loaded for.
-        diagrams: diagrammed(preface_html.as_deref(), &questions),
+        // Asked of all of them together, and before any is given away: one
+        // Diagram anywhere on the page is what the renderer is loaded for.
+        diagrams: diagrammed(
+            preface_html.as_deref(),
+            postscript_html.as_deref(),
+            &questions,
+        ),
         preface_html,
+        postscript_html,
         // A Diff with no files in it is the same as none: the CLI attaches one
         // only when the tree is dirty, but an empty patch is not worth a
         // heading either.
@@ -182,6 +189,16 @@ pub fn set_view(id: i64, set: askance_schema::QuestionSet, standing: Standing) -
         questions,
         standing,
     }
+}
+
+/// One of the Set's two blocks of prose as the page draws it, or nothing where
+/// the agent wrote nothing worth a section: markdown that is all whitespace says
+/// no more than an absent field does.
+fn rendered(written: Option<&str>) -> Option<String> {
+    written
+        .map(str::trim)
+        .filter(|prose| !prose.is_empty())
+        .map(crate::markdown::to_html)
 }
 
 /// The Set's Questions as the page needs them: named as a Response answers them,
@@ -211,8 +228,8 @@ fn viewed(questions: Vec<askance_schema::Question>) -> Vec<QuestionView> {
         .collect()
 }
 
-/// Whether any of this Set's rendered markdown holds a Diagram: the Preface, and
-/// every Question's and Sub-question's text.
+/// Whether any of this Set's rendered markdown holds a Diagram: the Preface, the
+/// Postscript, and every Question's and Sub-question's text.
 ///
 /// The Options are not asked, because there is nothing to find in one: an
 /// Option's text is rendered inline, and a fence in there is flattened into the
@@ -221,15 +238,19 @@ fn viewed(questions: Vec<askance_schema::Question>) -> Vec<QuestionView> {
 /// Asked of the rendered HTML rather than of the markdown, which is what keeps
 /// this answer and the renderer's own reading of the page from ever disagreeing —
 /// see [`crate::markdown::holds_diagram`].
-fn diagrammed(preface_html: Option<&str>, questions: &[QuestionView]) -> bool {
+fn diagrammed(
+    preface_html: Option<&str>,
+    postscript_html: Option<&str>,
+    questions: &[QuestionView],
+) -> bool {
     use crate::markdown;
 
+    let mut prose = [preface_html, postscript_html].into_iter().flatten();
     let mut asked = questions
         .iter()
         .flat_map(|question| std::iter::once(&question.ask).chain(&question.subquestions));
 
-    preface_html.is_some_and(markdown::holds_diagram)
-        || asked.any(|ask| markdown::holds_diagram(&ask.text_html))
+    prose.any(markdown::holds_diagram) || asked.any(|ask| markdown::holds_diagram(&ask.text_html))
 }
 
 /// One question's Options as the page draws them, in the order the agent offered

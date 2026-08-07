@@ -47,6 +47,12 @@ fn the_example_set_exercises_the_grammar() {
         "the Preface is markdown, so it should run to more than one paragraph, got:\n{preface}"
     );
 
+    let postscript = set.postscript.as_deref().expect("the Set has a Postscript");
+    assert!(
+        postscript.contains("\n\n"),
+        "the Postscript is markdown too, so it should run to more than one paragraph, got:\n{postscript}"
+    );
+
     let subquestions: Vec<_> = set
         .questions
         .iter()

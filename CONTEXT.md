@@ -71,7 +71,8 @@ approval can happen in the web UI.
 _Avoid_: patch, changeset
 
 **Diagram**:
-A mermaid fence in a Preface or Question, rendered visually in the viewer.
+A mermaid fence in a Preface, a Question or a Postscript, rendered visually
+in the viewer.
 Degrades to its readable source text whenever it cannot render.
 _Avoid_: chart, graph, figure
 

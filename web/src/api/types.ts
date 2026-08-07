@@ -188,11 +188,17 @@ comment?: string | null, };
  * One Question Set as the browser receives it.
  *
  * Everything the agent wrote — the Preface, every Question's and Sub-question's
- * text, and every Option's — arrives as HTML rather than as its source, and so
- * does the Diff: the server has the markdown parser and the diff highlighter,
- * and this way the browser needs neither.
+ * text, every Option's, and the Postscript — arrives as HTML rather than as its
+ * source, and so does the Diff: the server has the markdown parser and the diff
+ * highlighter, and this way the browser needs neither.
  */
 export type SetView = { id: number, title: string, project: string | null, branch: string | null, preface_html: string | null, diff: DiffView | null, questions: Array<QuestionView>, 
+/**
+ * What the agent closed the Set with, for the page to draw above the
+ * set-level comment box. Rendered here like the Preface, because it is the
+ * same kind of thing said at the other end of the Set.
+ */
+postscript_html: string | null, 
 /**
  * Whether anything the agent wrote here came out as a Diagram, and so
  * whether this page carries the client-side renderer at all.

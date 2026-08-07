@@ -53,8 +53,21 @@ questions:
               limiter works.
 
   # A Question with no Options at all: the answer is whatever the human
-  # writes.
+  # writes. It asks for one specific missing fact — an account id nothing in
+  # the codebase knows — rather than for anything else in general, which is
+  # what the Postscript below is for.
   - label: Q3
     text: >-
-      Anything I should know before starting — clients you know will break,
-      or limits you already have in mind?
+      Which client account should the allowlist start with? I need the id to
+      pin it in the config, and nothing in the repo names it.
+
+# The Postscript: markdown the Set closes with, drawn above the comment box.
+# Not a Question — it is where "anything else?" goes, and whatever the human
+# writes under it (or doesn't) is the set-level comment.
+postscript: |
+  Worth a word in the comment if you have one: whether the limiter should
+  ship behind a flag at all, and whether the noisy clients are better off
+  with allowlist entries than with a bigger bucket for everyone.
+
+  Nothing here blocks the work. Leave the box empty if there's nothing to
+  add, and I'll take the cautious reading of both.
