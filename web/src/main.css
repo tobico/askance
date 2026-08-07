@@ -1593,17 +1593,35 @@ p.meta .branch {
   cursor: pointer;
 }
 
-/* The accent treatment the selected Option card takes, spread along the row: the
-   borders collapse, so colouring every cell's draws one outline around the whole
-   of it. */
+/* The accent treatment the selected Option card takes, drawn around the whole
+   row — at the card's weight, one 1px border and one 1px inset shadow being the
+   same 2px this is.
+
+   Drawn on the row rather than on its cells' borders, because those borders are
+   collapsed and so are shared: each one belongs to the two cells it sits
+   between, and the tie is settled by position rather than by which cell meant
+   it. So colouring every cell's lost the edge along the top, where the row above
+   holds the same line and wins it, and won the edges between the columns, where
+   there is no rival to lose to. The two places it had exactly backwards. An
+   outline is the row's alone and shares nothing: it closes the top, and leaves
+   the columns the edge colour the rest of the table is ruled in. */
+.answer-table tbody tr:has(input:checked) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .answer-table tbody tr:has(input:checked) > td {
-  border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-.answer-table tbody tr:has(input:focus-visible) {
+/* Selection now holds the ring the row-wide focus outline used to draw, so focus
+   goes back to the radio it is really on. The list can carry both marks on the
+   one box — the selected card rings inside its edge and the focus ring sits
+   outside it with a gap — but a row has no outside to sit in: the table scrolls
+   inside itself, and a ring drawn past the last row would be a ring cut off. */
+.answer-table .pick input:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
 /* The radio and the number travel together and never wrap apart. The record
@@ -1747,18 +1765,18 @@ p.meta .branch {
    and fades the way a turned-down card does; the row that was chosen keeps the
    page's ink and takes the accent the sheet gave the row it was selected on, so
    what the human saw when they picked it is what they see when they come back
-   to it. The borders collapse, so colouring every cell's draws one outline
-   around the whole row. */
+   to it — the same ring, drawn the same way and for the same reasons. */
 .ask.decided .answer-table tbody tr {
   color: var(--ink-soft);
 }
 
 .ask.decided .answer-table tbody tr.chosen {
   color: var(--ink);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .ask.decided .answer-table tbody tr.chosen > td {
-  border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 

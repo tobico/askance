@@ -9,5 +9,5 @@ in a grilling session; the term is defined in CONTEXT.md.
 
 ## Tasks
 
-- [ ] 01: Selected-row ring — [details](01-selected-row-ring.md)
+- [x] 01: Selected-row ring — [details](01-selected-row-ring.md)
 - [ ] 02: The Gutter — [details](02-the-gutter.md)
