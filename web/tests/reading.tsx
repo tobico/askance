@@ -78,6 +78,21 @@ export async function answering(
   return { page: container, fetching, history };
 }
 
+/// The same Set, closing with a Postscript.
+///
+/// The markup is written here rather than taken from a fixture: the Set
+/// `cargo test` writes those from is the one that closes with nothing, and what
+/// its Postscript would be rendered into is asked of the server in
+/// `ui_content.rs`. What is asked here is where the page puts it — so this is
+/// the shape that renderer really emits, prose and a list with a code span in
+/// it, and nothing about the rendering rides on it.
+export const POSTSCRIPT =
+  "<p>Worth taking up in the comment:</p>\n<ul>\n<li>whether <code>ops/export</code> gets an allowlist entry</li>\n</ul>\n";
+
+export function withPostscript(set: SetView): SetView {
+  return { ...set, postscript_html: POSTSCRIPT };
+}
+
 /// The body of the last request the page sent, as JSON — what it actually put
 /// on the wire, rather than what it was asked to.
 export function sent(fetching: ReturnType<typeof serving>): unknown {

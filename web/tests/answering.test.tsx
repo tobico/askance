@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SetView, Submitted } from "../src/api/types";
 import { draftKey } from "../src/set/sheet";
-import { answering, sent, texts } from "./reading";
+import { answering, sent, texts, withPostscript } from "./reading";
 import { json } from "./serving";
 import answered from "./fixtures/set-answered.json" with { type: "json" };
 import waiting from "./fixtures/set-answering.json" with { type: "json" };
@@ -148,6 +148,33 @@ describe("the sheet a waiting Set is answered on", () => {
     // Five questions — Q1, Q2, Q2a, Q2b, Q3 — plus the set-level comment.
     expect(page.querySelectorAll("textarea")).toHaveLength(6);
     expect(page.querySelector('textarea[name="set-comment"]')).toBeTruthy();
+  });
+
+  it("closes the sheet with the Postscript, immediately above the comment box", async () => {
+    const { page } = await answering(withPostscript(WAITING));
+
+    const postscript = page.querySelector("section.postscript")!;
+    expect(postscript, "expected the Postscript drawn").toBeTruthy();
+    // Rendered markdown, drawn by the same rules as everything else the agent
+    // wrote — a code span in it included.
+    const body = postscript.querySelector(".postscript-body")!;
+    expect(body.className).toContain("markdown");
+    expect(body.innerHTML).toContain("<code>ops/export</code>");
+
+    // Immediately above the box it is introducing, with nothing in between.
+    expect(postscript.nextElementSibling!.className).toContain("set-comment");
+
+    // And the box itself is untouched: it says what it always said.
+    const comment = page.querySelector<HTMLTextAreaElement>("#set-comment")!;
+    expect(comment.placeholder).toBe("Other comments");
+    expect(comment.getAttribute("aria-label")).toBe("Other comments");
+  });
+
+  it("draws nothing above the comment box for a Set that closed with none", async () => {
+    const { page } = await answering(WAITING);
+
+    expect(page.querySelector(".postscript")).toBeNull();
+    expect(page.querySelector(".set-comment")).toBeTruthy();
   });
 
   it("prompts every field by its placeholder and starts it one line tall", async () => {

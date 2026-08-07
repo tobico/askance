@@ -1010,8 +1010,14 @@ p.meta .branch {
 
 /* The box the rendered markdown sits in, and nothing about the markdown itself:
    `.markdown` above holds the blocks' own rhythm, including the flush top and
-   bottom edges that let this padding be the whole of the gap. */
-.preface-body {
+   bottom edges that let this padding be the whole of the gap.
+
+   The Postscript's is the same box: both are the agent's own prose, said at
+   either end of the Set, and one drawn as a card while the other was loose prose
+   would read as two different kinds of thing. It is also what keeps the
+   Postscript from blending into the sheet's own fields directly under it. */
+.preface-body,
+.postscript-body {
   padding: 1rem;
   background: var(--card);
   border: 1px solid var(--edge);
@@ -1412,8 +1418,21 @@ p.meta .branch {
    the least legible difference on the page. The `recommended` class stays: it is
    still true of the Option, and the ★ hangs off it. */
 
+/* What the agent closed the Set with, and the box it is introducing. The
+   Postscript takes the gap the box used to keep from the Questions, and what is
+   left between the two of them is only enough to keep them apart: they are one
+   thing to read, an invitation and the place to take it up. */
+
+.postscript {
+  margin-top: 1.5rem;
+}
+
 .set-comment {
   margin-top: 1.5rem;
+}
+
+.postscript + .set-comment {
+  margin-top: 0.6rem;
 }
 
 /* The submit sits at the foot of the column, after the last thing there is to

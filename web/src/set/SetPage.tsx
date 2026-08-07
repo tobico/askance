@@ -43,6 +43,7 @@ import { Answering } from "./Answering";
 import { AskText } from "./AskText";
 import { Contents, PageHeader, navigation } from "./Contents";
 import { Diff } from "./Diff";
+import { Postscript } from "./Postscript";
 import { Standing } from "./Standing";
 import { drawDiagrams } from "./diagrams";
 import { anchor, outline, spied } from "./outline";
@@ -244,10 +245,18 @@ function Sheet(props: { set: SetView }): JSX.Element {
       <Show
         when={decided()}
         fallback={
-          <Answering id={props.set.id} questions={props.set.questions} />
+          <Answering
+            id={props.set.id}
+            questions={props.set.questions}
+            postscript={props.set.postscript_html}
+          />
         }
       >
-        <Questions questions={props.set.questions} response={response()} />
+        <Questions
+          questions={props.set.questions}
+          response={response()}
+          postscript={props.set.postscript_html}
+        />
       </Show>
     </>
   );
@@ -263,6 +272,7 @@ function Sheet(props: { set: SetView }): JSX.Element {
 function Questions(props: {
   questions: QuestionView[];
   response: Response | null;
+  postscript: string | null;
 }): JSX.Element {
   /// A Set that settled with no Response behind it, which is the one standing
   /// that was never answered by anybody.
@@ -310,6 +320,12 @@ function Questions(props: {
           )}
         </For>
       </ol>
+      {/* Drawn whether or not anything came back in the box: the Postscript is
+          what the agent closed with, so it belongs above the comment on a Set
+          that has one and above where the comment would have been on a Set that
+          does not — a Set closed unanswered has no Response and so never had
+          one. */}
+      <Postscript html={props.postscript} />
       <Show when={comment()}>
         {(comment) => (
           <section class="set-comment decided">
