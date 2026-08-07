@@ -115,7 +115,7 @@ Options:
           Print help (see a summary with '-h')
 ```
 
-Set shape — `title` (required), `preface`, and
+Set shape — `title` (required), `preface`, `postscript`, and
 `questions[].{label, text, options[].{n, text, recommended},
 subquestions[].{letter, text, options}}`.
 
@@ -131,9 +131,18 @@ where both of those live.
 
 One Set is one round, budgeted as above. Because the round trip is expensive,
 sweep ahead: carry the Questions that would otherwise wait for the next round or
-two, provided none of them depends on an Answer in this one. A trailing open
-Question — anything worth knowing before the work starts — costs the human
-almost nothing and often saves a whole round trip.
+two, provided none of them depends on an Answer in this one.
+
+What can't be swept ahead — anything else worth knowing, whatever the human
+might want to raise before the work starts — closes the Set as the
+**`postscript`** and is **never a Question.** The `postscript` is markdown drawn
+directly above the set-level comment box, and that box is on every Set whether
+or not one was written: a catch-all Question asks for a second time what the box
+already asks, and costs the human a row they then have to leave explicitly open.
+Suggest there what would be worth a word in the comment, and let the box take
+it. A trailing open Question is still right when it asks for something
+*specific* the agent cannot find out for itself — a name, an id, a fact the repo
+does not hold.
 
 Decide the Questions first, then serialize them:
 
@@ -161,8 +170,10 @@ questions:
             recommended: true
           - n: 2
             text: Change it
-  - label: Q12
-    text: Anything worth knowing before this starts?
+postscript: |
+  Worth a word in the comment if there is one: whether the install command is
+  worth keeping stable across the rewrite at all, and anything the framing
+  above misses. Nothing here blocks the work.
 ```
 
 Mapping from the labels:
@@ -175,6 +186,9 @@ Mapping from the labels:
 - `recommended: true` is the `★`. At most one per Question or Sub-question.
 - Options are optional. A Question with none is a bare clarifying Question, and
   the Answer is whatever the human writes.
+- `postscript` closes the Set after the last Question, and carries no label
+  because nothing answers it directly: what it raises comes back in the
+  set-level `comment`, in the box drawn beneath it.
 
 Three things to get right:
 
@@ -262,8 +276,6 @@ answers:
     free_text: Start there, revisit if the catalog case gets stronger.
   - label: Q11a
     unanswered: true
-  - label: Q12
-    free_text: The nightly export job hammers that endpoint on purpose.
 comment: |
   On Q11a I genuinely don't know — pick whatever's least work to change later.
 ```
@@ -283,8 +295,11 @@ never anything to infer about what the human passed over:
   Options, and it wins over the Options offered.
 - `unanswered: true` → **still open.** Ask a brief follow-up. Never read it as
   accepting the Recommendation.
-- `comment` → about the Set as a whole rather than any one Question. Read it
-  before acting on the answers; it may reframe them.
+- `comment` → about the Set as a whole rather than any one Question, and the
+  reply to the `postscript` where the Set closed with one. Read it before acting
+  on the answers; it may reframe them. **An absent `comment` means they had
+  nothing to add** — the box is on every Set and always optional, so an empty
+  one is an answer of its own, and never a Question left open.
 
 A Response of nothing but `unanswered` entries plus a `comment` is a valid
 counter-question. It means the human is not answering as asked — take the

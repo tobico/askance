@@ -34,6 +34,7 @@ function everySection(): SetView {
     project: "askance",
     branch: "solid-viewer",
     preface_html: "<p>no rate limit</p>",
+    postscript_html: null,
     diff: {
       html: "<details id=\"diff-1\"></details><details id=\"diff-2\"></details>",
       paths: ["src/limits.rs", "notes.txt"],

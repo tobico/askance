@@ -99,6 +99,7 @@ fn full_grammar_set() -> QuestionSet {
                 subquestions: Vec::new(),
             },
         ],
+        postscript: None,
         project: Some("askance".to_owned()),
         branch: Some("solid-viewer".to_owned()),
         diff: None,
@@ -422,6 +423,68 @@ async fn markdown_that_would_run_in_the_browser_does_not_reach_the_preface() {
 }
 
 #[tokio::test]
+async fn the_postscript_is_rendered_from_markdown_by_the_server() {
+    let (_dir, pool, app) = fresh_app().await;
+    let mut set = full_grammar_set();
+    set.postscript = Some(
+        "Worth taking up in the comment:\n\n\
+         - whether `ops/export` gets an allowlist entry\n"
+            .to_owned(),
+    );
+
+    let (view, _) = set_json(&app, &pool, &set).await;
+    let postscript = view.postscript_html.expect("this Set has a Postscript");
+
+    assert!(
+        postscript.contains("<code>ops/export</code>"),
+        "expected the Postscript's markdown rendered to HTML:\n{postscript}"
+    );
+    assert!(
+        postscript.contains("<li>whether <code>ops/export</code> gets an allowlist entry</li>"),
+        "expected the Postscript's list rendered to HTML:\n{postscript}"
+    );
+}
+
+#[tokio::test]
+async fn markdown_that_would_run_in_the_browser_does_not_reach_the_postscript() {
+    let (_dir, pool, app) = fresh_app().await;
+    let mut set = full_grammar_set();
+    set.postscript = Some(
+        "One last thing.\n\n<script>alert('pwned')</script>\n\n\
+         <img src=x onerror=\"alert('pwned')\">\n\n\
+         [click me](javascript:alert('pwned'))\n"
+            .to_owned(),
+    );
+
+    let (view, json) = set_json(&app, &pool, &set).await;
+
+    assert!(
+        view.postscript_html
+            .as_deref()
+            .is_some_and(|html| html.contains("One last thing.")),
+        "expected the Postscript's prose"
+    );
+    assert_sanitised(&json, "the Postscript");
+}
+
+#[tokio::test]
+async fn a_set_with_no_postscript_carries_none() {
+    let (_dir, pool, app) = fresh_app().await;
+    let set = full_grammar_set();
+    assert!(
+        set.postscript.is_none(),
+        "this Set is the one that closes with nothing"
+    );
+
+    let (view, _) = set_json(&app, &pool, &set).await;
+
+    assert_eq!(
+        view.postscript_html, None,
+        "there is no section to draw above the comment box"
+    );
+}
+
+#[tokio::test]
 async fn a_questions_markdown_is_rendered_by_the_server() {
     let (_dir, pool, app) = fresh_app().await;
 
@@ -624,6 +687,20 @@ async fn a_preface_of_nothing_but_whitespace_is_the_same_as_none() {
 }
 
 #[tokio::test]
+async fn a_postscript_of_nothing_but_whitespace_is_the_same_as_none() {
+    let (_dir, pool, app) = fresh_app().await;
+    let mut set = full_grammar_set();
+    set.postscript = Some("   \n".to_owned());
+
+    let (view, _) = set_json(&app, &pool, &set).await;
+
+    assert_eq!(
+        view.postscript_html, None,
+        "an empty Postscript is the same as none, exactly as the Preface is"
+    );
+}
+
+#[tokio::test]
 async fn the_attached_diff_is_rendered_per_file_and_highlighted_by_the_server() {
     let (_dir, pool, app) = fresh_app().await;
     let mut set = full_grammar_set();
@@ -698,6 +775,38 @@ async fn a_diagram_in_a_question_says_so_just_the_same() {
         view.questions[1].subquestions[0]
             .text_html
             .contains(r#"<pre class="mermaid">"#)
+    );
+}
+
+#[tokio::test]
+async fn a_diagram_in_the_postscript_says_so_just_the_same() {
+    let (_dir, pool, app) = fresh_app().await;
+    let mut set = full_grammar_set();
+    set.preface = Some("`POST /v1/messages` has no rate limit.\n".to_owned());
+    set.postscript = Some(
+        concat!(
+            "Where the counter would live:\n",
+            "\n",
+            "```mermaid\n",
+            "graph LR;\n",
+            "  client-->api;\n",
+            "  api-->redis;\n",
+            "```\n",
+        )
+        .to_owned(),
+    );
+
+    let (view, _) = set_json(&app, &pool, &set).await;
+
+    assert!(
+        view.diagrams,
+        "a Diagram is a Diagram wherever the agent wrote it, the Postscript included"
+    );
+    assert!(
+        view.postscript_html
+            .as_deref()
+            .is_some_and(|html| html.contains(r#"<pre class="mermaid">"#)),
+        "expected the block the renderer draws from"
     );
 }
 

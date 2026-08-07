@@ -122,11 +122,12 @@ answers:
 - label: Q2a
   unanswered: true
 - label: Q3
-  free_text: |
-    The nightly export job in `ops/export` hammers the endpoint on
-    purpose. Give it an allowlist entry rather than a bigger bucket.
+  free_text: acct_8f21c3, the nightly export job in `ops/export`.
 comment: |
   Ship it behind a flag and turn it on for the one noisy client first.
+
+  That export job hammers the endpoint on purpose, so give it an allowlist
+  entry rather than a bigger bucket for everyone.
 
   On Q2a I genuinely don't know — pick whatever our SDK's retry logic
   already understands, and say in the PR which one that was.
@@ -485,8 +486,8 @@ grammar both ends enforce in
 
 ### Question Set
 
-An agent supplies `title`, `preface` and `questions`. It never supplies
-`project`, `branch` or `diff`: the CLI derives those from the working
+An agent supplies `title`, `preface`, `questions` and `postscript`. It never
+supplies `project`, `branch` or `diff`: the CLI derives those from the working
 directory and overwrites anything a Set claims.
 
 ```yaml
@@ -508,19 +509,23 @@ questions:
       - letter: a                         # named Q1a — parent's label + letter
         text: What should Retry-After say?
         options: [...]                    # same shape as a Question's
+postscript: |                             # optional markdown, drawn above the
+  What else the human might want to       #   set-level comment box. Never a
+  raise, and where "anything else?"       #   Question: an empty box under it
+  goes instead of a Question.             #   means nothing to add
 ```
 
 The rest of the grammar: a Set needs a non-empty title, labels are distinct
 across the Set, Option numbers are distinct within a question, and there is no
 multi-select — an Answer carries one `selected`.
 
-Markdown is the agent's half of the page. The `preface`, and the `text` of a
-Question and of a Sub-question, are rendered in full: headings, lists, tables,
-fenced code. An Option's `text` gets inline markup only — the emphasis, the
-code spans, the links — because an Option is one line beside a radio, and a
-block written there is flattened into that line rather than drawn as one. The
-`title` is not markdown: it heads the page and stands in the pending list and
-the Archive as typed.
+Markdown is the agent's half of the page. The `preface` and the `postscript`,
+and the `text` of a Question and of a Sub-question, are rendered in full:
+headings, lists, tables, fenced code. An Option's `text` gets inline markup
+only — the emphasis, the code spans, the links — because an Option is one line
+beside a radio, and a block written there is flattened into that line rather
+than drawn as one. The `title` is not markdown: it heads the page and stands in
+the pending list and the Archive as typed.
 
 All of it is rendered on the server and sanitized on the way through, so a
 script or an event handler written into any of those fields is dropped rather
@@ -528,7 +533,7 @@ than run, and no markdown parser reaches the browser.
 
 ### Diagrams
 
-A ```` ```mermaid ```` fence in any of those three fields is a **Diagram**: the
+A ```` ```mermaid ```` fence in any of those four fields is a **Diagram**: the
 structural part of a Preface said as a picture, for the Set that is quicker to
 grasp as one. It is the one thing on the page mermaid draws rather than the
 server, and the bundle that draws it is imported only by a Set that carries one

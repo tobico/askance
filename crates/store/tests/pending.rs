@@ -17,6 +17,7 @@ fn set(title: &str) -> QuestionSet {
         title: title.to_owned(),
         preface: None,
         questions: Vec::new(),
+        postscript: None,
         project: Some("askance".to_owned()),
         branch: Some("answering-web-ui".to_owned()),
         diff: None,

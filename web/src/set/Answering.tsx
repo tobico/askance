@@ -25,6 +25,7 @@ import type {
   Submitted,
 } from "../api/types";
 import { AskText } from "./AskText";
+import { Postscript } from "./Postscript";
 import { anchor } from "./outline";
 import {
   clearDraft,
@@ -58,6 +59,7 @@ type Fields = {
 export function Answering(props: {
   id: number;
   questions: QuestionView[];
+  postscript: string | null;
 }): JSX.Element {
   // Read once rather than through a memo: the fields are the Set's own shape,
   // and rebuilding them under a human who is typing into them would throw away
@@ -203,6 +205,10 @@ export function Answering(props: {
           )}
         </For>
       </ol>
+      {/* The agent's closing word, above the box it is inviting something into:
+          what it suggests taking up is read on the way to writing, rather than
+          asked as a Question of its own. */}
+      <Postscript html={props.postscript} />
       <section class="set-comment">
         <div class="grow" data-value={sheet.comment}>
           <textarea

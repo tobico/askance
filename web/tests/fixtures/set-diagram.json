@@ -3,6 +3,7 @@
   "diagrams": true,
   "diff": null,
   "id": 1,
+  "postscript_html": null,
   "preface_html": "<p>Where the counter would live:</p>\n<pre class=\"mermaid\">graph LR;\n  client--&gt;api;\n  api--&gt;redis;\n</pre>",
   "project": "askance",
   "questions": [

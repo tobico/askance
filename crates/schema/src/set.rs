@@ -9,10 +9,10 @@ use serde::{Deserialize, Serialize};
 
 /// A batch of Questions submitted together by one agent.
 ///
-/// `title`, `preface` and `questions` come from the agent; `project`, `branch`
-/// and `diff` are filled in by the CLI, which derives them from the working
-/// directory rather than trusting the agent. The server treats all three as
-/// opaque.
+/// `title`, `preface`, `questions` and `postscript` come from the agent;
+/// `project`, `branch` and `diff` are filled in by the CLI, which derives them
+/// from the working directory rather than trusting the agent. The server treats
+/// all three as opaque.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QuestionSet {
@@ -25,6 +25,13 @@ pub struct QuestionSet {
     pub preface: Option<String>,
 
     pub questions: Vec<Question>,
+
+    /// Markdown the agent closes the Set with, drawn above the set-level comment
+    /// box: suggested discussion topics, or whatever else the human might take
+    /// up there. Not a Question — a blank comment beneath it means nothing to
+    /// add, never Unanswered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postscript: Option<String>,
 
     /// Repository the agent is working in, as the CLI saw it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -105,8 +112,8 @@ impl QuestionSet {
         serde_saphyr::from_str(yaml)
     }
 
-    /// Render the Set back to YAML. Multi-line strings — the Preface, the Diff
-    /// — come out as `|` block scalars.
+    /// Render the Set back to YAML. Multi-line strings — the Preface, the
+    /// Postscript, the Diff — come out as `|` block scalars.
     pub fn to_yaml(&self) -> Result<String, serde_saphyr::SerializeError> {
         serde_saphyr::to_string(self)
     }

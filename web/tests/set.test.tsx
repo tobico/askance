@@ -15,7 +15,7 @@ import { screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Response as Decided, SetView } from "../src/api/types";
-import { mount, reading, texts } from "./reading";
+import { mount, reading, texts, withPostscript } from "./reading";
 import { json, serving } from "./serving";
 import answered from "./fixtures/set-answered.json" with { type: "json" };
 import answering from "./fixtures/set-answering.json" with { type: "json" };
@@ -308,6 +308,39 @@ describe("the record of a settled Set", () => {
     expect(comment.querySelector(".comment")!.textContent).toBe(
       "Do the in-process one first; we can move it later.",
     );
+  });
+
+  it("closes an answered Set with the Postscript, above what was said about it", async () => {
+    const page = await reading(withPostscript(ANSWERED));
+
+    const postscript = page.querySelector("section.postscript")!;
+    expect(postscript, "expected the Postscript drawn").toBeTruthy();
+    const body = postscript.querySelector(".postscript-body")!;
+    expect(body.className).toContain("markdown");
+    expect(body.innerHTML).toContain("<code>ops/export</code>");
+
+    expect(postscript.nextElementSibling!.className).toContain("set-comment");
+  });
+
+  it("closes a Set the human said nothing about with it just the same", async () => {
+    // Archived unanswered: there is no Response behind it, so there is no
+    // comment either — and the Postscript belongs above where one would have
+    // been, because it is the agent's own closing word rather than part of the
+    // answer.
+    const page = await reading(withPostscript(ARCHIVED));
+
+    const postscript = page.querySelector("section.postscript")!;
+    expect(postscript, "expected the Postscript drawn").toBeTruthy();
+    expect(postscript.previousElementSibling!.className).toContain("questions");
+    expect(page.querySelector(".set-comment")).toBeNull();
+  });
+
+  it("draws no Postscript for a settled Set that closed with none", async () => {
+    for (const settled of [ANSWERED, ARCHIVED]) {
+      const page = await reading(settled);
+
+      expect(page.querySelector(".postscript")).toBeNull();
+    }
   });
 
   it("offers nothing to press", async () => {
