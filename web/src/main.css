@@ -1543,8 +1543,8 @@ p.meta .branch {
 }
 
 /* No label to wrap the row in, so the row itself is the tap target — and it
-   says so. */
-.answer-table tbody tr {
+   says so. On the record there is nothing to tap, so it does not. */
+.ask:not(.decided) .answer-table tbody tr {
   cursor: pointer;
 }
 
@@ -1561,7 +1561,9 @@ p.meta .branch {
   outline-offset: -2px;
 }
 
-/* The radio and the number travel together and never wrap apart. */
+/* The radio and the number travel together and never wrap apart. The record
+   keeps the column with the radio gone — it is the same column, so it has the
+   same name. */
 .answer-table .pick {
   white-space: nowrap;
 }
@@ -1670,8 +1672,12 @@ p.meta .branch {
 }
 
 /* There is no radio to wrap here, so the row itself carries what the label
-   carried in the form. */
-.ask.decided .option {
+   carried in the form.
+
+   The list entry alone: an Option drawn as a row of an Answer Table keeps the
+   same `option` class, and laying a `tr` out as a flex row would take the table
+   apart. What the record does to those is below. */
+.ask.decided li.option {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
@@ -1686,10 +1692,29 @@ p.meta .branch {
 /* The one Option that is not history keeps the page's ink and takes the outline
    the form gave a selected radio. That outline is the whole of what says this is
    the one — see `.chose` below for what that costs and how it is paid. */
-.ask.decided .option.chosen {
+.ask.decided li.option.chosen {
   color: var(--ink);
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* The same table on the record, read rather than filled in. Every row is kept
+   and fades the way a turned-down card does; the row that was chosen keeps the
+   page's ink and takes the accent the sheet gave the row it was selected on, so
+   what the human saw when they picked it is what they see when they come back
+   to it. The borders collapse, so colouring every cell's draws one outline
+   around the whole row. */
+.ask.decided .answer-table tbody tr {
+  color: var(--ink-soft);
+}
+
+.ask.decided .answer-table tbody tr.chosen {
+  color: var(--ink);
+}
+
+.ask.decided .answer-table tbody tr.chosen > td {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 /* Out of the layout, still in the document.

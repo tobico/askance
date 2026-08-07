@@ -15,7 +15,7 @@ reading measure, and tables, Diagrams and code fences get past the measure.
 ## Tasks
 
 - [x] 01: Answer Table on the sheet, end to end — [details](01-answer-table-sheet.md)
-- [ ] 02: The record reads the same table — [details](02-record-view.md)
+- [x] 02: The record reads the same table — [details](02-record-view.md)
 - [ ] 03: Malformed declarations refuse the Set — [details](03-refuse-malformed.md)
 - [ ] 04: Per-block width — [details](04-per-block-width.md)
 - [ ] 05: The Guide teaches the declaration — [details](05-guide.md)

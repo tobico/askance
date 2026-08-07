@@ -27,6 +27,7 @@ import type {
 import { AskText } from "./AskText";
 import { Postscript } from "./Postscript";
 import { anchor } from "./outline";
+import { Head, starred } from "./table";
 import {
   clearDraft,
   clicked,
@@ -425,38 +426,18 @@ function Offered(props: {
 /// compared across the axes the agent named.
 ///
 /// The table *is* the choice rather than an illustration of one drawn above it,
-/// so the row is what the human picks — and the columns are fixed around the
-/// agent's: the radio and the Option's number first, its text next under the one
-/// word this page supplies, then the axes, and the ★ last.
-///
-/// The first column's header and the ★'s are empty on purpose. Neither is an
-/// axis, and a word over either would read as one more thing the agent said.
+/// so the row is what the human picks. The columns fixed around the agent's are
+/// the record's too — see [`Head`].
 function Tabulated(props: {
   ask: AskView;
   group: string;
   fields: Fields;
 }): JSX.Element {
-  // Drawn only where there is a Recommendation to mark: a column that could
-  // only ever be empty is a column of nothing, and one narrower table is one
-  // less thing to scan past on a phone.
-  const starred = () => props.ask.options.some((option) => option.recommended);
+  const marked = () => starred(props.ask.options);
 
   return (
     <table class="answer-table">
-      <thead>
-        <tr>
-          <th />
-          <th scope="col">Option</th>
-          <For each={props.ask.columns}>
-            {(column) => (
-              <th scope="col" class="markdown" innerHTML={column} />
-            )}
-          </For>
-          <Show when={starred()}>
-            <th />
-          </Show>
-        </tr>
-      </thead>
+      <Head columns={props.ask.columns} starred={marked()} />
       <tbody>
         <For each={props.ask.options}>
           {(option) => (
@@ -464,7 +445,7 @@ function Tabulated(props: {
               option={option}
               group={props.group}
               fields={props.fields}
-              starred={starred()}
+              starred={marked()}
             />
           )}
         </For>
