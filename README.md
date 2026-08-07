@@ -101,6 +101,12 @@ words, or both — an Option with a ★ is the agent's Recommendation, and
 yet. Leave a question alone to send it back open; **Submit** asks you to
 confirm that before it goes.
 
+Under the last Question is the comment box, for anything about the Set as a
+whole rather than about one Question — and directly above it, where the agent
+wrote one, the **Postscript**: what it wanted to raise without making a
+Question of it, which the example Set closes with. Nothing there has to be
+answered, and an empty box says there was nothing to add.
+
 The same Response can go in over the API instead, which is what an integration
 test or a script does — see [the API](#api) and
 [`examples/response.yaml`](examples/response.yaml), which answers every
