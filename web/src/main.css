@@ -1509,6 +1509,79 @@ p.meta .branch {
    the least legible difference on the page. The `recommended` class stays: it is
    still true of the Option, and the ★ hangs off it. */
 
+/* A question whose Options the agent declared with tabular data: the table
+   itself is the choice, drawn where the list would have been.
+
+   Styled here rather than with `.markdown table`, because this is the viewer's
+   own control and not the agent's markup — what it borrows is the look, so a
+   comparison read on this page reads the same wherever it was written. A row
+   keeps the `option` class the list entry has, which is what the number and the
+   ★ hang off in both. */
+.answer-table {
+  /* Wide enough to widen the page and it scrolls inside itself instead, the way
+     a written table does — see `.markdown table` for what `display: block`
+     buys. */
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0 0 0.75rem;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.answer-table th,
+.answer-table td {
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  vertical-align: baseline;
+  border: 1px solid var(--edge);
+}
+
+.answer-table th {
+  font-weight: 600;
+  background: var(--hunk);
+}
+
+/* No label to wrap the row in, so the row itself is the tap target — and it
+   says so. */
+.answer-table tbody tr {
+  cursor: pointer;
+}
+
+/* The accent treatment the selected Option card takes, spread along the row: the
+   borders collapse, so colouring every cell's draws one outline around the whole
+   of it. */
+.answer-table tbody tr:has(input:checked) > td {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.answer-table tbody tr:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The radio and the number travel together and never wrap apart. */
+.answer-table .pick {
+  white-space: nowrap;
+}
+
+.answer-table .pick input {
+  margin: 0 0.4rem 0 0;
+  accent-color: var(--accent);
+}
+
+/* The ★ has a column to itself here rather than the end of a flex row, so it
+   drops what pushed it there. */
+.answer-table .star-cell {
+  text-align: center;
+}
+
+.answer-table .star {
+  margin: 0;
+  padding: 0;
+}
+
 /* What the agent closed the Set with, and the box it is introducing — one card
    holding both, because they are one thing to read: an invitation and the place
    to take it up. A box that followed the card read as a separate thing that

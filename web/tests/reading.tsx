@@ -11,7 +11,7 @@ import { cleanup, render, waitFor } from "@solidjs/testing-library";
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { expect } from "vitest";
 
-import type { SetView } from "../src/api/types";
+import type { AskView, SetView } from "../src/api/types";
 import { SetPage } from "../src/set/SetPage";
 import { json, serving } from "./serving";
 
@@ -107,6 +107,51 @@ export function withHeading(set: SetView): SetView {
         ? { ...question, heading: true, ask: { ...question.ask, options: [] } }
         : question,
     ),
+  };
+}
+
+/// The same Set with its Options declared as Answer Tables: axes on `Q1`, which
+/// carries the Recommendation, and on the Sub-question `Q2a`, which carries
+/// none — the two shapes the ★ column is drawn for and not.
+///
+/// The headers and the cells are written here rather than taken from a fixture,
+/// as the Postscript's markup is: what a header and a cell are *rendered* into
+/// is asked of the server in `ui_content.rs`, and what is asked here is what the
+/// page draws them as. So this is the inline HTML that renderer really emits, a
+/// code span among it, and nothing about the rendering rides on it.
+export function withTable(set: SetView): SetView {
+  const tabulated = (ask: AskView, columns: string[], rows: string[][]): AskView => ({
+    ...ask,
+    columns,
+    options: ask.options.map((option, at) => ({ ...option, cells: rows[at]! })),
+  });
+
+  return {
+    ...set,
+    questions: set.questions.map((question) => {
+      if (question.ask.name === "Q1") {
+        return {
+          ...question,
+          ask: tabulated(
+            question.ask,
+            ["Latency", "<code>ops</code> cost"],
+            [
+              ["Sub-<code>ms</code>", "None"],
+              ["A hop", "A box to run"],
+            ],
+          ),
+        };
+      }
+
+      return {
+        ...question,
+        subquestions: question.subquestions.map((subquestion) =>
+          subquestion.name === "Q2a"
+            ? tabulated(subquestion, ["Precision"], [["Exact"], ["Rounded"]])
+            : subquestion,
+        ),
+      };
+    }),
   };
 }
 

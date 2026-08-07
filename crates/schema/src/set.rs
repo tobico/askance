@@ -57,6 +57,13 @@ pub struct Question {
 
     pub text: String,
 
+    /// The axes this question's Options are compared along, one per column of
+    /// the Answer Table, as inline markdown. Declaring any is what makes the
+    /// Options a table rather than a list; a question without them is drawn as
+    /// the list it always was.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub columns: Vec<String>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<QuestionOption>,
 
@@ -72,6 +79,12 @@ pub struct Subquestion {
     pub letter: String,
 
     pub text: String,
+
+    /// The axes this Sub-question's Options are compared along — a Sub-question
+    /// declares its own Answer Table exactly as a [`Question`] does, and never
+    /// inherits its parent's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub columns: Vec<String>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<QuestionOption>,
@@ -97,6 +110,12 @@ pub struct QuestionOption {
     /// Whether this Option is the Recommendation. At most one per question.
     #[serde(default, skip_serializing_if = "is_false")]
     pub recommended: bool,
+
+    /// This Option's row of the Answer Table: one cell per axis the question
+    /// declared, in that order, as inline markdown. Empty on a question that
+    /// declared no `columns`, which is every question that is not a table.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cells: Vec<String>,
 }
 
 pub(crate) fn is_false(b: &bool) -> bool {

@@ -21,6 +21,7 @@ import {
   texts,
   withHeading,
   withPostscript,
+  withTable,
 } from "./reading";
 import { json } from "./serving";
 import answered from "./fixtures/set-answered.json" with { type: "json" };
@@ -313,6 +314,182 @@ describe("selecting an Option", () => {
 
     expect(option(page, "Q1", 1).checked).toBe(true);
     expect(option(page, "Q2", 2).checked).toBe(true);
+  });
+});
+
+describe("a question whose Options were declared as a table", () => {
+  /// The table drawn for the question named `label`.
+  function table(page: ParentNode, label: string): HTMLTableElement {
+    const drawn = page
+      .querySelector(`input[name="${label}-option"]`)
+      ?.closest("table");
+    expect(drawn, `expected an Answer Table on ${label}`).toBeTruthy();
+    return drawn as HTMLTableElement;
+  }
+
+  /// The row of Option `n`, which is the whole of what the human taps.
+  function row(page: ParentNode, label: string, n: number): HTMLTableRowElement {
+    return option(page, label, n).closest("tr")!;
+  }
+
+  it("draws the axes the agent declared, and the fixed columns around them", async () => {
+    const { page } = await answering(withTable(WAITING));
+
+    // Empty over the radio, **Option** over the Option's own text, then the
+    // agent's words — and, because Q1 carries a Recommendation, an empty header
+    // over the ★.
+    expect(texts(table(page, "Q1"), "thead th")).toEqual([
+      "",
+      "Option",
+      "Latency",
+      "ops cost",
+      "",
+    ]);
+    // The header is rendered markdown like everything else the agent wrote.
+    expect(table(page, "Q1").querySelector("thead th:nth-child(4)")!.innerHTML).toContain(
+      "<code>ops</code>",
+    );
+  });
+
+  it("gives every Option a row, its text beside its cells", async () => {
+    const { page } = await answering(withTable(WAITING));
+
+    expect(table(page, "Q1").querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(texts(row(page, "Q1", 1), "td")).toEqual([
+      "1",
+      "In-process, per instance — see Counter::local.",
+      "Sub-ms",
+      "None",
+      "",
+    ]);
+    // Inline markup survives in a cell as it does in an Option's own text.
+    expect(row(page, "Q1", 1).querySelector("td:nth-child(3)")!.innerHTML).toContain(
+      "<code>ms</code>",
+    );
+  });
+
+  it("marks the Recommendation on its row, and heads no ★ column without one", async () => {
+    const { page } = await answering(withTable(WAITING));
+
+    // Q1's ★ is on its second Option, which is where the agent put it.
+    expect(table(page, "Q1").querySelectorAll(".star")).toHaveLength(1);
+    expect(row(page, "Q1", 2).className).toContain("recommended");
+
+    // Q2a is a table too, and nothing on it is recommended — so the column that
+    // would only ever be empty is not drawn at all.
+    expect(texts(table(page, "Q2a"), "thead th")).toEqual([
+      "",
+      "Option",
+      "Precision",
+    ]);
+    expect(texts(row(page, "Q2a", 1), "td")).toEqual([
+      "1",
+      "The exact number of seconds.",
+      "Exact",
+    ]);
+  });
+
+  it("names each radio by its Option's text, which is what a label would have", async () => {
+    const { page } = await answering(withTable(WAITING));
+
+    const radio = option(page, "Q1", 1);
+    const naming = page.querySelector(`#${radio.getAttribute("aria-labelledby")}`);
+    expect(naming, "expected the radio named by something on the page").toBeTruthy();
+    expect(naming!.textContent).toBe(
+      "In-process, per instance — see Counter::local.",
+    );
+  });
+
+  it("leaves a question that declared no axes the list it always was", async () => {
+    const { page } = await answering(withTable(WAITING));
+
+    // Q2 declared none, so nothing about it moved.
+    const list = page
+      .querySelector('input[name="Q2-option"]')!
+      .closest("ul.options");
+    expect(list, "expected Q2 still drawn as the radio list").toBeTruthy();
+    expect(page.querySelectorAll("ul.options")).toHaveLength(1);
+  });
+
+  it("selects on a tap anywhere in the row, and clears on a second", async () => {
+    const { page } = await answering(withTable(WAITING));
+
+    // A cell, not the radio: the whole row is the tap target.
+    fireEvent.click(row(page, "Q1", 1).querySelector("td:nth-child(3)")!);
+    expect(option(page, "Q1", 1).checked).toBe(true);
+
+    fireEvent.click(row(page, "Q1", 1).querySelector("td:nth-child(2)")!);
+    expect(
+      option(page, "Q1", 1).checked,
+      "a tap on the row already selected clears the question, as on a list",
+    ).toBe(false);
+  });
+
+  it("counts a tap on the radio itself once, like a tap anywhere else", async () => {
+    const { page } = await answering(withTable(WAITING));
+
+    // The radio's own click bubbles to the row, so it reaches the one handler
+    // there and not a second of its own — a second would undo the first.
+    fireEvent.click(option(page, "Q1", 1));
+    expect(option(page, "Q1", 1).checked).toBe(true);
+
+    fireEvent.click(option(page, "Q1", 1));
+    expect(option(page, "Q1", 1).checked).toBe(false);
+  });
+
+  it("moves the selection on an arrow key without ever clearing it", async () => {
+    const { page } = await answering(withTable(WAITING));
+
+    fireEvent.click(row(page, "Q1", 1));
+    // What an arrow key does to a radio group: it selects, and fires a change
+    // without ever firing a click.
+    fireEvent.change(option(page, "Q1", 2));
+
+    expect(option(page, "Q1", 2).checked).toBe(true);
+    expect(option(page, "Q1", 1).checked).toBe(false);
+  });
+
+  it("sends the Response a list-mode question would have, draft and all", async () => {
+    const { page, fetching } = await answering(
+      withTable(WAITING),
+      submitted("Accepted"),
+    );
+
+    fireEvent.click(row(page, "Q1", 1));
+    fireEvent.click(option(page, "Q2", 2));
+    type(words(page, "Q2"), "and document them in the changelog");
+    type(words(page, "Q2b"), "keep them short");
+    type(
+      page.querySelector<HTMLTextAreaElement>("#set-comment")!,
+      "Do the in-process one first; we can move it later.",
+    );
+
+    // The draft is the same draft: what was picked on a row is a selection like
+    // any other.
+    await waitFor(() => expect(localStorage.getItem(KEY)).toBeTruthy());
+    expect(JSON.parse(localStorage.getItem(KEY)!).filled[0]).toEqual({
+      label: "Q1",
+      selected: 1,
+      free_text: "",
+    });
+
+    press(page, "Submit");
+    press(page, "Send anyway");
+
+    await waitFor(() => expect(fetching).toHaveBeenCalledTimes(2));
+    // Indistinguishable from the list-mode Set answered the same way — which is
+    // the Response the store took and the agent was handed as YAML.
+    expect(sent(fetching)).toEqual(DECIDED);
+  });
+
+  it("restores a draft onto the row it was left on", async () => {
+    const { page } = await answering(withTable(WAITING));
+    fireEvent.click(row(page, "Q1", 2));
+    await waitFor(() => expect(localStorage.getItem(KEY)).toBeTruthy());
+
+    const { page: again } = await answering(withTable(WAITING));
+
+    expect(option(again, "Q1", 2).checked).toBe(true);
   });
 });
 

@@ -9,14 +9,17 @@
   "questions": [
     {
       "ask": {
+        "columns": [],
         "name": "Q1",
         "options": [
           {
+            "cells": [],
             "n": 1,
             "recommended": false,
             "text_html": "In-process, per instance — see <code>Counter::local</code>."
           },
           {
+            "cells": [],
             "n": 2,
             "recommended": true,
             "text_html": "In <strong>Redis</strong>, shared across instances."
@@ -30,14 +33,17 @@
     },
     {
       "ask": {
+        "columns": [],
         "name": "Q2",
         "options": [
           {
+            "cells": [],
             "n": 1,
             "recommended": false,
             "text_html": "A bare 429. no headers no body"
           },
           {
+            "cells": [],
             "n": 2,
             "recommended": false,
             "text_html": "A 429 plus RateLimit headers."
@@ -49,14 +55,17 @@
       "nav_text": "How should a throttled client be told to back off? fn allowance() -> u32 { 600 }",
       "subquestions": [
         {
+          "columns": [],
           "name": "Q2a",
           "options": [
             {
+              "cells": [],
               "n": 1,
               "recommended": false,
               "text_html": "The exact number of seconds."
             },
             {
+              "cells": [],
               "n": 2,
               "recommended": false,
               "text_html": "A rounded number."
@@ -65,6 +74,7 @@
           "text_html": "<p>What should Retry-After say?</p>\n<table><thead><tr><th>header</th><th>seconds</th></tr></thead><tbody>\n<tr><td>Retry-After</td><td>30</td></tr>\n</tbody></table>\n"
         },
         {
+          "columns": [],
           "name": "Q2b",
           "options": [],
           "text_html": "<p>Anything else about the headers?</p>\n"
@@ -73,6 +83,7 @@
     },
     {
       "ask": {
+        "columns": [],
         "name": "Q3",
         "options": [],
         "text_html": "<p>Anything I should know before starting?</p>\n"

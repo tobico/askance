@@ -47,6 +47,7 @@ function everySection(): SetView {
           {
             name: "Q2a",
             text_html: "<p>What should Retry-After say?</p>",
+            columns: [],
             options: [],
           },
         ],
@@ -59,7 +60,7 @@ function everySection(): SetView {
 
 function question(name: string, words: string): QuestionView {
   return {
-    ask: { name, text_html: `<p>${words}</p>`, options: [] },
+    ask: { name, text_html: `<p>${words}</p>`, columns: [], options: [] },
     subquestions: [],
     heading: false,
     nav_text: words,

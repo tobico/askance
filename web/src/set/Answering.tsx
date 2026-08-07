@@ -313,18 +313,29 @@ function Asking(props: { ask: AskView; fields: Fields }): JSX.Element {
   return (
     <div class="ask">
       <AskText name={props.ask.name} html={props.ask.text_html} />
+      {/* The Options, as a table where the agent declared the axes to compare
+          them along and as the list they have always been where it did not. The
+          declaration is the whole of what decides it: nothing is read off the
+          Options themselves, so the two cannot be confused for one another. */}
       <Show when={options().length > 0}>
-        <ul class="options">
-          <For each={options()}>
-            {(option) => (
-              <Offered
-                option={option}
-                group={group()}
-                fields={props.fields}
-              />
-            )}
-          </For>
-        </ul>
+        <Show
+          when={props.ask.columns.length > 0}
+          fallback={
+            <ul class="options">
+              <For each={options()}>
+                {(option) => (
+                  <Offered
+                    option={option}
+                    group={group()}
+                    fields={props.fields}
+                  />
+                )}
+              </For>
+            </ul>
+          }
+        >
+          <Tabulated ask={props.ask} group={group()} fields={props.fields} />
+        </Show>
       </Show>
       {/* The prompt is the placeholder rather than a label above the field: one
           line of small print per question, times five questions, was more of the
@@ -407,6 +418,116 @@ function Offered(props: {
         </Show>
       </label>
     </li>
+  );
+}
+
+/// The Options as the Answer Table the question declared: one row per Option,
+/// compared across the axes the agent named.
+///
+/// The table *is* the choice rather than an illustration of one drawn above it,
+/// so the row is what the human picks — and the columns are fixed around the
+/// agent's: the radio and the Option's number first, its text next under the one
+/// word this page supplies, then the axes, and the ★ last.
+///
+/// The first column's header and the ★'s are empty on purpose. Neither is an
+/// axis, and a word over either would read as one more thing the agent said.
+function Tabulated(props: {
+  ask: AskView;
+  group: string;
+  fields: Fields;
+}): JSX.Element {
+  // Drawn only where there is a Recommendation to mark: a column that could
+  // only ever be empty is a column of nothing, and one narrower table is one
+  // less thing to scan past on a phone.
+  const starred = () => props.ask.options.some((option) => option.recommended);
+
+  return (
+    <table class="answer-table">
+      <thead>
+        <tr>
+          <th />
+          <th scope="col">Option</th>
+          <For each={props.ask.columns}>
+            {(column) => (
+              <th scope="col" class="markdown" innerHTML={column} />
+            )}
+          </For>
+          <Show when={starred()}>
+            <th />
+          </Show>
+        </tr>
+      </thead>
+      <tbody>
+        <For each={props.ask.options}>
+          {(option) => (
+            <Row
+              option={option}
+              group={props.group}
+              fields={props.fields}
+              starred={starred()}
+            />
+          )}
+        </For>
+      </tbody>
+    </table>
+  );
+}
+
+/// One Option as a row of the Answer Table: the same radio the list offers, in
+/// the same group, with the row itself as the tap target.
+///
+/// A row cannot be wrapped in a label the way a list entry is, so the click sits
+/// on the row and the radio is named by the cell holding its text — which is the
+/// accessible name a wrapping label would have given it. A click on the radio
+/// bubbles to the row like any other, so both reach the same handler exactly
+/// once, and the gestures are the list's: a click selects or clears, an arrow
+/// key only moves.
+function Row(props: {
+  option: OptionView;
+  group: string;
+  fields: Fields;
+  starred: boolean;
+}): JSX.Element {
+  const n = () => props.option.n;
+  const naming = () => `${props.group}-${n()}-text`;
+
+  return (
+    <tr
+      class={props.option.recommended ? "option recommended" : "option"}
+      onClick={() => props.fields.pick(n())}
+    >
+      <td class="pick">
+        <input
+          type="radio"
+          id={`${props.group}-${n()}`}
+          name={props.group}
+          value={n()}
+          checked={props.fields.selected() === n()}
+          aria-labelledby={naming()}
+          // The click is the row's, so only the arrow key's change is answered
+          // here — see `Offered` for what the two gestures are between them.
+          onChange={() => props.fields.move(n())}
+        />
+        <span class="n">{n()}</span>
+      </td>
+      <td
+        id={naming()}
+        class="option-text markdown"
+        innerHTML={props.option.text_html}
+      />
+      <For each={props.option.cells}>
+        {(cell) => <td class="markdown" innerHTML={cell} />}
+      </For>
+      <Show when={props.starred}>
+        <td class="star-cell">
+          <Show when={props.option.recommended}>
+            <span class="star" title="the agent's Recommendation">
+              ★
+            </span>
+          </Show>
+        </td>
+      </Show>
+    </tr>
   );
 }
 
