@@ -139,17 +139,27 @@ One Set is one round, budgeted as above. Because the round trip is expensive,
 sweep ahead: carry the Questions that would otherwise wait for the next round or
 two, provided none of them depends on an Answer in this one.
 
-What can't be swept ahead — anything else worth knowing, whatever the human
-might want to raise before the work starts — closes the Set as the
-**`postscript`** and is **never a Question.** The `postscript` is markdown drawn
-in the section closing the page, above the set-level comment box that shares it,
-and that box is on every Set whether
-or not one was written: a catch-all Question asks for a second time what the box
-already asks, and costs the human a row they then have to leave explicitly open.
-Suggest there what would be worth a word in the comment, and let the box take
-it. A trailing open Question is still right when it asks for something
-*specific* the agent cannot find out for itself — a name, an id, a fact the repo
-does not hold.
+What can't be swept ahead closes the Set as the **`postscript`**, and the line
+between it and the Questions is what the reply would be, not how big the ask
+is: **a decision, however small, is a Question, and the `postscript` carries
+only the open-ended invitation.** "Write an ADR for this?" is a decision — two
+Options, priced as trivial by the budget above — so it is asked as a Question,
+never parked in the `postscript`, where nothing obliges a reply. "Anything else
+worth knowing?" invites rather than decides, so it is **never a Question**: the
+`postscript` is markdown drawn in the section closing the page, above the
+set-level comment box that shares it, and that box is on every Set whether or
+not one was written — a catch-all Question asks for a second time what the box
+already asks, and costs the human a row they then have to leave explicitly
+open. Suggest in the `postscript` what would be worth a word in the comment,
+and let the box take it.
+
+The axis is specific against open-ended, not Options against free text. A
+trailing open Question is still right when it asks for something *specific* the
+agent cannot find out for itself — a name, an id, a fact the repo does not
+hold. And an open-ended ask the work cannot proceed without is a Question too:
+a reply to the `postscript` is always optional — a blank comment means *nothing
+to add* — so anything the agent actually needs takes a labelled row, where
+withholding it comes back explicit as `unanswered`.
 
 Decide the Questions first, then serialize them:
 
@@ -178,9 +188,10 @@ questions:
           - n: 2
             text: Change it
 postscript: |
-  Worth a word in the comment if there is one: whether the install command is
-  worth keeping stable across the rewrite at all, and anything the framing
-  above misses. Nothing here blocks the work.
+  Anything else you'd like to add, such as:
+
+  * How the README is found and read today
+  * Anything the framing above misses
 ```
 
 Mapping from the labels:

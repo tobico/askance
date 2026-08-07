@@ -21,11 +21,13 @@ _Avoid_: description, context, body
 **Postscript**:
 Optional markdown the agent closes a Question Set with, rendered in the
 section that closes the page, above the set-level comment box it shares that
-section with — suggested discussion topics, or whatever else the human might
-take up in their comment. Named in the table of contents like the Preface,
-and headed for the box alone on a Set that closed without one. Not a
-Question: a blank comment beneath it means nothing to add, never Unanswered.
-_Avoid_: epilogue, closing, anything-else question
+section with — open-ended invitations only: suggested discussion topics, or
+whatever else the human might take up in their comment. Never carries a
+decision, however small — anything decidable, even a trivial yes/no, is a
+Question. Named in the table of contents like the Preface, and headed for
+the box alone on a Set that closed without one. Not a Question: a blank
+comment beneath it means nothing to add, never Unanswered.
+_Avoid_: epilogue, closing, anything-else question, trailing decision
 
 **Question**:
 A single labelled decision put to the human. Carries an agent-supplied opaque

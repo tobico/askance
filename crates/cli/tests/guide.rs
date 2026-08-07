@@ -250,7 +250,9 @@ fn the_gates_topic_carries_the_whole_of_the_gates_guidance() {
 
 /// "Anything else?" is the Postscript's job: the comment box asks it on every
 /// Set, so a Question that asks it again spends a row the human then has to
-/// leave explicitly open. An agent that reads only the worked example copies
+/// leave explicitly open. The reverse holds too — a decision, however
+/// trivial, is a Question, never parked in the Postscript where nothing
+/// obliges a reply. An agent that reads only the worked example copies
 /// whatever that example ends with, so the field has to be in it.
 #[test]
 fn the_guide_sends_the_catch_all_to_the_postscript() {
@@ -272,6 +274,16 @@ fn the_guide_sends_the_catch_all_to_the_postscript() {
         authoring.contains("never a Question"),
         "the authoring section should say outright that a catch-all is never a \
          Question, got:\n{authoring}"
+    );
+    assert!(
+        authoring.contains("a decision, however small, is a Question"),
+        "the authoring section should carry the litmus — a decision, however \
+         small, is a Question — got:\n{authoring}"
+    );
+    assert!(
+        authoring.contains("Write an ADR for this?"),
+        "the authoring section should name the canonical mistake, the trivial \
+         yes/no parked in the postscript, got:\n{authoring}"
     );
     assert!(
         !guide.contains("Anything worth knowing before this starts?")
