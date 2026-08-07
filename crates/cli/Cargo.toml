@@ -15,14 +15,22 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 askance-schema.workspace = true
+# `askance serve` is the server: the CLI links the library and runs it, rather
+# than shipping a second binary beside this one (ADR-0004).
+askance-server = { path = "../server" }
 clap.workspace = true
 serde-saphyr.workspace = true
+# The runtime `serve` starts. The other verbs are blocking calls and want none
+# of it, so it is started by that verb rather than wrapped around `main`.
+tokio.workspace = true
+# Where the server's `tracing` goes is the starting binary's call rather than
+# the library's, so the subscriber lives here — see `serve`.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ureq = "3"
 
 [dev-dependencies]
 # The tests run the real server in-process, so the round trip they check is the
 # one the agent gets.
-askance-server = { path = "../server" }
 axum = "0.8"
 tempfile = "3"
 tokio = { workspace = true, features = ["net", "time"] }

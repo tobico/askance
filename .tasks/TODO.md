@@ -20,6 +20,6 @@ Roadmap stage: [01: One binary](docs/roadmaps/public-release/01-one-binary.md)
 
 ## Tasks
 
-- [ ] 01: `askance serve` — [details](01-serve-verb.md)
+- [x] 01: `askance serve` — [details](01-serve-verb.md)
 - [ ] 02: Retire the `askance-server` binary — [details](02-retire-server-binary.md)
 - [ ] 03: Reference sweep — [details](03-reference-sweep.md)
