@@ -55,6 +55,14 @@ _Avoid_: choice, answer option
 The Option the agent marks as its preferred answer (the grammar's `★`).
 _Avoid_: default, suggestion
 
+**Answer Table**:
+A question's Options declared with tabular data, one row per Option, drawn
+by the viewer as a table whose rows are the selectable Options — the row is
+picked in place of a list entry, and the Recommendation and the selection
+are marked on the row.
+_Avoid_: options table, comparison table (the Guide's generic layout
+advice), grid
+
 **Answer**:
 The human's resolution of one Question or Sub-question: a selected Option
 and/or free text. A Question left without an Answer at submission is
