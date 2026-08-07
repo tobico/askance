@@ -117,3 +117,9 @@ Whether an agent is currently connected and waiting on a Question Set
 ("agent waiting" vs "agent disconnected"). Display state only — never causes
 automatic withdrawal.
 _Avoid_: connection status, presence
+
+**Update Notice**:
+The banner the viewer shows when the server has learned that a newer release
+exists than the one it is running, linking to the update instructions. Informs
+only — nothing is installed on the human's behalf.
+_Avoid_: upgrade prompt, new-version alert
