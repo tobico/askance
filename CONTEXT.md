@@ -95,6 +95,16 @@ in the viewer.
 Degrades to its readable source text whenever it cannot render.
 _Avoid_: chart, graph, figure
 
+**Gutter**:
+The reserved left-hand area every section of a Set page keeps when the
+window is wide, one shared width across the page. Structural marks live in
+it — Question labels, an Answer Table's radio-and-number column, the Diff's
+line numbers — and content starts at its right edge, so all reading shares
+one left axis. Invisible in itself: a section with nothing to hang there
+reserves it empty. Sub-question labels stay inline with their text rather
+than hanging in it.
+_Avoid_: margin, sidebar, left rail
+
 **Guide**:
 The agent-facing usage instructions shipped inside the CLI and printed by
 it, so an agent needs nothing beyond the binary to learn how to ask. Split
