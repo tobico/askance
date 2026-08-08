@@ -8,6 +8,7 @@ import { For, Match, Show, Switch } from "solid-js";
 import { listPending } from "../api/client";
 import type { Liveness, PendingEntry } from "../api/types";
 import { Notifications } from "../push/Notifications";
+import { UpdateNotice } from "../update/UpdateNotice";
 
 /// How often the open page refetches the list, in milliseconds.
 ///
@@ -61,6 +62,12 @@ export function PendingList() {
         <h1>Pending</h1>
         <Notifications />
       </div>
+      {/* Above the list and under the heading: it is about the server the whole
+          page came from rather than about any Set on it, and it asks for
+          nothing — so it is read on the way past, once, and then it is the
+          list's page again. Drawn only when there is a release waiting; this is
+          nothing at all the rest of the time. */}
+      <UpdateNotice />
       <Switch>
         {/* Pending rather than fetching: the fallback belongs to the first
             load alone. */}

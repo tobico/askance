@@ -12,10 +12,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PendingEntry } from "../src/api/types";
 import { PendingList } from "../src/pending/PendingList";
 import { mount, texts } from "./listing";
-import { json, serving } from "./serving";
+import { json, serving, whenever } from "./serving";
 import pending from "./fixtures/pending.json" with { type: "json" };
 
 const SETS = pending as PendingEntry[];
+
+/// The page asks about updating as well as about the Sets, and is told there is
+/// nothing to update to throughout: every test here is about the list, and the
+/// banner is `update.test.tsx`'s.
+const CURRENT = whenever("/api/ui/update", json("Current"));
 
 /// The two Sets the fixture holds, by the badge each is there to exercise.
 const LIVE = SETS.find((set) => set.liveness === "waiting")!;
@@ -32,7 +37,7 @@ afterEach(() => {
 
 describe("the pending list", () => {
   it("asks the server for the Sets waiting on the human", async () => {
-    const fetching = serving(json(SETS));
+    const fetching = serving(CURRENT, json(SETS));
     mount(PendingList);
 
     await waitFor(() => screen.getByText(LIVE.title));
@@ -43,7 +48,7 @@ describe("the pending list", () => {
   });
 
   it("draws a row per Set, with what the server said about each", async () => {
-    serving(json(SETS));
+    serving(CURRENT, json(SETS));
     mount(PendingList);
 
     const row = (await waitFor(() => screen.getByText(DEAD.title))).closest("li")!;
@@ -61,7 +66,7 @@ describe("the pending list", () => {
   });
 
   it("keeps the order it was given, which is newest ask first", async () => {
-    serving(json(SETS));
+    serving(CURRENT, json(SETS));
     const { container } = mount(PendingList);
 
     await waitFor(() => screen.getByText(LIVE.title));
@@ -74,7 +79,7 @@ describe("the pending list", () => {
   });
 
   it("offers the way through to what was already decided", async () => {
-    serving(json(SETS));
+    serving(CURRENT, json(SETS));
     const { container } = mount(PendingList);
 
     await waitFor(() => screen.getByText(LIVE.title));
@@ -84,7 +89,7 @@ describe("the pending list", () => {
   });
 
   it("says of each Set whether an agent is still waiting on it", async () => {
-    serving(json(SETS));
+    serving(CURRENT, json(SETS));
     mount(PendingList);
 
     await waitFor(() => screen.getByText(LIVE.title));
@@ -96,7 +101,7 @@ describe("the pending list", () => {
   });
 
   it("says so plainly when nothing is waiting", async () => {
-    serving(json([]));
+    serving(CURRENT, json([]));
     mount(PendingList);
 
     await waitFor(() => screen.getByText("Nothing is waiting on you."));
@@ -104,7 +109,7 @@ describe("the pending list", () => {
   });
 
   it("shows the server's own wording when the list cannot be read", async () => {
-    serving(json({ error: "the pending Sets could not be read" }, 500));
+    serving(CURRENT, json({ error: "the pending Sets could not be read" }, 500));
     mount(PendingList);
 
     await waitFor(() =>
@@ -123,7 +128,7 @@ describe("the pending list", () => {
       liveness: "waiting",
     };
 
-    serving(json(SETS), json([arrival, ...SETS]));
+    serving(CURRENT, json(SETS), json([arrival, ...SETS]));
     mount(PendingList);
     await waitFor(() => screen.getByText(LIVE.title));
 
@@ -140,7 +145,7 @@ describe("the pending list", () => {
       deliver = resolve;
     });
 
-    serving(
+    serving(CURRENT, 
       json(SETS),
       () => held.then(() => new Response(JSON.stringify(SETS))),
     );

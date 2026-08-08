@@ -13,7 +13,7 @@ import { App } from "../src/App";
 import type { ArchiveEntry, PendingEntry } from "../src/api/types";
 import { ArchiveList } from "../src/archive/ArchiveList";
 import { mount, texts } from "./listing";
-import { json, serving } from "./serving";
+import { json, serving, whenever } from "./serving";
 import archive from "./fixtures/archive.json" with { type: "json" };
 import pending from "./fixtures/pending.json" with { type: "json" };
 
@@ -166,8 +166,15 @@ describe("the way between the two lists", () => {
     // list reaches the other one.
     window.history.pushState({}, "", "/archive");
     // The Archive, the pending list, and the Archive again: coming back to a
-    // list reads it afresh, which is three answers and not two.
-    serving(json(SETS), json(PENDING), json(SETS));
+    // list reads it afresh, which is three answers and not two. The pending
+    // page asks about updating on the way through, and is told there is nothing
+    // to update to — the banner is `update.test.tsx`'s subject.
+    serving(
+      whenever("/api/ui/update", json("Current")),
+      json(SETS),
+      json(PENDING),
+      json(SETS),
+    );
     render(() => <App />);
 
     // Each list is recognised by a Set only it holds: the fixtures share a

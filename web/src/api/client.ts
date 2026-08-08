@@ -16,6 +16,7 @@ import type {
   Submitted,
   Subscribed,
   Subscription,
+  UpdateNotice,
 } from "./types";
 
 /// A refusal from the server, in the shape both halves refuse in.
@@ -73,6 +74,15 @@ export function submitResponse(
 /// path.
 export function archiveSet(id: number): Promise<Archived> {
   return post<Archived>(`/api/ui/sets/${id}/archive`);
+}
+
+/// Whether a newer Askance has been released than the one serving this page.
+///
+/// The server is the side that asks GitHub, once a day, and this hands over
+/// whatever it last concluded — so the answer costs it nothing and the browser
+/// never waits on GitHub being reachable.
+export function updateNotice(): Promise<UpdateNotice> {
+  return get<UpdateNotice>("/api/ui/update");
 }
 
 /// The public half of the server's VAPID keypair — what `PushManager.subscribe`
