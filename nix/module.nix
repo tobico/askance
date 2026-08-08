@@ -30,8 +30,8 @@ in
         The server binds the loopback interface and speaks plain HTTP.
         Reaching the web UI from a phone means HTTPS, which is
         `tailscale serve`'s job in front of it and stays host-level
-        configuration — the Askance README's "On your phone" section has the
-        invocation, and this module deliberately keeps no second copy of it.
+        configuration — Askance's `docs/phone.md` has the invocation, and this
+        module deliberately keeps no second copy of it.
       '';
     };
 
@@ -62,7 +62,7 @@ in
         `tailscale serve` proxies to. Binding a tailnet address instead reaches
         other devices directly, but over plain HTTP — which rules out the push
         notifications, since a service worker needs a secure context. The
-        Askance README's "On your phone" section is where that story lives.
+        Askance's `docs/phone.md` is where that story lives.
 
         The CLI's own default is `http://127.0.0.1:8422`, so a host that changes
         the port here has to set `ASKANCE_SERVER` for the agents alongside it.

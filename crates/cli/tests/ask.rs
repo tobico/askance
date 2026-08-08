@@ -1,8 +1,8 @@
 //! The `askance ask` round trip: a Set goes out, the CLI blocks, and the
 //! human's Response comes back on stdout — across a server restart if need be.
 //!
-//! The last test here is the README's quickstart, run against the very files
-//! the README tells the reader to run.
+//! The last test here is the quickstart in `docs/development.md`, run against
+//! the very files that guide tells the reader to run.
 
 mod support;
 
@@ -216,7 +216,7 @@ fn ask(server: &Server, dir: &Path, set: &str) -> Child {
     child
 }
 
-/// Start `askance ask <file>`, the form the README's quickstart uses.
+/// Start `askance ask <file>`, the form the quickstart uses.
 fn ask_file(server: &Server, dir: &Path, file: &Path) -> Child {
     command(server, dir)
         .arg(file)
@@ -436,7 +436,7 @@ fn project_branch_and_diff_are_derived_from_the_working_directory() {
     );
 }
 
-/// One of the workspace's `examples/`, by the name the README uses.
+/// One of the workspace's `examples/`, by the name the guide uses.
 fn example(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../examples")
@@ -444,12 +444,12 @@ fn example(name: &str) -> PathBuf {
 }
 
 #[test]
-fn the_readme_quickstart_delivers_the_example_response() {
+fn the_quickstart_delivers_the_example_response() {
     let tmp = tempfile::tempdir().unwrap();
     let server = Server::start(tmp.path().join("askance.db"));
 
     // `askance ask examples/questions.yaml`, and the Set is the first one this
-    // server has seen, so the id the README curls is 1.
+    // server has seen, so the id the quickstart curls is 1.
     let waiting = ask_file(&server, tmp.path(), &example("questions.yaml"));
     let stored = server.await_stored_set(1);
     assert_eq!(stored.set.title, "Rate limiting for the public API");

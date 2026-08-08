@@ -1,4 +1,4 @@
-//! The examples the README tells the reader to run.
+//! The examples `docs/development.md` tells the reader to run.
 //!
 //! They are documentation first, but an example that has drifted from the
 //! grammar teaches the wrong thing, so the shipped files are checked here
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use askance_schema::{QuestionSet, Response};
 
-/// Read one of the workspace's `examples/`, by the name the README uses.
+/// Read one of the workspace's `examples/`, by the name the guide uses.
 fn example(name: &str) -> String {
     let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../examples")
