@@ -82,7 +82,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Both binaries land on `PATH`; an agent runs the CLI, and `askance-server
+    # The binary lands on `PATH`; an agent asks with it, and `askance serve
     # --help` is how a human finds out what this unit is passing it.
     environment.systemPackages = [ cfg.package ];
 

@@ -5,8 +5,8 @@
 //! beside it — one file is the whole deployment, which is what the tailnet box
 //! and the NixOS module both wanted. In a release build the files are compiled
 //! in; in a debug build rust-embed reads them off disk on every request, so
-//! `pnpm build` is visible to a running `cargo run -p askance-server` without a
-//! recompile.
+//! `pnpm build` is visible to a running `cargo run -p askance-cli -- serve`
+//! without a recompile.
 //!
 //! Two decisions live here. The first is the fallback: the viewer routes on the
 //! client, so `/sets/12` names no file and has to be answered with the document

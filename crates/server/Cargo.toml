@@ -32,7 +32,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 # lets the folder be written relative to this manifest rather than to whatever
 # directory cargo was run from. `debug-embed` is deliberately *off*: in a debug
 # build the files are then read off disk per request, so a `pnpm build` is visible
-# to a running `cargo run -p askance-server` without a recompile.
+# to a running `cargo run -p askance-cli -- serve` without a recompile.
 rust-embed = { version = "8", features = [
     "interpolate-folder-path",
     "mime-guess",

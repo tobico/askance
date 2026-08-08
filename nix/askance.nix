@@ -1,6 +1,6 @@
-# The server, the CLI and the viewer, from one build: the dependency tree here is
-# axum, syntect and sqlx, and compiling it twice to get two packages would cost
-# more than the separation is worth.
+# One binary, viewer and all: `askance` carries the CLI verbs and the server both
+# (ADR-0004), so there is one package to build here and nothing beside it to keep
+# in sync.
 {
   lib,
   rustPlatform,

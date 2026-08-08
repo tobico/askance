@@ -1,7 +1,7 @@
 //! `askance serve`: the verb that runs the server out of the same binary the
 //! agent asks with. What it is judged on is that the process an operator starts
 //! answers the agent API, hands over the viewer, and is pointed at its socket
-//! and its database exactly as the `askance-server` binary was.
+//! and its database exactly as the server binary this verb replaced was.
 
 use std::io::Write;
 use std::net::TcpListener;
@@ -135,7 +135,7 @@ impl Serve {
     /// Stop serving and hand back what the server said on its way up.
     ///
     /// That is stdout: `tracing_subscriber::fmt` writes there by default, and
-    /// where the log goes is what the `askance-server` binary settled — the
+    /// where the log goes is what the retired server binary settled — the
     /// stdout an agent parses is `ask`'s, and no agent runs this verb.
     fn stop(&mut self) -> String {
         let mut child = self.child.take().expect("stopped once");
