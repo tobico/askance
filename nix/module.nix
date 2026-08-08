@@ -85,6 +85,21 @@ in
         has to exist, even though the file need not.
       '';
     };
+
+    updateCheck = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      example = false;
+      description = ''
+        Whether the server asks GitHub, once a day, whether a newer Askance has
+        been released — and shows the Update Notice in the web UI when one has.
+
+        Nothing is ever installed on anyone's behalf either way: the Notice is a
+        banner linking the updating instructions. Turning it off passes
+        `--no-update-check`, and then no task runs and no request is made — the
+        one thing this service says to anywhere but the push services.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -105,14 +120,20 @@ in
       after = [ "network.target" ];
 
       serviceConfig = {
-        ExecStart = lib.escapeShellArgs [
-          "${cfg.package}/bin/askance"
-          "serve"
-          "--listen"
-          cfg.listen
-          "--database"
-          "${cfg.database}"
-        ];
+        # The flags rather than the environment variables behind them: what the
+        # unit passes is then readable in `systemctl cat askance`, which is
+        # where a human goes to find out what this service is actually running.
+        ExecStart = lib.escapeShellArgs (
+          [
+            "${cfg.package}/bin/askance"
+            "serve"
+            "--listen"
+            cfg.listen
+            "--database"
+            "${cfg.database}"
+          ]
+          ++ lib.optional (!cfg.updateCheck) "--no-update-check"
+        );
 
         User = "askance";
         Group = "askance";
@@ -132,9 +153,10 @@ in
         # Hardening. Two things it must not break: SQLite in WAL mode, which
         # creates `-wal` and `-shm` beside the database and so needs a
         # read-write directory rather than just a writable file; and outbound
-        # HTTPS to the browser vendors' push services, whose addresses cannot be
-        # enumerated ahead of time — which is why there is no `IPAddressAllow`
-        # here.
+        # HTTPS — to the browser vendors' push services, whose addresses cannot
+        # be enumerated ahead of time, and to GitHub for the update check. That
+        # is why there is no `IPAddressAllow` here, and why stopping the update
+        # check is `updateCheck = false` rather than a firewall rule.
         CapabilityBoundingSet = [ "" ];
         NoNewPrivileges = true;
         PrivateDevices = true;

@@ -15,5 +15,5 @@ Roadmap stage: [05: Update Notice](docs/roadmaps/public-release/05-update-notice
 
 ## Tasks
 
-- [ ] 01: The update poll and what it answers — [details](01-update-poll.md)
+- [x] 01: The update poll and what it answers — [details](01-update-poll.md)
 - [ ] 02: The Update Notice banner — [details](02-notice-banner.md)

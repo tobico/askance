@@ -1,12 +1,13 @@
-//! The viewer's own namespace: the eight things the human's browser asks of the
-//! server, over JSON, under `/api/ui/`.
+//! The viewer's own namespace: what the human's browser asks of the server, over
+//! JSON, under `/api/ui/`.
 //!
 //! What is worth proving here is that this namespace is a way through to the
 //! same store and the same held waits the agents' half uses — that a submit from
 //! the browser ends a wait an agent is genuinely holding, and not merely that a
 //! row appeared. The rendering it answers with is `ui_content.rs`'s subject, and
-//! the ninth thing under the same prefix — the Nudge stream, which is listened
-//! on rather than asked — is `nudges.rs`'s.
+//! the two things under the same prefix that answer out of neither the store
+//! nor the waits are their own files': the Nudge stream, which is listened on
+//! rather than asked, is `nudges.rs`'s, and `/api/ui/update` is `updates.rs`'s.
 
 use std::time::{Duration, Instant};
 

@@ -22,7 +22,7 @@
 
 use askance_render::{
     ArchiveEntry, Archived, PendingEntry, PushKey, SetView, Standing, Submitted, Subscribed,
-    Subscription, Unsubscribe,
+    Subscription, Unsubscribe, UpdateNotice,
 };
 use askance_schema::{ApiError, Response};
 use axum::Json;
@@ -50,6 +50,7 @@ pub(crate) fn routes() -> axum::Router<AppState> {
         .route("/api/ui/push/key", get(push_key))
         .route("/api/ui/push/subscribe", post(subscribe))
         .route("/api/ui/push/unsubscribe", post(unsubscribe))
+        .route("/api/ui/update", get(update))
 }
 
 /// `GET /api/ui/pending` — the Sets still waiting on the human, newest first.
@@ -286,6 +287,20 @@ async fn unsubscribe(
             unavailable("the subscription could not be forgotten")
         }
     }
+}
+
+/// `GET /api/ui/update` — whether a newer Askance has been released than the one
+/// serving this page.
+///
+/// Answered out of memory and never a request made while the browser waits: the
+/// server asks GitHub on its own schedule (see [`crate::updates`]) and this
+/// hands over whatever it last concluded. A server that could not find out says
+/// there is nothing to update to, which is also what a current one says — there
+/// is nothing for the human to do about either.
+async fn update(State(state): State<AppState>) -> HttpResponse {
+    let notice: UpdateNotice = state.updates.notice();
+
+    Json(notice).into_response()
 }
 
 /// There is no such Set to read. Worded with whatever was asked for, which for a

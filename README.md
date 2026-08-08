@@ -365,6 +365,11 @@ means it survives the reboot alongside the service.
 agents `ASKANCE_SERVER`, since the CLI's own default is `http://127.0.0.1:8422`
 and it does not learn otherwise from the module.
 
+**The update check**, which is on by default:
+`services.askance.updateCheck = false` is the module's spelling of
+`ASKANCE_NO_UPDATE_CHECK` below, and turns off the one request this service
+makes that is not a notification.
+
 ## The Guide
 
 An agent that has never seen Askance still has to write a Set worth answering,
@@ -435,6 +440,7 @@ loopback interface.
 | `ASKANCE_SERVER` | CLI | `http://127.0.0.1:8422` | Base URL the CLI submits to and waits on. Also `--server`. |
 | `ASKANCE_LISTEN` | server | `127.0.0.1:8422` | Address and port to bind. Loopback is what [`tailscale serve`](#on-your-phone) proxies to; binding the tailnet directly reaches other devices too, but over plain HTTP, which rules out notifications. Also `--listen`. |
 | `ASKANCE_DATABASE` | server | `askance.db` | SQLite file, created with its parent directory. Also `--database`. |
+| `ASKANCE_NO_UPDATE_CHECK` | server | unset | Set it to stop the server asking GitHub, once a day, whether a newer Askance has been released — and so to stop the banner that says one has. Nothing is ever installed either way. Also `--no-update-check`. |
 
 ## The wire format
 

@@ -20,11 +20,13 @@ http = "1"
 # Signing the VAPID header, which the store's keypair half of the dependency
 # does not need: `ecdsa` is what turns the stored private key into a signature.
 p256 = { workspace = true, features = ["ecdsa"] }
-# Sending the push. The one thing in Askance that talks to the public internet
-# — delivery goes through the browser vendors' own services — so default
+# Sending the push, and asking GitHub whether a newer Askance has been released
+# — between them the whole of what Askance says to the public internet. Default
 # features are off to keep OpenSSL out of the build: rustls, with the roots it
-# bundles, is all that reaching an https endpoint takes.
+# bundles, is all that reaching an https endpoint takes. `json` is what reads
+# GitHub's answer, and costs nothing beyond the serde_json already here.
 reqwest = { version = "0.12", default-features = false, features = [
+    "json",
     "rustls-tls",
 ] }
 # The viewer built into the binary — see `src/viewer.rs`. `mime-guess` is what
@@ -37,6 +39,8 @@ rust-embed = { version = "8", features = [
     "interpolate-folder-path",
     "mime-guess",
 ] }
+# Comparing the latest release's tag against the version this was built as.
+semver.workspace = true
 serde.workspace = true
 serde-saphyr.workspace = true
 serde_json.workspace = true
