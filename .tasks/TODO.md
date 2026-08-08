@@ -20,4 +20,4 @@ Roadmap stage: [03: Release pipeline](docs/roadmaps/public-release/03-release-pi
 - [x] 02: Build matrix — [details](02-build-matrix.md)
 - [x] 03: Release on tag — [details](03-release-on-tag.md)
 - [x] 04: Manifest commit-back — [details](04-manifest-commit-back.md)
-- [ ] 05: End-to-end proof — [details](05-end-to-end-proof.md)
+- [x] 05: End-to-end proof — [details](05-end-to-end-proof.md)

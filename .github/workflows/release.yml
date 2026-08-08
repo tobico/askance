@@ -276,9 +276,9 @@ jobs:
       # binaries, and none of the sources.
       #
       # A pre-release is semver's own rule, a hyphen after the version, as in
-      # `v0.1.0-rc.1`. Task 05's throwaway tag is one of those: marking it
-      # keeps `releases/latest` on the newest real version, and keeps a
-      # rehearsal from reading as the project's first release.
+      # `v0.1.0-rc.1`. A throwaway tag rehearsing this workflow is one of
+      # those: marking it keeps `releases/latest` on the newest real version,
+      # and keeps a rehearsal from reading as the project's first release.
       #
       # Notes are generated rather than written. There is nobody to write them
       # at the moment a tag is pushed, and a release with an empty body is
