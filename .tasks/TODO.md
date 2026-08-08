@@ -27,6 +27,6 @@ run `gh pr create`, which fails when a PR exists.
 
 ## Tasks
 
-- [ ] 01: Rust job — [details](01-rust-job.md)
+- [x] 01: Rust job — [details](01-rust-job.md)
 - [ ] 02: Viewer job — [details](02-viewer-job.md)
 - [ ] 03: Nix job — [details](03-nix-job.md)
