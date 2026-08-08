@@ -2,9 +2,10 @@
 
 import { Route, Router } from "@solidjs/router";
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
-import type { JSX } from "solid-js";
+import { onCleanup, onMount, type JSX } from "solid-js";
 
 import { ArchiveList } from "./archive/ArchiveList";
+import { listenForNudges } from "./nudge";
 import { PendingList } from "./pending/PendingList";
 import { SetPage } from "./set/SetPage";
 
@@ -26,6 +27,11 @@ const queries = new QueryClient({
 });
 
 export function App(): JSX.Element {
+  // Held here rather than by a page, because the whole app is what a Nudge is
+  // about: the stream outlives every navigation between the lists and a Set,
+  // and a page that opened its own would drop it on the way to the next.
+  onMount(() => onCleanup(listenForNudges(queries)));
+
   return (
     <QueryClientProvider client={queries}>
       <Router root={Shell}>
