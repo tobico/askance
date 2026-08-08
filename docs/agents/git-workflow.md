@@ -72,8 +72,9 @@ Don't rebase stacked branches by hand. From any branch in the stack:
 
 ### Notes
 
-- Default branch: `main`, on `origin` (github.com/tobico/askance, private
-  until the repo flips public before roadmap stage 03).
+- Default branch: `main`, on `origin` (github.com/tobico/askance, **public**
+  since 2026-08-08 — flipped at the start of roadmap stage 03, which cannot be
+  exercised otherwise: release assets on a private repo need auth to download).
 - PRs open as draft. Change "draft" to "ready" here to open ready-for-review.
 - This replaced a direct-merge process on 2026-08-08, at the start of the
   `ci` stage — commits up to `e35ea47` landed on `main` without a PR, so
