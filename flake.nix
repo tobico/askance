@@ -26,7 +26,11 @@
     {
       packages = forAllSystems (pkgs: rec {
         default = askance;
-        askance = pkgs.callPackage ./nix/askance.nix { inherit viewer; };
+        # The released binary, downloaded — see nix/askance.nix for why that is
+        # what `nix run github:tobico/askance` should get. The build from this
+        # tree is one attribute away, under its own name.
+        askance = pkgs.callPackage ./nix/askance.nix { };
+        askance-source = pkgs.callPackage ./nix/askance-source.nix { inherit viewer; };
         # The viewer's static files on their own. Nothing serves them from here —
         # `askance` embeds them — but they are worth building alone when what is
         # being looked at is the vite output.
@@ -50,7 +54,10 @@
           web = pkgs.callPackage ./nix/web.nix { runTests = true; };
         }
         // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-          module = pkgs.callPackage ./nix/vm-test.nix { module = self.nixosModules.askance; };
+          module = pkgs.callPackage ./nix/vm-test.nix {
+            module = self.nixosModules.askance;
+            package = self.packages.${pkgs.stdenv.hostPlatform.system}.askance-source;
+          };
         }
       );
 

@@ -42,6 +42,12 @@ in
       description = ''
         The Askance package to run. One derivation carries both halves: the
         server this service starts and the CLI it puts on `PATH`.
+
+        The default is the released binary, downloaded — so a host that imports
+        this module needs no Rust toolchain and `nixos-rebuild` does not turn
+        into a workspace compile. Building from the flake's own tree instead is
+        `askance.packages.''${system}.askance-source`, which is what
+        `nix flake check` proves.
       '';
     };
 

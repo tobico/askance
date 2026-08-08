@@ -15,6 +15,26 @@ tool whose every host runs the server anyway, that is dead weight only in
 principle; the CLI is invoked per-ask, not per-keystroke, and startup cost is
 unaffected.
 
+## The flake installs that binary rather than building one
+
+The same reasoning reaches the flake, so `packages.default` fetches the
+released binary and the source build stays reachable as `askance-source`. A
+flake that compiled from source would hand the target adopter — a developer
+installing a tool — a cold build of the whole Rust workspace plus a pnpm
+viewer as their first experience of the project, which is the download story
+above thrown away at the last step.
+
+What the binary package reads is the manifest CI commits after each release: a
+version, and a url and an SRI hash per nix system. Nothing in the flake is
+hand-edited per release, because upkeep that costs anything goes undone, and a
+stale hash is a broken install for the people least able to diagnose it.
+
+The source package keeps its job. It is what `checks` build, so `nix flake
+check` still proves the tree it is run against — including the NixOS VM test,
+which pins `services.askance.package` to it deliberately. A test fed the
+binary would be checking the last release rather than the branch under review,
+which is the one thing a check must never do.
+
 ## Considered Options
 
 - **Two binaries in a per-platform tarball** — no code change, but every
