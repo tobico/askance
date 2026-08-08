@@ -1,56 +1,191 @@
 # Askance
 
-A single-user web service and companion CLI through which coding agents put
-their questions to a human and block until answered. An agent submits a
-**Question Set**; the human answers it from any device on the tailnet; the
-agent's `askance ask` — which has been waiting the whole time — prints the
-**Response** and exits 0.
+Your coding agent has reached a question only you can settle — which of two
+designs, whether this is worth committing — and you are not at the terminal.
+Its choices are to guess or to stall. Askance is the third one: the agent
+submits a **Question Set** and blocks on it, you answer from your phone
+whenever you next pick it up, and the `askance ask` that has been waiting the
+whole time prints the **Response** so the agent can carry on. A wait of hours
+is the tool working rather than the tool failing.
 
-The vocabulary in bold throughout is the project's, and is defined in
+It is one binary. The same file is the server — the API agents submit to and
+the web UI you answer in — and the CLI they call. The UI installs on a phone as
+a PWA and pushes one notification per arriving Set. There is no app-level auth
+anywhere in it, because the tailnet is the perimeter: the server binds loopback,
+and [`tailscale serve`](#securing-access) is the only thing that listens.
+
+Getting there is five steps, and this page is all of them — install the binary,
+run the server, tell your agent about it, hand it the two skills, put Tailscale
+in front. The vocabulary in bold throughout is the project's, and is defined in
 [CONTEXT.md](CONTEXT.md).
 
-## Status
+## Installing the binary
 
-The loop works end to end, and the human's end of it is the web UI: a pending
-list of the Sets waiting on you, each one opening as a form over the whole ask
-— Preface, Diff, Questions — that answers it and wakes the waiting agent.
-Answered Sets and ones closed unanswered are kept in the Archive.
+One file, with the viewer inside it and statically linked on Linux, so it runs
+on any distribution. This fetches the build for your platform into
+`~/.local/bin`:
 
-It installs on a phone as a PWA and pushes one notification per arriving Set,
-which needs HTTPS: see [On your phone](#on-your-phone) for the
-`tailscale serve` in front of it.
+```console
+$ mkdir -p ~/.local/bin && curl -fsSL -o ~/.local/bin/askance \
+    "https://github.com/tobico/askance/releases/latest/download/askance-$(uname -s | tr '[:upper:]' '[:lower:]' | sed s/darwin/macos/)-$(uname -m | sed -e s/x86_64/x64/ -e s/aarch64/arm64/)" \
+    && chmod +x ~/.local/bin/askance
+$ askance --version
+askance 0.1.0
+```
 
-On the box the agents work on it runs as a service rather than out of a
-terminal — the flake carries the package and the NixOS module that does it, and
-[Deployment](#deployment) is the way to both that and a plain systemd unit. The
-agents are taught by the binary itself: [the Guide](#the-guide) ships inside it,
-so the whole integration is a single line in a global CLAUDE.md. What is left is
-driving that loop through a real session, from the phone — see
-[the roadmap](docs/roadmaps/public-release/ROADMAP.md).
+It asks for `releases/latest/download` rather than a version, so the command
+above is the same one next year. The `uname` pair picks between the four assets
+a release publishes — `askance-linux-x64`, `askance-linux-arm64`,
+`askance-macos-x64` and `askance-macos-arm64` — and any of them can be fetched
+by name instead. `~/.local/bin` has to be on your `PATH`, which on most systems
+it already is.
 
-## Quickstart
+### With nix
 
-Running the whole loop out of a checkout — the dev shell, building the viewer,
-submitting the example Set, answering it in the browser and watching the
-waiting CLI print the Response — is the first half of
-[the development guide](docs/development.md#quickstart).
+```console
+$ nix run github:tobico/askance          # the server
+$ nix run github:tobico/askance#askance  # the CLI
+```
 
-## On your phone
+Both run the same released asset the curl above fetches, downloaded and
+hash-checked rather than compiled; `askance-source` is the attribute that builds
+this tree instead. For an install that persists, take the flake as an input:
 
-A Question Set should reach you without the pending list being open, which
-means a push notification, which means HTTPS in front of the plain HTTP the
-server binds. [On your phone](docs/phone.md) is the whole of it:
-`tailscale serve` and its `ts.net` certificate, installing the PWA, turning
-notifications on per device, how the long waits behave through the proxy, and
-the one thing that leaves the tailnet.
+```nix
+inputs.askance = {
+  url = "github:tobico/askance";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+```
 
-## Deployment
+On NixOS the input also carries a module that runs the server as a service —
+[Deployment](docs/deployment.md#nixos) is that in full.
 
-The server also has to be up when nobody has a terminal open.
-[Deployment](docs/deployment.md) is the two ways there: this flake's NixOS
-module — a systemd unit under its own user, its database in `/var/lib/askance`,
-and the CLI on every user's `PATH` — and a systemd unit to write yourself on a
-host that is not NixOS.
+## Running the server
+
+```console
+$ askance serve
+```
+
+It binds `127.0.0.1:8422` and keeps its SQLite database in `askance.db` beside
+you, both movable — see [Configuration](#configuration). Open
+<http://127.0.0.1:8422/> and there is the pending list, empty for now: every Set
+waiting on you appears there, opening as a form over the whole ask — Preface,
+Diff, Questions — that answers it and wakes the agent. Answered Sets, and ones
+closed unanswered, are kept in the Archive.
+
+An agent is blocked for as long as the server is down, so it wants to be up when
+nobody has a terminal open. [Deployment](docs/deployment.md) is the two ways
+there: this flake's [NixOS module](docs/deployment.md#nixos), which puts the
+service under its own user and the CLI on every user's `PATH`, and
+[a systemd unit](docs/deployment.md#anywhere-else-a-systemd-unit) to write
+yourself on a host that is not NixOS.
+
+## Configuring your agent
+
+The whole of the integration is one line in the global `CLAUDE.md` — or
+`AGENTS.md`, or whatever file your harness reads at the start of every session:
+
+> Never use the AskUserQuestion tool. Put all questions and approvals to me
+> through askance: run `askance` once per session for the guide and follow it,
+> including the topic guides it requires.
+
+Drop the first sentence if your harness has no such tool of its own. One line is
+enough because the instructions ship inside the binary: [the Guide](#the-guide)
+is what `askance` prints when it is run with no arguments. So an agent learns to
+ask from the version of the tool it will actually call — [the binary you just
+installed](#installing-the-binary), or the one the NixOS module put on its
+`PATH` — and there is no vendored copy of the instructions anywhere to drift out
+of step.
+
+## Skills
+
+Two habits are worth teaching alongside the tool, and
+[`examples/skills/`](examples/skills/) carries both as plain markdown, belonging
+to no particular harness: paste one into a skills directory, or into the
+instructions file above.
+
+**[Grilling](examples/skills/grilling.md)** — interview the human about a plan
+until you both understand it the same way, instead of discovering the
+disagreement a week into building it. What keeps that from spending their
+attention on your work:
+
+> - **Ask only about what the human can settle and you can't**: trade-offs decided
+>   by taste, product or cost; assumptions nothing in the repository confirms;
+>   scope; facts from outside the codebase.
+> - **If a question can be answered by exploring the codebase, explore the
+>   codebase instead.** A question you were supposed to answer yourself spends
+>   their attention on your work.
+
+**[Acceptance gate](examples/skills/acceptance-gate.md)** — stop before the
+commit, the push, the deploy, say what you did, and ask the one question a gate
+is. The strictness is the point of it:
+
+> Only an explicit approval opens the gate. Everything else leaves it shut:
+>
+> - **No answer to the gate itself** — shut, even where everything around it was
+>   answered.
+> - **A question back, or a partial answer** — a counter-question, not approval.
+>   Answer it, then put the same gate again.
+> - **Anything ambiguous** — shut. Ask again rather than resolving it in your own
+>   favour.
+
+The binary teaches the same thing from the other end: `askance guide gates` is
+required reading before an agent writes a gate, and says how a Set that asks for
+approval is authored and how its Response is read.
+
+## Securing access
+
+Askance has no login page. What it holds — every Set, every Diff of your work in
+progress, every answer — sits behind the tailnet instead, and the server binds
+loopback so that nothing reaches it even from the tailnet except through what
+you put in front.
+
+That is `tailscale serve`, which also settles the other half: notifications need
+HTTPS, because service workers and the Push API are withheld outside a secure
+context and a plain `http://` tailnet address is not one.
+
+```console
+$ tailscale serve --bg 8422
+Available within your tailnet:
+
+https://your-host.your-tailnet.ts.net/
+|-- proxy http://127.0.0.1:8422
+```
+
+`--bg` is what makes it persist across a reboot. That URL is the one to open on
+the phone, and [On your phone](docs/phone.md) is the rest of it: adding it to the
+home screen, turning notifications on per device, and how the long waits behave
+through the proxy.
+
+**Not `tailscale funnel`.** The sibling command would put the same service on the
+public internet, where nothing in Askance stops whoever arrives. Tailnet only.
+The single exception is outbound and unavoidable — a notification is delivered
+by Apple's or Google's push service, so
+[the server reaches out](docs/phone.md#the-one-thing-that-leaves-the-tailnet) to
+one of those, carrying a payload it cannot read. Nothing reaches in.
+
+## Updating
+
+`askance --version` says what you are running, and the pending list says when
+that is behind: the server asks GitHub once a day whether a newer Askance has
+been released, and puts a banner above the list when one has. It only ever says
+so — nothing is installed for you, here or anywhere else.
+
+**Installed with curl:** run the install command again, which overwrites the
+binary in place, then restart the server — `systemctl restart askance` where it
+runs as a service.
+
+**Installed from the flake:** `nix flake update askance` in your host
+configuration, then rebuild. The input tracks this repository rather than a
+release, so what moves is [`nix/release.json`](nix/release.json) — the version,
+url and hash the release workflow commits after every tag, and the only thing the
+package reads to decide which binary to fetch.
+
+The database is untouched by either, so the Archive and the phone's push
+subscription come back with the new binary. To stop the daily check, and the
+banner with it, set `ASKANCE_NO_UPDATE_CHECK` — or
+`services.askance.updateCheck = false` on NixOS.
 
 ## The Guide
 
@@ -98,20 +233,6 @@ Topic that does not exist is an error naming the ones that do, never a quiet
 fallback to the core: an agent that asked for required reading must not be
 handed something else.
 
-### Installing it
-
-The whole of it is one line in the global CLAUDE.md — or whatever file the
-harness reads at the start of every session:
-
-> Never use the AskUserQuestion tool. Put all questions and approvals to me
-> through askance: run `askance` once per session for the guide and follow it,
-> including the topic guides it requires.
-
-That is the point of the Guide living in the binary. [Deployment](#deployment)
-already puts `askance` on every user's `PATH`, so the instructions arrive with
-the version of the tool that will run, and there is no vendored copy of them
-anywhere to drift out of step.
-
 ## Configuration
 
 No app-level auth: the tailnet is the perimeter, so everything defaults to the
@@ -120,7 +241,7 @@ loopback interface.
 | Variable | Used by | Default | What it is |
 | --- | --- | --- | --- |
 | `ASKANCE_SERVER` | CLI | `http://127.0.0.1:8422` | Base URL the CLI submits to and waits on. Also `--server`. |
-| `ASKANCE_LISTEN` | server | `127.0.0.1:8422` | Address and port to bind. Loopback is what [`tailscale serve`](#on-your-phone) proxies to; binding the tailnet directly reaches other devices too, but over plain HTTP, which rules out notifications. Also `--listen`. |
+| `ASKANCE_LISTEN` | server | `127.0.0.1:8422` | Address and port to bind. Loopback is what [`tailscale serve`](#securing-access) proxies to; binding the tailnet directly reaches other devices too, but over plain HTTP, which rules out notifications. Also `--listen`. |
 | `ASKANCE_DATABASE` | server | `askance.db` | SQLite file, created with its parent directory. Also `--database`. |
 | `ASKANCE_NO_UPDATE_CHECK` | server | unset | Set it to stop the server asking GitHub, once a day, whether a newer Askance has been released — and so to stop the banner that says one has. Nothing is ever installed either way. Also `--no-update-check`. |
 
@@ -249,7 +370,7 @@ Both ends enforce the grammar. The CLI checks a Set before sending it, so a
 bad Set never reaches the server:
 
 ```console
-$ cargo run -p askance-cli -- ask three-levels-deep.yaml
+$ askance ask three-levels-deep.yaml
 askance: the Question Set breaks the question grammar:
   Q1a: Sub-questions are leaves: two levels is the maximum, so this one cannot have Sub-questions of its own
 ```
@@ -294,6 +415,11 @@ the page rather than reporting a stale URL.
 
 ## Development
 
-The cargo and pnpm commands, the vite proxy the viewer is developed behind, how
+Running the whole loop out of a checkout — the dev shell, building the viewer,
+submitting the example Set, answering it in the browser and watching the waiting
+CLI print the Response — is
+[the development guide's quickstart](docs/development.md#quickstart). The cargo
+and pnpm commands, the vite proxy the viewer is developed behind, how
 `pnpm build`'s output gets into the binary, and what `nix flake check` covers
-are in [the development guide](docs/development.md#the-dev-loop).
+are [the dev loop](docs/development.md#the-dev-loop) after it. What is still
+ahead is [the roadmap](docs/roadmaps/public-release/ROADMAP.md).

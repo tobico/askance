@@ -105,7 +105,8 @@ that is not a notification.
 
 Without the module, the same shape is a unit file you write once. The Linux
 release assets are statically linked, so the whole of the install is putting
-one somewhere on `PATH` — [the README](../README.md) has the download — and
+one somewhere on `PATH` — [the README](../README.md#installing-the-binary) has
+the download — and
 pointing a unit at it. The rest of this section assumes
 `/usr/local/bin/askance`.
 
