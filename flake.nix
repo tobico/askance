@@ -54,8 +54,8 @@
         }
       );
 
-      # `nix run` is the server, UI and all; the CLI is the other half of the
-      # same derivation and has to be asked for by name.
+      # `nix run` is the server, UI and all; the CLI is the same binary without
+      # the `serve` verb and has to be asked for by name.
       apps = forAllSystems (
         pkgs:
         let
@@ -64,7 +64,12 @@
         {
           default = {
             type = "app";
-            program = "${askance}/bin/askance-server";
+            # An app is a program and no arguments, and the server is a verb of
+            # the one binary now — so what `nix run` runs is a script that
+            # supplies the verb and passes the caller's own flags on through.
+            program = "${pkgs.writeShellScript "askance-serve" ''
+              exec ${askance}/bin/askance serve "$@"
+            ''}";
             meta.description = "The Askance server, agent API and UI both";
           };
           askance = {

@@ -46,7 +46,7 @@ Everything below assumes this shell — it carries the Rust toolchain, `sqlite`,
 
 ```console
 $ (cd web && pnpm install && pnpm build)
-$ cargo run -p askance-server
+$ cargo run -p askance-cli -- serve
   INFO askance_server: askance is listening listen=127.0.0.1:8422 database=askance.db
 ```
 
@@ -678,9 +678,9 @@ only: the built assets are served by the server itself, out of the same binary.
 
 Which is `pnpm build`'s output, embedded by rust-embed. A release build compiles
 it in; a debug build reads it off disk per request, so a `cargo run -p
-askance-server` serves whatever `pnpm build` last wrote without a recompile — and
-a checkout that has never built the viewer still builds the server, which then
-says so on every page instead of serving one.
+askance-cli -- serve` serves whatever `pnpm build` last wrote without a
+recompile — and a checkout that has never built the viewer still builds the
+server, which then says so on every page instead of serving one.
 
 `cargo test` covers the round trip in-process. `nix flake check` runs the
 viewer's vitest suite from the pinned pnpm and node, and boots a VM with the

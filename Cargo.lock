@@ -155,6 +155,7 @@ dependencies = [
  "serde-saphyr",
  "tempfile",
  "tokio",
+ "tracing-subscriber",
  "ureq",
 ]
 
@@ -206,7 +207,6 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
- "tracing-subscriber",
  "web-push-native",
 ]
 

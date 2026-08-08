@@ -63,7 +63,7 @@ async fn health_route_answers_ok() {
 
 #[test]
 fn config_defaults_to_localhost() {
-    let config = Config::parse_from(["askance-server"]);
+    let config = Config::parse_from(["askance serve"]);
 
     assert_eq!(config.listen.ip(), IpAddr::V4(Ipv4Addr::LOCALHOST));
     assert!(!config.database.as_os_str().is_empty());
@@ -72,7 +72,7 @@ fn config_defaults_to_localhost() {
 #[test]
 fn config_is_overridable_by_flag() {
     let config = Config::parse_from([
-        "askance-server",
+        "askance serve",
         "--listen",
         "0.0.0.0:9999",
         "--database",

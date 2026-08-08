@@ -62,7 +62,7 @@ impl FromRef<AppState> for SqlitePool {
 /// app-level auth: the tailnet is the perimeter, so the defaults keep the
 /// server on the loopback interface until told otherwise.
 #[derive(Debug, Clone, clap::Parser)]
-#[command(name = "askance-server", version, about = "Askance server")]
+#[command(name = "askance serve", version, about = "Askance server")]
 pub struct Config {
     /// Path to the SQLite database. Created, with its parent directory, if
     /// it does not exist.

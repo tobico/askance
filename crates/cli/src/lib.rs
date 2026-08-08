@@ -16,6 +16,7 @@ mod ask;
 mod client;
 mod guide;
 pub mod repo;
+mod serve;
 
 /// Where the server lives when nothing says otherwise. The tailnet is the
 /// perimeter, so the default stays on the loopback interface.
@@ -51,6 +52,12 @@ enum Command {
         server: String,
     },
 
+    /// Run the Askance server: the agents' API and the human's viewer.
+    ///
+    /// The flags are the server's own, and the one verb here that is not an
+    /// agent's — everything else in this binary talks *to* a server.
+    Serve(askance_server::Config),
+
     /// Print the Guide: everything an agent needs in order to ask well.
     ///
     /// Markdown on stdout, exit 0. With no topic, the core Guide — the same one
@@ -66,6 +73,7 @@ impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
             Some(Command::Ask { file, server }) => ask::ask(file.as_deref(), &server),
+            Some(Command::Serve(config)) => serve::serve(config),
             Some(Command::Guide { topic }) => guide::guide(topic.as_deref()),
             None => guide::guide(None),
         }
