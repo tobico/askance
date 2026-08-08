@@ -66,15 +66,11 @@
   box-sizing: border-box;
 }
 
-/* The table of contents jumps by scrolling the page, and this is where how it
-   moves is decided — the jump itself just asks the browser to bring the section
-   into view. Anyone who has asked for less motion keeps the instant jump, which
-   is the default and so needs no rule of its own. */
-@media (prefers-reduced-motion: no-preference) {
-  html {
-    scroll-behavior: smooth;
-  }
-}
+/* No `scroll-behavior: smooth` here, deliberately: a rule on the root would
+   slow every scroll the browser does on its own, Back and Forward restoring a
+   place included. The one scroll that animates is the table of contents jump,
+   and the script that makes it is where its length and
+   `prefers-reduced-motion` are honoured — see `bring` in `set/Contents.tsx`. */
 
 body {
   margin: 0;
@@ -85,13 +81,71 @@ body {
 
 main {
   /* The measure: the width a line of prose is read at, wherever on the page it
-     is set. The column is that, plus the padding a card puts either side of it
-     and the column's own — and where the column widens past the breakpoint
-     below, the measure is what the prose inside the cards keeps. */
+     is set. The column is wider than it, because a good deal of what a Set
+     carries is not prose: code is written to a width of its own — 104 columns
+     here — a table is as wide as the axes it compares along, and a Diagram is
+     a shape rather than a line. So width is a property of the block rather
+     than of the page: the cards span the column, the blocks inside them that
+     were never prose take the room, and the prose keeps the measure — see the
+     rules just below.
+
+     58rem of card is what the Diff asks for: 104 columns of code, the five the
+     gutter takes and the padding around both come to 55rem or so at the size
+     and the faces monospace is usually set in. The column is the card plus its
+     own padding either side, and it is never traded away: at every window that
+     holds it, the column is this wide — what the window's width decides is
+     only what stands beside it and where it sits, which is the breakpoints'
+     whole business below. A narrower window is the one thing that narrows it. */
   --measure: 42rem;
-  max-width: calc(var(--measure) + 4rem);
+  max-width: 60rem;
   margin: 0 auto;
   padding: 1.25rem 1rem 3rem;
+}
+
+/* Prose at the measure, flush left rather than centred in the card: the eye
+   starts the next line where the last one began, and a column that sat
+   somewhere different under every block would make that a hunt.
+
+   Every block the markdown dialect reads in lines is named here, the rule that
+   parts two of them included, because what is left out is exactly what the
+   room was widened for: a table, a Diagram and a fence keep the card. On a
+   window too narrow for the difference to exist, the cap simply never binds. */
+.markdown > p,
+.markdown > ul,
+.markdown > ol,
+.markdown > blockquote,
+.markdown > h1,
+.markdown > h2,
+.markdown > h3,
+.markdown > h4,
+.markdown > h5,
+.markdown > h6,
+.markdown > hr,
+/* The human's own words on the record are prose too, and read the same way. */
+.ask.decided .answer-text,
+.set-comment.decided .comment,
+/* And what is written or chosen rather than read: a field is as wide as the
+   words going into it, and an Option is one line of words on offer. The Answer
+   Table is not an exception to this — it is a table, and takes what its
+   columns want. */
+.grow,
+.options {
+  max-width: var(--measure);
+}
+
+/* These stand where a card stands rather than inside one, so the measure alone
+   would leave them a card's padding short of the prose they sit under. */
+.counter-question,
+.submit button {
+  max-width: calc(var(--measure) + 2rem);
+}
+
+/* The two lists' pages, whole: a row carries a title and a line of provenance,
+   and neither ever wanted more room than the reading column — so the page
+   keeps to it, and sits in the middle of whatever the window offers past it. */
+.list-page {
+  max-width: calc(var(--measure) + 2rem);
+  margin-inline: auto;
 }
 
 h1 {
@@ -300,40 +354,65 @@ textarea::placeholder {
 /* The set page's provenance line, told from the list rows' by the element it is
    rather than by what it follows: the table of contents comes between it and the
    title, and where the nav sits in the markup is not something this line should
-   depend on. */
+   depend on.
 
-p.meta {
+   One line about the Set: where it came from at the near end, and how it
+   stands at the far end — the settling's date, or the waiting Set's badge and
+   menu. Centred on the cross axis because the badge is a pill with a height of
+   its own, and the words beside it should sit on its middle rather than hang
+   from its top. */
+
+div.meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.4rem 0.75rem;
   margin: -0.5rem 0 1.25rem;
   font-size: 0.85rem;
   color: var(--ink-soft);
 }
 
-p.meta .project {
+div.meta .project {
   color: var(--accent);
   font-weight: 500;
 }
 
-p.meta .branch {
+div.meta .branch {
   font-family: ui-monospace, SFMono-Regular, monospace;
 }
 
-/* The table of contents, in the two shapes the one nav takes: the sidebar, in the
-   margin the content column was already leaving empty, and — where there is no
-   such margin — a bar across the top with the list folded into it.
+/* The far end of the line, whichever of the two the standing puts there. */
+div.meta .answered-at,
+div.meta .archived-at,
+div.meta .standing {
+  margin-left: auto;
+}
+
+/* Its own full line under the provenance, so a refusal is not squeezed in
+   beside the badge. */
+div.meta .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* The table of contents, in the two shapes the one nav takes: the sidebar, in
+   the margin, and — where the window has no room for one beside the full-width
+   column — a bar across the top with the list folded into it. The column's
+   width is never what is traded for the sidebar: below the breakpoint the nav
+   folds into the bar and the column keeps every rem it had.
 
    The two blocks below are complements of one another about the same width, so
    exactly one of them ever applies and the reader always has exactly one of the
-   two. `(width < 64rem)` and `(min-width: 64rem)` meet with no gap and no
+   two. `(width < 70rem)` and `(min-width: 70rem)` meet with no gap and no
    overlap between them, which is the whole of why that is true: move the
-   breakpoint in one and it has to move in the other. */
+   breakpoint in one and it has to move in the other. 70rem is the first window
+   that holds the nav at its narrowest — 8rem, a margin at the window's edge
+   and a gap — beside the column at its widest. */
 
 /* The bar. It names the line the sidebar would have lit — the section, file or
    Question the reader is in — and the list comes down under it when it is
    pressed. */
-@media (width < 64rem) {
+@media (width < 70rem) {
   /* Sticky rather than fixed: the bar sits where it is read, under the title,
      and pins itself to the top edge as the page goes up under it. Nothing is
      covered on arrival that way, and there is no room to make for it.
@@ -462,12 +541,11 @@ p.meta .branch {
 /* The sidebar: the page's sections, top to bottom, in the margin — so the column
    stays exactly where it was and nothing below the nav has moved.
 
-   Out of the flow entirely, and positioned from the middle of the viewport,
-   which is what the column is centred on. Fixed rather than sticky: there is
-   nothing above it in the margin to scroll past, so it is in the same place on
-   arrival as it is a page down. */
+   Out of the flow entirely, and fixed rather than sticky: there is nothing
+   above it in the margin to scroll past, so it is in the same place on arrival
+   as it is a page down. */
 
-@media (min-width: 64rem) {
+@media (min-width: 70rem) {
   /* There is no bar here: the list is in the margin already, and a bar naming
      the line beside it would be saying the same thing twice. */
   .contents-bar {
@@ -477,12 +555,12 @@ p.meta .branch {
   .contents {
     position: fixed;
     top: 1.25rem;
-    /* The column is 46rem at its widest and centred, so its edge is 23rem from
-       the middle; the nav stops a gap short of it. */
-    right: calc(50% + 24rem);
-    /* Whatever the margin has spare, up to what a path wants — and a margin of
-       its own at the window's edge. */
-    width: min(14rem, calc(50vw - 25rem));
+    /* At the window's edge, at the narrowest a path still reads at: in this
+       band the window holds the nav or the column's centring, not both, and
+       it is the centring that goes — see `main` just below. From 80rem the
+       middle clears the nav on its own, and both move back out with it. */
+    left: 1rem;
+    width: 8rem;
     /* A Set with forty questions scrolls its nav rather than running off the
        bottom of the window. */
     max-height: calc(100vh - 2.5rem);
@@ -491,34 +569,48 @@ p.meta .branch {
     line-height: 1.4;
   }
 
-  /* The header, pinned across the reading column. Sticky rather than fixed, like
-     the bar below this width and for the same reason: it belongs to the column
-     and pins itself as the page goes up under it, so nothing is covered on
-     arrival and there is no room to make for it.
+  /* The column gives up being centred before it gives up an inch of width: as
+     centred as still clears the nav, which in this band is pushed right by
+     exactly the nav's margin, width and gap. The right margin stays `auto`
+     from the base rule, so whatever the window has past the column is air on
+     the right — until 80rem, where the centred position clears the nav by
+     itself and the column returns to the middle.
 
-     Out past the column's padding on both sides, so once pinned the page passes
-     behind it rather than beside it. */
+     Only a page with a nav in the margin: the lists have nothing there, and a
+     column pushed sideways to clear nothing would just be off-centre. */
+  main:has(.contents) {
+    margin-left: 10rem;
+  }
+
+  /* The header, pinned across the reading column — but a shell of no height,
+     so it takes no room out of the flow whether or not it is drawn: it is not
+     drawn until the page's first heading has been scrolled away, and a header
+     that had a height would shove the whole page down at the moment it
+     appeared. Sticky rather than fixed all the same: the shell belongs to the
+     column, so what hangs from it spans the column at every band above,
+     wherever the column is standing.
+
+     Out past the column's padding on both sides, so the page passes behind
+     the chrome rather than beside it. */
   .page-header {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    height: 0;
+    margin: 0 -1rem;
+    overflow: visible;
+  }
+
+  .page-header-chrome {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem 1rem;
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    margin: 0 -1rem 1rem;
     padding: 0.5rem 1rem;
     min-height: 2.5rem;
     background: var(--card);
     border-bottom: 1px solid var(--edge);
-  }
-
-  /* The provenance line is set to pull up against the title, because until now it
-     followed the title: the nav between them in the markup is out of the flow at
-     this width. The header is not out of the flow — that is what lets it be sticky
-     — so left alone the line would be dragged up underneath it. */
-  .page-header + p.meta {
-    margin-top: 0;
   }
 
   /* Where a jump lands: the header covers the top edge exactly as the bar does at
@@ -534,80 +626,23 @@ p.meta .branch {
   }
 }
 
-/* Where the window is wide enough to spare it, the column itself widens — and
-   what widens with it is the cards, not the reading. 46rem is a measure chosen
-   for prose, and a good deal of what a Set carries is not prose: code is written
-   to a width of its own — 104 columns here — a table is as wide as the axes it
-   compares along, and a Diagram is a shape rather than a line. So width becomes
-   a property of the block rather than of the page. The cards span the wide
-   column, the blocks inside them that were never prose take the room, and the
-   prose pulls back to the measure it is read at everywhere else.
-
-   58rem of card is what the Diff asks for, and it is what the whole column is
-   given rather than the Diff alone breaking out of a narrower one: 104 columns
-   of code, the five the gutter takes and the padding around both come to 55rem
-   or so at the size and the faces monospace is usually set in. That is the same
-   reserve the Diff's own width was capped at when it did break out — so the
-   guarantee it made there, that a line written to the code's width is not cut
-   off, is the column's now, and the room is never less than it was.
-
-   The nav gives way to the column exactly as it gave way to the Diff: the
-   column's edge is 30rem from the middle, and the nav stops a gap short of that.
-   80rem is where there is room for both — the column at its widest, the nav
-   still wide enough to read a path in, and a margin at the window's edge. It is
-   the narrow windows in this range that pay for the column, at 8rem of nav where
-   the window is exactly 80rem; by 92rem it is back to the full width it wants. */
+/* From 80rem the window holds the column centred with the nav beside it: the
+   middle's clearance is 10rem or more, which is what the nav asked for at its
+   narrowest. So the column returns to the middle, and the nav is positioned
+   from it again — elastic now, at 8rem of nav where the window is exactly
+   80rem and back to the full width it wants by 92rem. */
 @media (min-width: 80rem) {
-  main {
-    /* The card, plus the column's own padding either side of it. */
-    max-width: 60rem;
+  main:has(.contents) {
+    margin-left: auto;
   }
 
   .contents {
+    left: auto;
+    /* The column's edge is 30rem from the middle; the nav stops a gap short. */
     right: calc(50% + 31rem);
+    /* Whatever the margin has spare, up to what a path wants — and a margin of
+       its own at the window's edge. */
     width: min(14rem, calc(50vw - 32rem));
-  }
-
-  /* Prose back to the measure, flush left rather than centred in the card: the
-     eye starts the next line where the last one began, and a column that sat
-     somewhere different under every block would make that a hunt.
-
-     Every block the markdown dialect reads in lines is named here, the rule that
-     parts two of them included, because what is left out is exactly what the
-     room was widened for: a table, a Diagram and a fence keep the card. */
-  .markdown > p,
-  .markdown > ul,
-  .markdown > ol,
-  .markdown > blockquote,
-  .markdown > h1,
-  .markdown > h2,
-  .markdown > h3,
-  .markdown > h4,
-  .markdown > h5,
-  .markdown > h6,
-  .markdown > hr,
-  /* The human's own words on the record are prose too, and read the same way. */
-  .ask.decided .answer-text,
-  .set-comment.decided .comment,
-  /* And what is written or chosen rather than read: a field is as wide as the
-     words going into it, and an Option is one line of words on offer. The Answer
-     Table is not an exception to this — it is a table, and takes what its
-     columns want. */
-  .grow,
-  .options {
-    max-width: var(--measure);
-  }
-
-  /* These stand where a card stands rather than inside one, so the measure alone
-     would leave them a card's padding short of the prose they sit under. What
-     they keep is the width they have below this breakpoint. */
-  .counter-question,
-  .submit button,
-  /* The two lists among them: a row carries a title and a line of provenance,
-     and neither ever wanted more room than the reading column. */
-  .page-head,
-  .set-list {
-    max-width: calc(var(--measure) + 2rem);
   }
 }
 
@@ -1412,49 +1447,86 @@ p.meta .branch {
   color: var(--tok-support);
 }
 
-/* How a waiting Set stands, above everything it is asking: whether an agent is
-   still on the other end, and the way to close the Set if none ever will be
-   again. One line, because on a phone that is a badge and a button side by
-   side. */
+/* How a waiting Set stands, at the far end of the provenance line: the badge
+   is the title of a small menu, and the way to close the Set if no agent ever
+   comes back for it is inside. The anchor the menu hangs from. */
 
 .standing {
-  display: flex;
-  flex-wrap: wrap;
+  position: relative;
+}
+
+/* The badge as a pill, with the mark that says it opens: quiet, because
+   waiting is the ordinary state — the outline is only what says this one is
+   pressable, where the words around it are not. The word that colours it is
+   the Liveness itself, exactly as on a list row. */
+.standing-trigger {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-  margin: 0 0 1.25rem;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-}
-
-.meta + .standing {
-  margin-top: -0.5rem;
-}
-
-/* Quiet, and quieter than accept-all: archiving is almost never the right thing
-   to do to a Set, and the one time it is, the human came here for it. It is not
-   a danger button either — nothing is destroyed, the Set is filed. */
-.standing .archive {
-  padding: 0.4rem 0.7rem;
+  gap: 0.4rem;
+  padding: 0.25rem 0.7rem;
   font: inherit;
   font-size: 0.85rem;
   color: var(--ink-soft);
   background: transparent;
   border: 1px solid var(--edge);
-  border-radius: 0.5rem;
+  border-radius: 999px;
   cursor: pointer;
 }
 
-.standing .archive:disabled {
+.standing-trigger:disabled {
   cursor: progress;
   opacity: 0.65;
 }
 
-/* Its own line under the two, so a refusal is not squeezed between them. */
-.standing .error {
-  flex-basis: 100%;
-  margin: 0;
+/* Which way the menu will go, and no part of what the badge says. */
+.standing-mark {
+  color: var(--ink-soft);
+}
+
+/* What a tap away from the open menu lands on, so that it lands on nothing
+   else: on a page whose whole purpose is answering carefully, a stray tap that
+   answers something is not a small thing. Invisible, unlike the bar's wash —
+   a menu one item long is not in front of the page the way the whole list
+   is. */
+.standing-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+}
+
+/* The menu, hung under the badge's end of the line. */
+.standing-actions {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  right: 0;
+  z-index: 3;
+  min-width: max-content;
+  padding: 0.25rem;
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: 0.5rem;
+}
+
+/* Quiet, and quieter than accept-all: archiving is almost never the right thing
+   to do to a Set, and the one time it is, the human came here for it. It is not
+   a danger button either — nothing is destroyed, the Set is filed. */
+.standing-actions .archive {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.7rem;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 0.35rem;
+  cursor: pointer;
+}
+
+.standing-actions .archive:hover {
+  background: var(--paper);
 }
 
 .questions,
@@ -1737,23 +1809,12 @@ p.meta .branch {
 }
 
 /* An answered Set: the same column, read rather than filled in. What was decided
-   is the ink; what was only offered fades behind it. */
+   is the ink; what was only offered fades behind it.
 
-/* Under the title, or under the provenance line when the Set has one — which
-   already carries the gap below the title, so the two sit together rather than a
-   line apart. A Set that was archived unanswered is dated in the same place, by
-   the archiving instead of by a Response. */
-.answered-at,
-.archived-at {
-  margin: 0 0 1.25rem;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-}
-
-.meta + .answered-at,
-.meta + .archived-at {
-  margin-top: -1rem;
-}
+   When it settled sits at the far end of the provenance line — see `div.meta` —
+   in the line's own quiet type, so the two classes need no rules of their own
+   here: they exist to tell the two settlings apart, because nothing about an
+   archived Set was answered. */
 
 /* A Response that resolved nothing still decided something — that these were
    the wrong questions. It gets a card of its own so the page below it cannot be
@@ -1990,11 +2051,14 @@ p.meta .branch {
    two copies of a width drift, and a drift here is a page that does not line up
    with itself.
 
-   Only at this width, and only on this page. Below it the column has no card
-   edge and Gutter to give away; and the two widths reach the list pages, because
-   they are named on the column, but nothing there reads them — a list row has no
-   marks to hang. */
-@media (min-width: 80rem) {
+   Only where the window holds the column at its widest — the same 60rem the
+   column itself asks for, so the Gutter travels with the full-width card
+   however the window ranks against the breakpoints above. On a narrower window
+   the card would be paying for the Gutter out of the measure, so there is
+   none, and the marks sit inline as they always did. Only on this page, too:
+   the two widths reach the list pages, because they are named on the column,
+   but nothing there reads them — a list row has no marks to hang. */
+@media (min-width: 60rem) {
   main {
     --gutter: 4.5rem;
     /* How far a block reaches back out of the Gutter to take the whole card.

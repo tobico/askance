@@ -63,17 +63,28 @@ describe("the Archive", () => {
     );
   });
 
-  it("dates each row rather than ageing it, and badges nothing as waiting", async () => {
+  it("words each settling as the server did, and badges nothing as waiting", async () => {
     serving(json(SETS));
     const { container } = mount(ArchiveList);
 
     await waitFor(() => screen.getByText(DECIDED.title));
 
-    // Dated rather than aged: in the Archive this is when the Set was settled,
-    // and "3h ago" stops meaning anything by the following week.
+    // As the server worded it — an age while the settling is fresh, the plain
+    // date once it is not — with the exact minute riding behind the words as
+    // the tooltip. The fixture holds one of each.
     const row = screen.getByText(DECIDED.title).closest("li")!;
     expect(row.querySelector(".decided-at")!.textContent).toContain(
       DECIDED.settled_at,
+    );
+    expect(row.querySelector(".decided-at")!.getAttribute("title")).toBe(
+      DECIDED.settled_stamp,
+    );
+    const fresh = screen.getByText(ORPHANED.title).closest("li")!;
+    expect(fresh.querySelector(".decided-at")!.textContent).toContain(
+      ORPHANED.settled_at,
+    );
+    expect(fresh.querySelector(".decided-at")!.getAttribute("title")).toBe(
+      ORPHANED.settled_stamp,
     );
     expect(
       container.querySelector(".liveness"),

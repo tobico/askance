@@ -3,7 +3,8 @@
     "branch": "solid-viewer",
     "id": 2,
     "project": "askance",
-    "settled_at": "2026-08-03 17:31 UTC",
+    "settled_at": "just now",
+    "settled_stamp": "2026-08-03 17:31 UTC",
     "title": "Backfill for the archived rows",
     "unanswered": true
   },
@@ -11,7 +12,8 @@
     "branch": "solid-viewer",
     "id": 1,
     "project": "askance",
-    "settled_at": "2026-08-03 09:07 UTC",
+    "settled_at": "2025-08-03",
+    "settled_stamp": "2025-08-03 09:07 UTC",
     "title": "Rate limiting for the public API",
     "unanswered": false
   }

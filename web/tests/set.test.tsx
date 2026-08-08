@@ -40,9 +40,13 @@ const ANSWERED = answered as SetView;
 const ARCHIVED = archived as SetView;
 const DIAGRAMMED = diagram as SetView;
 
-/// When the two settled fixtures were settled — pinned by the test that writes
-/// them, so this is the one date on either page.
-const SETTLED = "2026-08-03 09:07 UTC";
+/// When the two settled fixtures were settled, as the page words it — pinned
+/// by the test that writes them, and pinned far enough back that the wording
+/// is the date, which no run's own clock can move.
+const SETTLED = "2025-08-03";
+
+/// The same settling to the minute — the tooltip behind the words.
+const SETTLED_STAMP = "2025-08-03 09:07 UTC";
 
 /// The label at the head of one question, found among the Questions rather than
 /// anywhere on the page: the table of contents lists a Question by its label too,
@@ -100,10 +104,10 @@ describe("reading a Set", () => {
     const page = await reading({ ...WAITING, project: null, branch: null });
 
     expect(page.querySelector("h1")!.textContent).toBe(WAITING.title);
-    expect(
-      page.querySelector(".meta"),
-      "with nothing to say, the provenance line should be absent",
-    ).toBeNull();
+    // The line itself stands — how the Set stands lives at its far end — but
+    // it says nothing about where the ask came from.
+    expect(page.querySelector(".meta .project")).toBeNull();
+    expect(page.querySelector(".meta .branch")).toBeNull();
   });
 
   it("puts the Preface in as the server rendered it", async () => {
@@ -326,6 +330,10 @@ describe("the record of a settled Set", () => {
 
     expect(page.querySelector(".answered-at")!.textContent).toBe(
       `Answered ${SETTLED}`,
+    );
+    // The exact minute rides behind the words, as the tooltip.
+    expect(page.querySelector(".answered-at")!.getAttribute("title")).toBe(
+      SETTLED_STAMP,
     );
     const comment = page.querySelector("section.set-comment.decided")!;
     expect(comment.querySelector(".comment")!.textContent).toBe(

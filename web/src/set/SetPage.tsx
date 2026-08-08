@@ -48,7 +48,7 @@ import { Standing } from "./Standing";
 import { drawDiagrams } from "./diagrams";
 import { anchor, outline, spied } from "./outline";
 import { Head, starred } from "./table";
-import { settledWhen } from "./when";
+import { settledAge, utcStamp } from "./when";
 
 /// One Question Set, as the URL names it.
 export function SetPage(): JSX.Element {
@@ -155,26 +155,37 @@ function Sheet(props: { set: SetView }): JSX.Element {
     return "Answered" in how ? how.Answered.response : null;
   };
 
-  /// When the Set settled, said in words, and what to call the settling. Beside
-  /// the provenance rather than down with the Answers: on a settled Set, when it
-  /// was settled is part of knowing what one is reading — and for one that was
-  /// closed unanswered it is most of what there is to know.
+  // The clock the settling is aged against, ticking once a minute: an age is a
+  // distance from now, and a page left open should not go on saying "2m ago"
+  // an hour later. A minute because that is the roughest unit the wording ever
+  // moves by.
+  const [now, setNow] = createSignal(Date.now());
+  const ticking = setInterval(() => setNow(Date.now()), 60_000);
+  onCleanup(() => clearInterval(ticking));
+
+  /// When the Set settled, said in words, and what to call the settling. On the
+  /// provenance line rather than down with the Answers: on a settled Set, when
+  /// it was settled is part of knowing what one is reading — and for one that
+  /// was closed unanswered it is most of what there is to know. The exact
+  /// minute rides behind the words, as the tooltip.
   const when = () => {
     const how = standing();
 
     if ("Answered" in how) {
       return {
-        // A class of its own for each: the two lines sit in the same place and
-        // are styled together, but nothing about an archived Set was answered.
+        // A class of its own for each: the two sit in the same place and are
+        // styled together, but nothing about an archived Set was answered.
         mark: "answered-at",
-        said: `Answered ${settledWhen(how.Answered.submitted_at)}`,
+        said: `Answered ${settledAge(how.Answered.submitted_at, now())}`,
+        stamp: utcStamp(how.Answered.submitted_at),
       };
     }
 
     if ("ArchivedUnanswered" in how) {
       return {
         mark: "archived-at",
-        said: `Archived unanswered ${settledWhen(how.ArchivedUnanswered)}`,
+        said: `Archived unanswered ${settledAge(how.ArchivedUnanswered, now())}`,
+        stamp: utcStamp(how.ArchivedUnanswered),
       };
     }
 
@@ -201,28 +212,34 @@ function Sheet(props: { set: SetView }): JSX.Element {
           stylesheet, which is also what keeps it off a narrow viewport: there
           the nav's own bar is already doing this job. */}
       <PageHeader watched={watched()} nav={nav} wrapped={wrapped()} flip={flip} />
-      {/* A Set sent from outside a repo has neither, and an empty line of
-          provenance is worse than none. */}
-      <Show when={props.set.project !== null || props.set.branch !== null}>
-        <p class="meta">
-          <Show when={props.set.project}>
-            {(project) => <span class="project">{project()}</span>}
-          </Show>
-          <Show when={props.set.branch}>
-            {(branch) => <span class="branch">{branch()}</span>}
-          </Show>
-        </p>
-      </Show>
-      <Show when={when()}>
-        {(when) => <p class={when().mark}>{when().said}</p>}
-      </Show>
-      {/* Whether anyone is still on the other end, and the one thing to do about
-          it if nobody is. Above the Preface because both are about the ask
-          rather than about answering it — and because archiving is decided with
-          the badge and the Questions in view, not from a list row. */}
-      <Show when={waiting()}>
-        {(liveness) => <Standing id={props.set.id} liveness={liveness()} />}
-      </Show>
+      {/* One line about the Set rather than from it: where it came from at the
+          near end, and how it stands at the far end — the date it settled, or
+          the badge and the menu for a Set still waiting. Never empty, because
+          every Set stands somewhere, even one sent from outside a repo with no
+          provenance to name. A `div` because the far end holds controls, which
+          are more than a paragraph may contain. */}
+      <div class="meta">
+        <Show when={props.set.project}>
+          {(project) => <span class="project">{project()}</span>}
+        </Show>
+        <Show when={props.set.branch}>
+          {(branch) => <span class="branch">{branch()}</span>}
+        </Show>
+        <Show when={when()}>
+          {(when) => (
+            <span class={when().mark} title={when().stamp}>
+              {when().said}
+            </span>
+          )}
+        </Show>
+        {/* Whether anyone is still on the other end, and the one thing to do
+            about it if nobody is. Up here because both are about the ask rather
+            than about answering it — and because archiving is decided with the
+            badge and the Questions in view, not from a list row. */}
+        <Show when={waiting()}>
+          {(liveness) => <Standing id={props.set.id} liveness={liveness()} />}
+        </Show>
+      </div>
       {/* Named and anchored like the Questions below it: the heading is what a
           jump from the table of contents lands on, and the id is what it jumps
           to.

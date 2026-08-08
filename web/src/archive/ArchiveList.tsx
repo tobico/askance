@@ -5,9 +5,12 @@
 //! A permanent log. A Set lands here by being answered or by being archived
 //! unanswered rather than by anyone filing it, and nothing here is ever deleted —
 //! which is what the rows are worded for: no Liveness badge, because nothing is
-//! waiting on a settled Set, and the date it was settled rather than how long ago
-//! it was. A Set that was never answered says so, because reading it as a decision
-//! would be reading a decision nobody made.
+//! waiting on a settled Set, and its time in the words the pending list is
+//! scanned in — an age while the settling is fresh, because the top of this
+//! list is scanned the same way, and the plain date once it is not, because
+//! "400d ago" says nothing about a log. The exact minute rides behind the
+//! words as the tooltip. A Set that was never answered says so, because
+//! reading it as a decision would be reading a decision nobody made.
 
 import { A } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
@@ -27,7 +30,11 @@ export function ArchiveList() {
   }));
 
   return (
-    <>
+    // The wrapper is the page's width: a row carries a title and a line of
+    // provenance, and never wanted more room than the reading column — so on a
+    // window that offers more, the whole page keeps to that and sits in the
+    // middle of it.
+    <div class="list-page">
       {/* The way back to what is still waiting, in the slot the set view's
           "← Pending" sits in: every page here starts with where else there is to
           go, so neither list needs a typed URL to reach the other. */}
@@ -60,20 +67,20 @@ export function ArchiveList() {
           )}
         </Match>
       </Switch>
-    </>
+    </div>
   );
 }
 
-/// One line of the log: what was asked and where from, and the day it was
+/// One line of the log: what was asked and where from, and when it was
 /// settled — with, when that is what happened, the fact that it was closed
 /// without ever being answered.
 ///
 /// Built like a pending row and styled as one — the lists are read the same way,
 /// and the same Set may well have been looked at in both.
 function ArchiveRow(props: { entry: ArchiveEntry }) {
-  // In the same words the set view uses, and in the same place a decision's date
-  // sits: what a row of this log has to say first is which of the two it is,
-  // because only one of them is a decision.
+  // In the same words the set view uses, and in the same place a settling's
+  // time sits: what a row of this log has to say first is which of the two it
+  // is, because only one of them is a decision.
   const marks = () =>
     props.entry.unanswered
       ? "set-row archived-set unanswered"
@@ -96,7 +103,9 @@ function ArchiveRow(props: { entry: ArchiveEntry }) {
           <Show when={props.entry.branch}>
             {(branch) => <span class="branch">{branch()}</span>}
           </Show>
-          <span class="decided-at">{settled()}</span>
+          <span class="decided-at" title={props.entry.settled_stamp}>
+            {settled()}
+          </span>
         </span>
       </A>
     </li>

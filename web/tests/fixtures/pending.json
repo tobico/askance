@@ -2,6 +2,7 @@
   {
     "age": "3h ago",
     "branch": "outbound-retries",
+    "created_stamp": "2026-08-03 06:16 UTC",
     "id": 2,
     "liveness": "disconnected",
     "project": "askance",
@@ -10,6 +11,7 @@
   {
     "age": "just now",
     "branch": "solid-viewer",
+    "created_stamp": "2026-08-03 09:16 UTC",
     "id": 1,
     "liveness": "waiting",
     "project": "askance",

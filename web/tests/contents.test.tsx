@@ -98,8 +98,12 @@ let spies: Spy[];
 beforeEach(() => {
   spies = watching();
   // jsdom lays nothing out and so scrolls nothing; what the jump is worth is
-  // that it asked the browser to take the reader there.
+  // that it asked the browser to take the reader there. Asked for no motion —
+  // the stub reads as `prefers-reduced-motion: reduce` — the jump asks with
+  // `scrollIntoView`, which is the ask these tests can see: the animated ask
+  // works from geometry, and jsdom has none to give it.
   Element.prototype.scrollIntoView = vi.fn();
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
   localStorage.clear();
 });
 
@@ -109,10 +113,27 @@ afterEach(() => {
   localStorage.clear();
 });
 
-/// The page's spy — the last one made, since a test reads one page at a time.
+/// The page makes two observers, told apart by the reading line: the
+/// scroll-spy watches with the margin that puts the line near the bottom of
+/// the window, and the floating header's watcher of the first heading watches
+/// with none.
+
+/// The page's scroll-spy — the last one made, since a test reads one page at a
+/// time.
 function spy(): Spy {
-  const spying = spies.at(-1);
+  const spying = spies.filter((made) => made.margin !== undefined).at(-1);
   expect(spying, "expected the page to be following the reader").toBeTruthy();
+  return spying as Spy;
+}
+
+/// The floating header's watcher of the page's first heading — the last one
+/// made.
+function headingSpy(): Spy {
+  const spying = spies.filter((made) => made.margin === undefined).at(-1);
+  expect(
+    spying,
+    "expected the header to be watching the first heading",
+  ).toBeTruthy();
   return spying as Spy;
 }
 
@@ -499,9 +520,26 @@ describe("the floating header", () => {
     return header as HTMLElement;
   }
 
+  it("stays out of the way until the first heading has been scrolled past", async () => {
+    const page = await reading(WAITING);
+    const header = headerOf(page);
+
+    // At the top of the page it would be naming a heading the reader can see
+    // right under it, and saying nothing.
+    expect(header.querySelector(".page-header-chrome")).toBeNull();
+
+    headingSpy().cross({ preface: false });
+    expect(header.querySelector(".page-header-chrome")).toBeTruthy();
+
+    // And scrolling back up puts it away again.
+    headingSpy().cross({ preface: true });
+    expect(header.querySelector(".page-header-chrome")).toBeNull();
+  });
+
   it("names where the reader is, and says it once", async () => {
     const page = await reading(WAITING);
     const header = headerOf(page);
+    headingSpy().cross({ preface: false });
 
     expect(header.textContent).toContain("Preface");
 
@@ -523,6 +561,7 @@ describe("the floating header", () => {
   it("offers word wrap while the reader is in the Diff, and nowhere else", async () => {
     const page = await reading(WAITING);
     const header = headerOf(page);
+    headingSpy().cross({ preface: false });
 
     expect(header.querySelector(".switch")).toBeNull();
 
@@ -542,6 +581,7 @@ describe("the floating header", () => {
 
   it("is two views of the one setting, with the switch beside the Diff", async () => {
     const page = await reading(WAITING);
+    headingSpy().cross({ preface: false });
     spy().cross({ preface: true, diff: true });
 
     const beside = page.querySelector<HTMLInputElement>(
@@ -562,6 +602,7 @@ describe("the floating header", () => {
 
   it("offers nothing on a Set with no Diff", async () => {
     const page = await reading(BARE);
+    headingSpy().cross({ questions: false });
 
     expect(headerOf(page).querySelector(".switch")).toBeNull();
   });

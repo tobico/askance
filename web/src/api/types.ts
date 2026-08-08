@@ -48,10 +48,16 @@ violations?: Array<Violation>, };
 /**
  * One row of the Archive.
  *
- * No Liveness, because nothing is waiting on a settled Set — and a date rather
- * than an age, because this is a permanent log of decisions.
+ * No Liveness, because nothing is waiting on a settled Set. Its time is
+ * worded like the pending list's — an age while the settling is fresh, and
+ * the plain date once it is not, because this is a permanent log and old ages
+ * stop meaning anything.
  */
 export type ArchiveEntry = { id: number, title: string, project: string | null, branch: string | null, settled_at: string, 
+/**
+ * The minute it was settled, exactly — the tooltip behind the words.
+ */
+settled_stamp: string, 
 /**
  * Whether it got here without a Response — archived unanswered by the
  * human, rather than decided.
@@ -152,7 +158,11 @@ cells: Array<string>, };
  * waits is the server's, and this way the viewer draws a badge rather than
  * working one out.
  */
-export type PendingEntry = { id: number, title: string, project: string | null, branch: string | null, age: string, liveness: Liveness, };
+export type PendingEntry = { id: number, title: string, project: string | null, branch: string | null, age: string, 
+/**
+ * The minute the Set arrived, exactly — the tooltip behind the age.
+ */
+created_stamp: string, liveness: Liveness, };
 
 /**
  * The public half of the server's VAPID keypair, base64url-encoded from the
