@@ -145,7 +145,8 @@ describe("the pending list", () => {
       deliver = resolve;
     });
 
-    serving(CURRENT, 
+    serving(
+      CURRENT,
       json(SETS),
       () => held.then(() => new Response(JSON.stringify(SETS))),
     );

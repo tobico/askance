@@ -15,13 +15,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/App";
 import type { PendingEntry, SetView } from "../src/api/types";
-import { json, serving } from "./serving";
+import { askedFor, json, serving, whenever } from "./serving";
 import { worker } from "./worker";
 import pending from "./fixtures/pending.json" with { type: "json" };
 import answered from "./fixtures/set-answered.json" with { type: "json" };
 import answering from "./fixtures/set-answering.json" with { type: "json" };
 
 const SETS = pending as PendingEntry[];
+
+/// The page asks about updating as well as about the Sets, and is told there is
+/// nothing to update to throughout: a Nudge is never about a release, so the
+/// banner's own request stays out of the counting here.
+const CURRENT = whenever("/api/ui/update", json("Current"));
+
+/// The read a Nudge is meant to cause, and the only one worth counting.
+const PENDING = "/api/ui/pending";
 
 /// One Set twice over: waiting when the page was drawn, answered from another
 /// device by the time a Nudge says to look again.
@@ -170,7 +178,7 @@ afterEach(() => {
 describe("the Nudge stream", () => {
   it("listens on the server's stream for as long as the app is running", () => {
     window.history.pushState({}, "", "/");
-    serving(json(SETS));
+    serving(CURRENT, json(SETS));
     const { unmount } = render(() => <App />);
 
     expect(stream().url).toBe("/api/ui/nudges");
@@ -183,7 +191,7 @@ describe("the Nudge stream", () => {
 
   it("shows the Set a Nudge is about without waiting on the poll", async () => {
     window.history.pushState({}, "", "/");
-    const fetching = serving(json(SETS), json([ARRIVAL, ...SETS]));
+    const fetching = serving(CURRENT, json(SETS), json([ARRIVAL, ...SETS]));
     render(() => <App />);
     await waitFor(() => screen.getByText(SETS[0]!.title));
     stream().opens();
@@ -193,7 +201,7 @@ describe("the Nudge stream", () => {
     await waitFor(() => screen.getByText(ARRIVAL.title));
     // The clock never moved, so the ten-second poll never ran: the second read
     // is the Nudge's doing and nothing else's.
-    expect(fetching).toHaveBeenCalledTimes(2);
+    expect(askedFor(fetching, PENDING)).toBe(2);
   });
 
   it("reads everything back when a dropped stream reconnects", async () => {
@@ -201,7 +209,7 @@ describe("the Nudge stream", () => {
     // Answered from another device while the stream was dead — so what the page
     // has to catch up on is a Set leaving the list, which no Nudge arrived to
     // say. The reconnect is the whole of the news.
-    serving(json([ARRIVAL, ...SETS]), json(SETS));
+    serving(CURRENT, json([ARRIVAL, ...SETS]), json(SETS));
     render(() => <App />);
     stream().opens();
     await waitFor(() => screen.getByText(ARRIVAL.title));
@@ -213,7 +221,7 @@ describe("the Nudge stream", () => {
 
   it("asks for nothing when the stream first opens", async () => {
     window.history.pushState({}, "", "/");
-    const fetching = serving(json(SETS));
+    const fetching = serving(CURRENT, json(SETS));
     render(() => <App />);
     await waitFor(() => screen.getByText(SETS[0]!.title));
 
@@ -222,12 +230,12 @@ describe("the Nudge stream", () => {
 
     // The page has just read the world; opening the stream it reads the world
     // over is not news that the world moved.
-    expect(fetching).toHaveBeenCalledTimes(1);
+    expect(askedFor(fetching, PENDING)).toBe(1);
   });
 
   it("leaves the poll running underneath it", async () => {
     window.history.pushState({}, "", "/");
-    const fetching = serving(json(SETS));
+    const fetching = serving(CURRENT, json(SETS));
     render(() => <App />);
     await waitFor(() => screen.getByText(SETS[0]!.title));
     stream().opens();
@@ -236,7 +244,7 @@ describe("the Nudge stream", () => {
 
     // The stream is the fast path, never the only one: a page that cannot have
     // one at all still keeps up, ten seconds at a time.
-    expect(fetching).toHaveBeenCalledTimes(2);
+    expect(askedFor(fetching, PENDING)).toBe(2);
   });
 });
 
@@ -246,11 +254,11 @@ describe("a Nudge relayed by the worker", () => {
     // The list as the server would answer for it now, which the arrival changes
     // under the open page exactly as it does in the world.
     let listed = SETS;
-    const fetching = serving(() => json(listed)());
+    const fetching = serving(CURRENT, () => json(listed)());
     const container = attaches();
     render(() => <App />);
     await waitFor(() => screen.getByText(SETS[0]!.title));
-    const read = fetching.mock.calls.length;
+    const read = askedFor(fetching, PENDING);
 
     listed = [ARRIVAL, ...SETS];
     await pushed(container);
@@ -260,12 +268,12 @@ describe("a Nudge relayed by the worker", () => {
     // stream never opened — which is what a suspended PWA leaves behind — and
     // the clock never moved, so the poll never ran either. The push is the whole
     // of how this page found out.
-    expect(fetching).toHaveBeenCalledTimes(read + 1);
+    expect(askedFor(fetching, PENDING)).toBe(read + 1);
   });
 
   it("reads everything back, exactly as a Nudge on the stream does", async () => {
     window.history.pushState({}, "", `/sets/${WAITING.id}`);
-    serving(json(WAITING), json(ANSWERED));
+    serving(CURRENT, json(WAITING), json(ANSWERED));
     const container = attaches();
     const { container: page } = render(() => <App />);
     // The badge and the menu under it belong to a Set still waiting: the page
@@ -283,11 +291,11 @@ describe("a Nudge relayed by the worker", () => {
 
   it("ignores a message that is not a Nudge", async () => {
     window.history.pushState({}, "", "/");
-    const fetching = serving(json(SETS));
+    const fetching = serving(CURRENT, json(SETS));
     const container = attaches();
     render(() => <App />);
     await waitFor(() => screen.getByText(SETS[0]!.title));
-    const read = fetching.mock.calls.length;
+    const read = askedFor(fetching, PENDING);
 
     container.delivers({ askance: "something else" });
     container.delivers("a message from somewhere else entirely");
@@ -296,12 +304,12 @@ describe("a Nudge relayed by the worker", () => {
 
     // Whatever else may one day be posted to a page, by this worker or another,
     // is not a Nudge until it says so.
-    expect(fetching).toHaveBeenCalledTimes(read);
+    expect(askedFor(fetching, PENDING)).toBe(read);
   });
 
   it("stops listening when the app goes", async () => {
     window.history.pushState({}, "", "/");
-    serving(json(SETS));
+    serving(CURRENT, json(SETS));
     const container = attaches();
     const { unmount } = render(() => <App />);
     await waitFor(() => screen.getByText(SETS[0]!.title));
@@ -315,7 +323,7 @@ describe("a Nudge relayed by the worker", () => {
 
   it("shrugs where the browser has no worker at all", async () => {
     window.history.pushState({}, "", "/");
-    serving(json(SETS));
+    serving(CURRENT, json(SETS));
 
     // No `attaches()`: jsdom has no `navigator.serviceWorker`, which is the same
     // absence a browser without service workers presents. The page loses the

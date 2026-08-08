@@ -36,6 +36,19 @@ export function serving(...answers: Array<Answer>) {
   return fetching;
 }
 
+/// How many times a page asked for one path.
+///
+/// What a test counting reads means is the reads it is about, and a page fetches
+/// more than one thing: the banner asks on its own hour-long query, off a query
+/// client the whole file shares, so which test in a file pays for that request
+/// is not something any of them should be counting.
+export function askedFor(
+  fetching: ReturnType<typeof serving>,
+  path: string,
+): number {
+  return fetching.mock.calls.filter(([asked]) => String(asked) === path).length;
+}
+
 /// What a test hands [`serving`]: an answer in the sequence, or one belonging to
 /// a path.
 type Answer = (() => Promise<Response>) | { path: string; answer: () => Promise<Response> };
