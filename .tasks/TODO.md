@@ -26,4 +26,4 @@ Roadmap stage: [06: Adoption docs and go-live](docs/roadmaps/public-release/06-a
 - [x] 01: Docs guides extraction — [details](01-docs-guides.md)
 - [x] 02: Example skills — [details](02-example-skills.md)
 - [x] 03: README rewrite — [details](03-readme-rewrite.md)
-- [ ] 04: Cleanup and go-live prep — [details](04-cleanup-and-go-live.md)
+- [x] 04: Cleanup and go-live prep — [details](04-cleanup-and-go-live.md)

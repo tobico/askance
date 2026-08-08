@@ -421,5 +421,7 @@ CLI print the Response — is
 [the development guide's quickstart](docs/development.md#quickstart). The cargo
 and pnpm commands, the vite proxy the viewer is developed behind, how
 `pnpm build`'s output gets into the binary, and what `nix flake check` covers
-are [the dev loop](docs/development.md#the-dev-loop) after it. What is still
-ahead is [the roadmap](docs/roadmaps/public-release/ROADMAP.md).
+are [the dev loop](docs/development.md#the-dev-loop) after it. Shipping what
+comes out of it is [Releasing](docs/releasing.md): what a `v*` tag sets off, and
+what is left to check by hand once it has. What is still ahead is
+[the roadmap](docs/roadmaps/public-release/ROADMAP.md).
