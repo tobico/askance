@@ -121,15 +121,28 @@ testers.runNixOSTest {
 
     def waiting(name):
         """The id of the Set the agent in `name` submitted, once the server has
-        taken it. The CLI says so on stderr, which is where it says everything
-        that is not the Response."""
+        taken it.
+
+        Asked of the server rather than of the agent: a wait that goes to plan
+        is silent, so the CLI says nothing between submitting a Set and printing
+        the Response. The pending list is where an arrival shows, and it carries
+        only Sets that are neither answered nor archived — so with one agent
+        asking at a time, the Set listed there is that agent's.
+        """
         machine.wait_until_succeeds(
-            f"grep -q 'is waiting for an answer' /root/{name}/log"
+            "curl -sf http://127.0.0.1:8422/api/ui/pending | grep -q '\"id\"'"
         )
-        log = machine.succeed(f"cat /root/{name}/log")
-        found = re.search(r"Question Set (\d+) is waiting", log)
-        assert found, f"the CLI did not report a Set id:\n{log}"
-        return int(found.group(1))
+        listed = machine.succeed("curl -sf http://127.0.0.1:8422/api/ui/pending")
+        ids = [int(found) for found in re.findall(r'"id":(\d+)', listed)]
+        assert len(ids) == 1, f"expected the one Set {name} asked, got:\n{listed}"
+
+        # The agent has to still be there to be answered: a CLI that submitted
+        # and then died would leave the Set pending just the same.
+        assert not machine.succeed(
+            f"test -e /root/{name}/status && cat /root/{name}/status || true"
+        ).strip(), f"{name} exited before its Set was answered"
+
+        return ids[0]
 
 
     def answer(set_id, fixture):
@@ -231,8 +244,10 @@ testers.runNixOSTest {
         assert "The first Set came back" in printed, f"the CLI printed:\n{printed}"
         assert "Posted through the same API" in printed, f"the CLI printed:\n{printed}"
         # stdout is the Response and nothing else — the agent parses it as it
-        # stands, so the progress reporting has to have gone to stderr.
-        assert "is waiting for an answer" not in printed
+        # stands, so anything the CLI had to say has to have gone to stderr. It
+        # says it as a YAML comment, which is what a merged capture stays
+        # parseable through; on stdout alone there is nothing to comment.
+        assert "# askance:" not in printed, f"the CLI printed:\n{printed}"
 
     with subtest("a pending Set and its waiting agent survive the service restarting"):
         ask("second")

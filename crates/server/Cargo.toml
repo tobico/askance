@@ -4,10 +4,6 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "askance-server"
-path = "src/main.rs"
-
 [dependencies]
 anyhow.workspace = true
 # The rendering behind the viewer's namespace, and the types it answers with.
@@ -47,8 +43,10 @@ serde_json.workspace = true
 sqlx.workspace = true
 time.workspace = true
 tokio = { workspace = true, features = ["signal", "sync", "time"] }
+# The events only; where they go is the starting binary's call, so the
+# subscriber is the CLI's dependency rather than this crate's — see
+# `crates/cli/src/serve.rs`.
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # The aes128gcm encryption a push body has to be in. Default features off
 # leaves out its VAPID half, which pulls a whole JWT stack in for what is one
 # ES256 signature over two claims — p256 is already here to make it. 0.4 rather

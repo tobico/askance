@@ -40,12 +40,11 @@ rustPlatform.buildRustPackage {
     chmod -R u+w web/dist
   '';
 
-  # The two binaries by name rather than the whole workspace: `askance-render`'s
-  # own default features turn on the TypeScript emitter, which is a test's
-  # business, and a workspace-wide build would unify it into the release binary.
+  # The binary's package by name rather than the whole workspace:
+  # `askance-render`'s own default features turn on the TypeScript emitter, which
+  # is a test's business, and a workspace-wide build would unify it into the
+  # release binary.
   cargoBuildFlags = [
-    "--package"
-    "askance-server"
     "--package"
     "askance-cli"
   ];
@@ -66,7 +65,7 @@ rustPlatform.buildRustPackage {
   meta = {
     description = "A service and CLI through which coding agents put questions to a human";
     license = lib.licenses.mit;
-    mainProgram = "askance-server";
+    mainProgram = "askance";
     platforms = lib.platforms.unix;
   };
 }

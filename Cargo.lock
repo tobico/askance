@@ -207,7 +207,6 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
- "tracing-subscriber",
  "web-push-native",
 ]
 

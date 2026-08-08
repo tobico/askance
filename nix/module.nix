@@ -100,7 +100,8 @@ in
 
       serviceConfig = {
         ExecStart = lib.escapeShellArgs [
-          "${cfg.package}/bin/askance-server"
+          "${cfg.package}/bin/askance"
+          "serve"
           "--listen"
           cfg.listen
           "--database"
