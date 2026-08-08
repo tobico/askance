@@ -1,166 +1,149 @@
 # Askance
 
-A single-user web service and companion CLI through which coding agents put
-their questions to a human and block until answered. An agent submits a
-**Question Set**; the human answers it from any device on the tailnet; the
-agent's `askance ask` — which has been waiting the whole time — prints the
-**Response** and exits 0.
+Your coding agent has reached a question only you can settle — which of two
+designs, whether this is worth committing — and you are not at the terminal.
+Its choices are to guess or to stall. Askance is the third one: the agent
+submits a **Question Set** and blocks on it, you answer from your phone
+whenever you next pick it up, and the `askance ask` that has been waiting the
+whole time prints the **Response** so the agent can carry on. A wait of hours
+is the tool working rather than the tool failing.
 
-The vocabulary in bold throughout is the project's, and is defined in
+It is one binary. The same file is the server — the API agents submit to and
+the web UI you answer in — and the CLI they call. The UI installs on a phone as
+a PWA and pushes one notification per arriving Set. There is no app-level auth
+anywhere in it, because the tailnet is the perimeter: the server binds loopback,
+and [`tailscale serve`](#securing-access) is the only thing that listens.
+
+Getting there is five steps, and this page is all of them — install the binary,
+run the server, tell your agent about it, hand it the two skills, put Tailscale
+in front. The vocabulary in bold throughout is the project's, and is defined in
 [CONTEXT.md](CONTEXT.md).
 
-## Status
+## Installing the binary
 
-The loop works end to end, and the human's end of it is the web UI: a pending
-list of the Sets waiting on you, each one opening as a form over the whole ask
-— Preface, Diff, Questions — that answers it and wakes the waiting agent.
-Answered Sets and ones closed unanswered are kept in the Archive.
-
-It installs on a phone as a PWA and pushes one notification per arriving Set,
-which needs HTTPS: see [On your phone](#on-your-phone) for the
-`tailscale serve` in front of it.
-
-On the box the agents work on it runs as a NixOS service rather than out of a
-terminal — the flake carries the package and the module that does it, and
-[Deployment](#deployment) is the three steps to it. The agents are taught by the
-binary itself: [the Guide](#the-guide) ships inside it, so the whole integration
-is a single line in a global CLAUDE.md. What is left is driving that loop
-through a real session, from the phone — see
-[the roadmap](docs/roadmaps/v1/ROADMAP.md).
-
-## Quickstart
-
-The whole loop, from a fresh checkout. It takes two terminals: `askance ask`
-blocks until it is answered, which is the entire point of it.
-
-### 1. Enter the dev shell
+One file, with the viewer inside it and statically linked on Linux, so it runs
+on any distribution. This fetches the build for your platform into
+`~/.local/bin`:
 
 ```console
-$ nix develop
+$ mkdir -p ~/.local/bin && curl -fsSL -o ~/.local/bin/askance \
+    "https://github.com/tobico/askance/releases/latest/download/askance-$(uname -s | tr '[:upper:]' '[:lower:]' | sed s/darwin/macos/)-$(uname -m | sed -e s/x86_64/x64/ -e s/aarch64/arm64/)" \
+    && chmod +x ~/.local/bin/askance
+$ askance --version
+askance 0.1.0
 ```
 
-Everything below assumes this shell — it carries the Rust toolchain, `sqlite`,
-`git`, and the `node` and `pnpm` the viewer is built with.
+It asks for `releases/latest/download` rather than a version, so the command
+above is the same one next year. The `uname` pair picks between the four assets
+a release publishes — `askance-linux-x64`, `askance-linux-arm64`,
+`askance-macos-x64` and `askance-macos-arm64` — and any of them can be fetched
+by name instead. `~/.local/bin` has to be on your `PATH`, which on most systems
+it already is.
 
-### 2. Build the viewer and start the server (terminal 1)
+### With nix
 
 ```console
-$ (cd web && pnpm install && pnpm build)
-$ cargo run -p askance-cli -- serve
-  INFO askance_server: askance is listening listen=127.0.0.1:8422 database=askance.db
+$ nix run github:tobico/askance          # the server
+$ nix run github:tobico/askance#askance  # the CLI
 ```
 
-One binary serves both halves: the agent API under `/api/v1/`, and the web UI
-on <http://127.0.0.1:8422/>. It creates `askance.db` in the working directory
-on first run. Leave it running; check it in a third terminal if you like:
+Both run the same released asset the curl above fetches, downloaded and
+hash-checked rather than compiled; `askance-source` is the attribute that builds
+this tree instead. For an install that persists, take the flake as an input:
+
+```nix
+inputs.askance = {
+  url = "github:tobico/askance";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+```
+
+On NixOS the input also carries a module that runs the server as a service —
+[Deployment](docs/deployment.md#nixos) is that in full.
+
+## Running the server
 
 ```console
-$ curl http://127.0.0.1:8422/api/v1/health
-ok
+$ askance serve
 ```
 
-The viewer is built into the binary, so `pnpm build` is what puts a UI at that
-address. Skip it if only the API matters — the server starts either way, and
-says on every page that the viewer was not built. While working on the viewer
-itself, `pnpm dev` is the better half of this: see [Development](#development).
+It binds `127.0.0.1:8422` and keeps its SQLite database in `askance.db` beside
+you, both movable — see [Configuration](#configuration). Open
+<http://127.0.0.1:8422/> and there is the pending list, empty for now: every Set
+waiting on you appears there, opening as a form over the whole ask — Preface,
+Diff, Questions — that answers it and wakes the agent. Answered Sets, and ones
+closed unanswered, are kept in the Archive.
 
-### 3. Ask (terminal 2)
+An agent is blocked for as long as the server is down, so it wants to be up when
+nobody has a terminal open. [Deployment](docs/deployment.md) is the two ways
+there: this flake's [NixOS module](docs/deployment.md#nixos), which puts the
+service under its own user and the CLI on every user's `PATH`, and
+[a systemd unit](docs/deployment.md#anywhere-else-a-systemd-unit) to write
+yourself on a host that is not NixOS.
 
-```console
-$ cargo run -p askance-cli -- ask examples/questions.yaml
-```
+## Configuring your agent
 
-A wait that goes to plan is silent, and the little the CLI does have to say —
-reconnecting, or refusing a Set — is on **stderr**, written as a YAML comment.
-Stdout carries the Response and nothing else, so an agent can parse it as it
-stands, even out of the one file its harness merged both streams into.
+The whole of the integration is one line in the global `CLAUDE.md` — or
+`AGENTS.md`, or whatever file your harness reads at the start of every session:
 
-The command does not return. It has submitted
-[`examples/questions.yaml`](examples/questions.yaml) — along with the project
-and branch it derived from this working directory, and the **Diff** of its
-uncommitted changes if there are any — and is now holding a long-poll on
-Question Set 1. There is no timeout: only an answer or a kill ends the wait
-([ADR-0001](docs/adr/0001-blocking-cli-for-agent-integration.md)).
+> Never use the AskUserQuestion tool. Put all questions and approvals to me
+> through askance: run `askance` once per session for the guide and follow it,
+> including the topic guides it requires.
 
-A Set can also arrive on stdin, which is how an agent usually sends one:
+Drop the first sentence if your harness has no such tool of its own. One line is
+enough because the instructions ship inside the binary: [the Guide](#the-guide)
+is what `askance` prints when it is run with no arguments. So an agent learns to
+ask from the version of the tool it will actually call — [the binary you just
+installed](#installing-the-binary), or the one the NixOS module put on its
+`PATH` — and there is no vendored copy of the instructions anywhere to drift out
+of step.
 
-```console
-$ cat examples/questions.yaml | cargo run -p askance-cli -- ask
-```
+## Skills
 
-### 4. Answer (in the browser)
+Two habits are worth teaching alongside the tool, and
+[`examples/skills/`](examples/skills/) carries both as plain markdown, belonging
+to no particular harness: paste one into a skills directory, or into the
+instructions file above.
 
-This is the human's part. Open <http://127.0.0.1:8422/> and the Set from step 3
-is on the pending list, with its project, its branch, and `agent waiting` —
-that last one being the CLI still holding its long-poll. Open it.
+**[Grilling](examples/skills/grilling.md)** — interview the human about a plan
+until you both understand it the same way, instead of discovering the
+disagreement a week into building it. What keeps that from spending their
+attention on your work:
 
-The page is the whole ask: the Preface, the Diff of the working tree the agent
-asked from, and each Question with its Options. Pick one, or write your own
-words, or both — an Option with a ★ is the agent's Recommendation, and
-**Accept all ★ Recommendations** fills in every question you have not answered
-yet. Leave a question alone to send it back open; **Submit** asks you to
-confirm that before it goes.
+> - **Ask only about what the human can settle and you can't**: trade-offs decided
+>   by taste, product or cost; assumptions nothing in the repository confirms;
+>   scope; facts from outside the codebase.
+> - **If a question can be answered by exploring the codebase, explore the
+>   codebase instead.** A question you were supposed to answer yourself spends
+>   their attention on your work.
 
-Under the last Question is the comment box, for anything about the Set as a
-whole rather than about one Question — and directly above it, where the agent
-wrote one, the **Postscript**: what it wanted to raise without making a
-Question of it, which the example Set closes with. Nothing there has to be
-answered, and an empty box says there was nothing to add.
+**[Acceptance gate](examples/skills/acceptance-gate.md)** — stop before the
+commit, the push, the deploy, say what you did, and ask the one question a gate
+is. The strictness is the point of it:
 
-The same Response can go in over the API instead, which is what an integration
-test or a script does — see [the API](#api) and
-[`examples/response.yaml`](examples/response.yaml), which answers every
-Question in the example Set, leaves one explicitly open, and adds a set-level
-comment.
+> Only an explicit approval opens the gate. Everything else leaves it shut:
+>
+> - **No answer to the gate itself** — shut, even where everything around it was
+>   answered.
+> - **A question back, or a partial answer** — a counter-question, not approval.
+>   Answer it, then put the same gate again.
+> - **Anything ambiguous** — shut. Ask again rather than resolving it in your own
+>   favour.
 
-### 5. Delivery
+The binary teaches the same thing from the other end: `askance guide gates` is
+required reading before an agent writes a gate, and says how a Set that asks for
+approval is authored and how its Response is read.
 
-Back in terminal 2, the still-waiting CLI has printed the Response and exited —
-this is what it prints for the answers in `examples/response.yaml`:
+## Securing access
 
-```console
-answers:
-- label: Q1
-  selected: 1
-  free_text: Start in-process. Revisit it the day we run more than two instances.
-- label: Q2
-  selected: 2
-- label: Q2a
-  unanswered: true
-- label: Q3
-  free_text: acct_8f21c3, the nightly export job in `ops/export`.
-comment: |
-  Ship it behind a flag and turn it on for the one noisy client first.
+Askance has no login page. What it holds — every Set, every Diff of your work in
+progress, every answer — sits behind the tailnet instead, and the server binds
+loopback so that nothing reaches it even from the tailnet except through what
+you put in front.
 
-  That export job hammers the endpoint on purpose, so give it an allowlist
-  entry rather than a bigger bucket for everyone.
-
-  On Q2a I genuinely don't know — pick whatever our SDK's retry logic
-  already understands, and say in the PR which one that was.
-
-$ echo $?
-0
-```
-
-That is the loop. Run step 3 again and Question Set 2 appears on the pending
-list to be answered the same way. To answer it from your phone instead, carry
-on below.
-
-## On your phone
-
-The point of putting Askance on a phone is that a Question Set reaches you
-without the pending list being open. That needs a push notification, and a push
-notification needs HTTPS: service workers, the Push API and
-`Notification.requestPermission` are all withheld outside a secure context, and
-`http://` over a tailnet is not one — only `localhost` gets the exemption. So
-this section is HTTPS first, and everything else follows from it.
-
-### 1. Put `tailscale serve` in front of it
-
-`tailscale serve` terminates TLS with your tailnet's `ts.net` certificate and
-proxies to the plain HTTP the server is already binding. Nothing about the
-server changes: it stays on loopback, and the proxy is the only thing that
-listens on the tailnet.
+That is `tailscale serve`, which also settles the other half: notifications need
+HTTPS, because service workers and the Push API are withheld outside a secure
+context and a plain `http://` tailnet address is not one.
 
 ```console
 $ tailscale serve --bg 8422
@@ -168,202 +151,41 @@ Available within your tailnet:
 
 https://your-host.your-tailnet.ts.net/
 |-- proxy http://127.0.0.1:8422
-
-Serve started and running in the background.
-To disable the proxy, run: tailscale serve --https=443 off
 ```
 
-That URL is the one to open on the phone. It needs MagicDNS and HTTPS
-certificates enabled for the tailnet — both are switches in the admin console,
-under DNS — and `tailscale serve` says so if they are not.
+`--bg` is what makes it persist across a reboot. That URL is the one to open on
+the phone, and [On your phone](docs/phone.md) is the rest of it: adding it to the
+home screen, turning notifications on per device, and how the long waits behave
+through the proxy.
 
-`--bg` is what makes it persist: the configuration is stored in `tailscaled`'s
-own preferences, so it survives a reboot and comes back with the daemon. Check
-what is in force, or take it down again:
+**Not `tailscale funnel`.** The sibling command would put the same service on the
+public internet, where nothing in Askance stops whoever arrives. Tailnet only.
+The single exception is outbound and unavoidable — a notification is delivered
+by Apple's or Google's push service, so
+[the server reaches out](docs/phone.md#the-one-thing-that-leaves-the-tailnet) to
+one of those, carrying a payload it cannot read. Nothing reaches in.
 
-```console
-$ tailscale serve status
-https://your-host.your-tailnet.ts.net (tailnet only)
-|-- / proxy http://127.0.0.1:8422
+## Updating
 
-$ tailscale serve reset
-```
+`askance --version` says what you are running, and the pending list says when
+that is behind: the server asks GitHub once a day whether a newer Askance has
+been released, and puts a banner above the list when one has. It only ever says
+so — nothing is installed for you, here or anywhere else.
 
-This stays inside the tailnet. `tailscale funnel`, which is the sibling command
-that would put the same service on the public internet, is not what you want
-here: there is no app-level auth in Askance, and the tailnet is the whole
-perimeter.
+**Installed with curl:** run the install command again, which overwrites the
+binary in place, then restart the server — `systemctl restart askance` where it
+runs as a service.
 
-The CLI has no reason to go through the proxy — an agent runs on the same host
-as the server and keeps talking to `http://127.0.0.1:8422`. Only the browser
-needs the HTTPS URL.
+**Installed from the flake:** `nix flake update askance` in your host
+configuration, then rebuild. The input tracks this repository rather than a
+release, so what moves is [`nix/release.json`](nix/release.json) — the version,
+url and hash the release workflow commits after every tag, and the only thing the
+package reads to decide which binary to fetch.
 
-### 2. Install it
-
-On the phone, open the `ts.net` URL and add it to the home screen.
-
-- **iOS/iPadOS** (16.4 or later): Safari, Share, **Add to Home Screen**. This
-  is not optional — iOS gives Web Push only to a web app launched from the home
-  screen, so in a Safari tab there is nothing to turn on, and the control on
-  the pending list says notifications are unavailable. Open it from the home
-  screen icon afterwards.
-- **Android**: Chrome offers **Install app** from its menu. Push works in the
-  tab too, but the installed app is what gets you an icon and no browser
-  chrome.
-
-Either way it opens standalone, without the address bar, on the pending list.
-
-### 3. Turn notifications on
-
-At the top of the pending list is a line saying where this device stands, with
-one button. Tap **Turn on for this device** and answer the browser's permission
-prompt.
-
-This is per device, and it is read out of the browser on every load rather than
-remembered — the phone being subscribed says nothing about the laptop, and an
-app reopened a week later says what is actually true of it. **Turn off for this
-device** is the way back. If it says notifications are *blocked*, the browser
-has been told no and will not ask again: the way out is that browser's site
-settings, not another tap.
-
-On a Chromium browser that de-Googles — **Brave** above all — the tap can fail
-with *Registration failed - push service error*. Chromium has no push transport
-but Google's, and Brave ships with it switched off, so the subscribe is refused
-inside the browser before this server hears about it. Turn on **Use Google
-services for push messaging** under `brave://settings/privacy` and restart the
-browser. That is the de-Googling trade this browser exists to offer, so it is
-yours to make rather than something Askance can work around: Safari and Chrome
-are unaffected, and so is Brave on Android once the same setting is on.
-
-From then on, one notification per arriving Set — titled with the Set's own
-title, with the project underneath it — and tapping it opens that Set, in the
-Askance already on screen if there is one. There are no reminders: a Set that
-goes unanswered is not notified about twice.
-
-### The long waits, through the proxy
-
-Two things here stay open much longer than a page load, and both go through
-`tailscale serve` once the phone is the device answering: the CLI's wait, which
-holds a request for up to a minute before reopening it, and the pending list's
-ten-second refetch. Both already survive a dropped connection, so the question
-was never whether the proxy breaks them but whether it makes them work harder
-than they need to. It does not. Measured against tailscale 1.90.9:
-
-- A full hold — 60 seconds, the server's ceiling — comes back `204` at 60.0s.
-  The proxy neither cuts it short nor shortens the window it was asked for.
-- A hold answered five seconds in comes back `200` at 5.0s. Nothing is
-  buffered, which is what lets the phone's **Submit** wake a waiting agent
-  immediately instead of at the end of whichever hold happened to be open.
-- `askance ask` pointed at the `ts.net` URL and left for 75 seconds — three of
-  its own 30-second holds — printed the Response and exited 0, having said
-  nothing on stderr beyond the line it opens with. The reconnections are there
-  and are invisible, which is the whole of what was asked of them.
-- The pending list refetches as it does locally: a Set submitted while the
-  installed app sits open arrives on the list without a touch.
-
-The client end is HTTP/2 and the loopback hop is plain HTTP/1.1. The `ts.net`
-certificate is publicly trusted, so nothing needs adding to a trust store —
-which is the other reason this works on a phone at all.
-
-### The one thing that leaves the tailnet
-
-Web Push is delivered by the browser vendors' push services — Apple's, Google's
-— so **the server needs outbound internet to send a notification**, even though
-its inbound surface stays tailnet-only. That asymmetry is the whole of it:
-nothing reaches Askance from outside the tailnet, and the only thing Askance
-reaches out to is the push service for the device it is notifying, carrying an
-encrypted payload it cannot read.
-
-The VAPID keypair that signs those pushes is generated on first run and stored
-in `askance.db`. There is no key ceremony and nothing to configure; a push
-service that cannot be reached costs a notification, never a Question Set.
-
-## Deployment
-
-Answering from the phone is only half of it: the server also has to be up when
-nobody has a terminal open. On the NixOS box the agents work on, that is this
-flake's NixOS module — a systemd unit under its own user, its database in
-`/var/lib/askance`, and the CLI on every user's `PATH` so an agent just calls
-`askance`. It is the same package `nix run` gives you, so the host needs no
-checkout of this repository at all.
-
-Two steps, in a host's own flake-based configuration.
-
-### 1. Add the flake input
-
-```nix
-inputs.askance = {
-  url = "github:tobico/askance";
-  # Askance tracks a nixpkgs release; following the host's own input keeps a
-  # second copy of it out of the lock file.
-  inputs.nixpkgs.follows = "nixpkgs";
-};
-```
-
-The input carries two packages. `askance` is the default — what an import that
-names no attribute gets, and what the module runs — and it downloads the binary
-the release workflow already built for the host's system, so nothing here needs
-a Rust toolchain and `nixos-rebuild` does not turn into a workspace compile.
-`askance-source` builds from this tree instead, for anyone who would rather
-compile than trust an asset; it is what `nix flake check` proves, and
-`services.askance.package` takes it as readily as the default.
-
-### 2. Import the module and enable it
-
-The module is a function of this flake rather than of `pkgs` — the package is
-not in nixpkgs to be found by name — so it comes from the input, not from a
-path:
-
-```nix
-nixosConfigurations.your-host = nixpkgs.lib.nixosSystem {
-  system = "x86_64-linux";
-  modules = [
-    askance.nixosModules.askance
-    { services.askance.enable = true; }
-    ./configuration.nix
-  ];
-};
-```
-
-Then lock the new input and rebuild:
-
-```console
-$ cd /path/to/host-config && nix flake lock
-$ sudo nixos-rebuild switch --flake /path/to/host-config#your-host
-$ systemctl status askance
-● askance.service - Askance — questions from coding agents to a human
-     Active: active (running)
-
-$ curl http://127.0.0.1:8422/api/v1/health
-ok
-```
-
-The unit is wanted by `multi-user.target` and restarts always, so it comes up
-on boot and comes back after a crash — an agent is blocked on an answer
-whenever the server is down, which is the whole reason for both. The database
-lives in the service's state directory, so reboots and rebuilds keep the
-Archive and the phone's push subscription with it.
-
-Updates reach the host the way any other input's do: `nix flake update askance`
-in the host configuration, then rebuild. The input still tracks the repository
-rather than a release, so what moves is [`nix/release.json`](nix/release.json) —
-the version, url and hash the release workflow commits to `main` after every
-tag, and the only thing the default package reads to decide which binary to
-fetch.
-
-### What it leaves to the host
-
-**HTTPS.** The service binds loopback and speaks plain HTTP, exactly as it does
-from a checkout, and `tailscale serve` is still the thing in front of it — see
-[Put `tailscale serve` in front of it](#1-put-tailscale-serve-in-front-of-it).
-The module deliberately keeps no second copy of that invocation, and `--bg`
-means it survives the reboot alongside the service.
-
-**The two paths**, if the defaults do not suit: `services.askance.listen` and
-`services.askance.database` are the module's spellings of `ASKANCE_LISTEN` and
-`ASKANCE_DATABASE` below. A port other than the default also means giving the
-agents `ASKANCE_SERVER`, since the CLI's own default is `http://127.0.0.1:8422`
-and it does not learn otherwise from the module.
+The database is untouched by either, so the Archive and the phone's push
+subscription come back with the new binary. To stop the daily check, and the
+banner with it, set `ASKANCE_NO_UPDATE_CHECK` — or
+`services.askance.updateCheck = false` on NixOS.
 
 ## The Guide
 
@@ -411,20 +233,6 @@ Topic that does not exist is an error naming the ones that do, never a quiet
 fallback to the core: an agent that asked for required reading must not be
 handed something else.
 
-### Installing it
-
-The whole of it is one line in the global CLAUDE.md — or whatever file the
-harness reads at the start of every session:
-
-> Never use the AskUserQuestion tool. Put all questions and approvals to me
-> through askance: run `askance` once per session for the guide and follow it,
-> including the topic guides it requires.
-
-That is the point of the Guide living in the binary. [Deployment](#deployment)
-already puts `askance` on every user's `PATH`, so the instructions arrive with
-the version of the tool that will run, and there is no vendored copy of them
-anywhere to drift out of step.
-
 ## Configuration
 
 No app-level auth: the tailnet is the perimeter, so everything defaults to the
@@ -433,8 +241,9 @@ loopback interface.
 | Variable | Used by | Default | What it is |
 | --- | --- | --- | --- |
 | `ASKANCE_SERVER` | CLI | `http://127.0.0.1:8422` | Base URL the CLI submits to and waits on. Also `--server`. |
-| `ASKANCE_LISTEN` | server | `127.0.0.1:8422` | Address and port to bind. Loopback is what [`tailscale serve`](#on-your-phone) proxies to; binding the tailnet directly reaches other devices too, but over plain HTTP, which rules out notifications. Also `--listen`. |
+| `ASKANCE_LISTEN` | server | `127.0.0.1:8422` | Address and port to bind. Loopback is what [`tailscale serve`](#securing-access) proxies to; binding the tailnet directly reaches other devices too, but over plain HTTP, which rules out notifications. Also `--listen`. |
 | `ASKANCE_DATABASE` | server | `askance.db` | SQLite file, created with its parent directory. Also `--database`. |
+| `ASKANCE_NO_UPDATE_CHECK` | server | unset | Set it to stop the server asking GitHub, once a day, whether a newer Askance has been released — and so to stop the banner that says one has. Nothing is ever installed either way. Also `--no-update-check`. |
 
 ## The wire format
 
@@ -561,7 +370,7 @@ Both ends enforce the grammar. The CLI checks a Set before sending it, so a
 bad Set never reaches the server:
 
 ```console
-$ cargo run -p askance-cli -- ask three-levels-deep.yaml
+$ askance ask three-levels-deep.yaml
 askance: the Question Set breaks the question grammar:
   Q1a: Sub-questions are leaves: two levels is the maximum, so this one cannot have Sub-questions of its own
 ```
@@ -606,86 +415,13 @@ the page rather than reporting a stale URL.
 
 ## Development
 
-```console
-$ cargo test              # unit, schema and end-to-end tests
-$ cargo clippy --all-targets
-$ cargo fmt
-$ nix fmt                 # the Nix files
-$ nix flake check         # the viewer's suite, and the NixOS module in a VM
-
-$ tools/generate-icons.sh # the PWA icons, after editing their SVG
-```
-
-And in `web/`, which is the Solid viewer ([ADR
-0003](docs/adr/0003-solid-spa-viewer.md)):
-
-```console
-$ pnpm install
-$ pnpm dev                # the viewer on :5173, /api proxied to the server
-$ pnpm test               # the vitest suite
-$ pnpm typecheck          # tsc, which the tests do not run
-$ pnpm build              # static assets, into web/dist
-```
-
-`pnpm dev` serves the viewer alone and proxies everything under `/api` to a
-server on its usual `127.0.0.1:8422`, so the two run side by side in two
-terminals and the browser sees one origin. The proxy is a development thing
-only: the built assets are served by the server itself, out of the same binary.
-
-Which is `pnpm build`'s output, embedded by rust-embed. A release build compiles
-it in; a debug build reads it off disk per request, so a `cargo run -p
-askance-cli -- serve` serves whatever `pnpm build` last wrote without a
-recompile — and a checkout that has never built the viewer still builds the
-server, which then says so on every page instead of serving one.
-
-`cargo test` covers the round trip in-process. `nix flake check` runs the
-viewer's vitest suite from the pinned pnpm and node, and boots a VM with the
-NixOS module enabled to put a Question Set through it again, for the sake of
-everything the module wraps around that round trip: a unit that starts itself
-at boot, the state directory systemd hands over, a database that survives the
-service being stopped and started under a waiting agent, a store-path binary
-serving the viewer that was built into it, and the CLI on `PATH` with nothing
-set in the environment. The VM needs a Linux host to boot the guest on, so on
-macOS that half of the check is absent rather than failing.
-
-The viewer's dependencies are fetched by a fixed-output derivation named by a
-hash in [`nix/web.nix`](nix/web.nix) — move `web/package.json` or
-`web/pnpm-lock.yaml` and that hash has to move too, and nix will print the one
-it wanted. That file both builds the viewer and, with `runTests` on, is the
-`nix flake check` above, so the two cannot disagree about a lockfile.
-
-`assets/` is vite's `publicDir`, copied verbatim into the site root: the web
-manifest, the icons and the service worker. They cannot live under `/assets/`
-with the hashed bundles — a service worker only controls the paths beneath the
-one it was served from, so one under the bundles' directory could never show a
-notification for `/sets/12`, and the manifest and the icons keep the names the
-phone knows them by. Which is also why the server keeps everything under
-`/assets/` for a year and revalidates everything outside it.
-
-The worker itself does no caching; every list and every Set is read from live
-SQLite, and a cached copy of one that has since been answered is worse to the
-human than a failure to load.
-
-The icons are all one SVG, `assets/icons/askance.svg`, rasterized by the script
-above (using `resvg` from the dev shell) to the PNG sizes the manifest and iOS
-ask for. The PNGs are committed so a build needs nothing but cargo — edit the
-SVG and re-run the script rather than touching them.
-
-The tests run the real server in-process, so the round trip they check is the
-one an agent gets — including the quickstart above, whose example files
-[`crates/cli/tests/ask.rs`](crates/cli/tests/ask.rs) drives end to end, taking
-the human's part over the API the viewer's **Submit** posts through.
-
-`askance-render` is everything the server does to what an agent wrote before it
-leaves: markdown to sanitized HTML, the Diff parsed and highlighted, and the view
-types the viewer draws a Set from. It knows nothing of the store, the router or
-the viewer, so it is the seam the browser never reaches across — everything past
-it is HTML the viewer only has to put in the page.
-
-Two things under `web/` are written by `cargo test` rather than by hand, and
-both are committed so that the diff is the review. `web/src/api/types.ts` is
-those view types as TypeScript, generated by ts-rs — the viewer imports them and
-declares no shape of its own, so the two languages cannot come to disagree about
-a field. `web/tests/fixtures/` holds a payload of each kind, rendered by the real
-`/api/ui/` endpoints, which is what the vitest suite is fed: a component test
-against a hand-written mock proves only that the mock and the component agree.
+Running the whole loop out of a checkout — the dev shell, building the viewer,
+submitting the example Set, answering it in the browser and watching the waiting
+CLI print the Response — is
+[the development guide's quickstart](docs/development.md#quickstart). The cargo
+and pnpm commands, the vite proxy the viewer is developed behind, how
+`pnpm build`'s output gets into the binary, and what `nix flake check` covers
+are [the dev loop](docs/development.md#the-dev-loop) after it. Shipping what
+comes out of it is [Releasing](docs/releasing.md): what a `v*` tag sets off, and
+what is left to check by hand once it has. What is still ahead is
+[the roadmap](docs/roadmaps/public-release/ROADMAP.md).

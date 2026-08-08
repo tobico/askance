@@ -259,6 +259,40 @@ textarea::placeholder {
   display: none;
 }
 
+/* The Update Notice: one line about the server, above the list it is not part
+   of. It takes the page's column and no more, so the rows below start where
+   they always did and nothing is pushed out of the measure.
+
+   Drawn as the cards below are — the same paper, edge and radius — because it
+   sits in their column and a box of its own design would read as something that
+   had gone wrong rather than as something to do later. The accent down the
+   leading edge is the whole of what tells it from a row: enough to be noticed
+   on the way past, and not so much that a list of things actually waiting on
+   the human is competing with it.
+
+   The two halves wrap onto their own lines on a narrow window rather than
+   squeezing the sentence: on a phone this is a line of prose and a link under
+   it. */
+
+.update-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1rem;
+  margin-bottom: 1rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-inline-start: 3px solid var(--accent);
+  border-radius: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.update-notice a {
+  text-decoration: none;
+  white-space: nowrap;
+}
+
 /* The two lists of Sets — what is waiting and what was decided — are drawn as
    the same card, because they are read the same way and the same Set is looked
    at in both. Only the last thing on the meta line differs. */

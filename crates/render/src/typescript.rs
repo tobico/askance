@@ -18,14 +18,14 @@ use ts_rs::TS;
 
 use crate::{
     ArchiveEntry, Archived, PendingEntry, PushKey, SetView, Submitted, Subscribed, Subscription,
-    Unsubscribe,
+    Unsubscribe, UpdateNotice,
 };
 
 /// Everything `/api/ui/` hands over or takes in, as TypeScript.
 ///
 /// Each of these brings its own dependencies with it — a `SetView` writes the
 /// Diff, the Questions, the Options and the Response it is made of — so what is
-/// named here is the eight endpoints' payloads and nothing more.
+/// named here is the endpoints' own payloads and nothing more.
 #[test]
 fn the_viewers_types_are_written_from_these() {
     // The base directory and how an `i64` is spelled come from the environment —
@@ -48,6 +48,9 @@ fn the_viewers_types_are_written_from_these() {
     Subscription::export_all(&config).unwrap();
     Subscribed::export_all(&config).unwrap();
     Unsubscribe::export_all(&config).unwrap();
+
+    // Whether there is a newer Askance than the one serving the page.
+    UpdateNotice::export_all(&config).unwrap();
 
     // How every one of them refuses. The same shape the agents' half refuses in,
     // so the viewer has one thing to read whichever half answered.

@@ -14,12 +14,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/App";
 import type { PendingEntry, SetView } from "../src/api/types";
-import { json, serving } from "./serving";
+import { askedFor, json, serving, whenever } from "./serving";
 import pending from "./fixtures/pending.json" with { type: "json" };
 import answered from "./fixtures/set-answered.json" with { type: "json" };
 import answering from "./fixtures/set-answering.json" with { type: "json" };
 
 const SETS = pending as PendingEntry[];
+
+/// The page asks about updating as well as about the Sets, and is told there is
+/// nothing to update to throughout: coming back is about the reads the app
+/// makes for itself, so the banner's own request stays out of the counting.
+const CURRENT = whenever("/api/ui/update", json("Current"));
+
+/// The read coming back is meant to cause, and the only one worth counting.
+const PENDING = "/api/ui/pending";
 
 /// One Set twice over: waiting when the app went away, answered from another
 /// device by the time it came back.
@@ -76,7 +84,7 @@ function reopened(): void {
 describe("coming back to the app", () => {
   it("shows the Set that arrived while it was away", async () => {
     window.history.pushState({}, "", "/");
-    const fetching = serving(json(SETS), json([ARRIVAL, ...SETS]));
+    const fetching = serving(CURRENT, json(SETS), json([ARRIVAL, ...SETS]));
     render(() => <App />);
     await waitFor(() => screen.getByText(SETS[0]!.title));
 
@@ -85,12 +93,12 @@ describe("coming back to the app", () => {
     await waitFor(() => screen.getByText(ARRIVAL.title));
     // The clock never moved, so the ten-second poll never ran: the second read
     // is the one coming back asked for.
-    expect(fetching).toHaveBeenCalledTimes(2);
+    expect(askedFor(fetching, PENDING)).toBe(2);
   });
 
   it("catches up the Set whose page was open when it went away", async () => {
     window.history.pushState({}, "", `/sets/${WAITING.id}`);
-    serving(json(WAITING), json(ANSWERED));
+    serving(CURRENT, json(WAITING), json(ANSWERED));
     const { container } = render(() => <App />);
     // The badge and the menu under it belong to a Set still waiting: this is
     // the page as it was left.
@@ -107,7 +115,7 @@ describe("coming back to the app", () => {
 
   it("asks for nothing while the app is away", async () => {
     window.history.pushState({}, "", "/");
-    const fetching = serving(json(SETS));
+    const fetching = serving(CURRENT, json(SETS));
     render(() => <App />);
     await waitFor(() => screen.getByText(SETS[0]!.title));
 
@@ -116,6 +124,6 @@ describe("coming back to the app", () => {
 
     // Going away is not coming back: the phone pays for a fetch, and there is
     // nobody there to read what it brings.
-    expect(fetching).toHaveBeenCalledTimes(1);
+    expect(askedFor(fetching, PENDING)).toBe(1);
   });
 });

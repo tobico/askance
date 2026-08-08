@@ -220,6 +220,23 @@ testers.runNixOSTest {
         for bundle in bundles:
             machine.succeed(f"curl -sf -o /dev/null http://127.0.0.1:8422{bundle}")
 
+    with subtest("the update check is on by default, and a GitHub out of reach costs nothing"):
+        # What the unit is running is readable in the unit, which is the point of
+        # passing flags rather than setting the environment: with `updateCheck`
+        # left alone, the opt-out is not among them.
+        unit = machine.succeed("systemctl cat askance.service")
+        assert "--no-update-check" not in unit, f"the check is off by default:\n{unit}"
+
+        # And there is no route out of this VM, so the poll behind that check is
+        # failing — which is the whole of what a failed poll is meant to cost.
+        # The viewer is still answered, saying there is nothing to update to, and
+        # the service is still up. The verdicts themselves are the server's own
+        # tests' subject; what needs a VM is that a service reaching for GitHub
+        # from inside this sandbox does not fall over.
+        notice = machine.succeed("curl -sf http://127.0.0.1:8422/api/ui/update").strip()
+        assert notice == '"Current"', f"the Update Notice said {notice}"
+        machine.succeed("systemctl is-active --quiet askance.service")
+
     # The repository an agent always asks from, and which the CLI reads
     # `project`, `branch` and the Diff out of by shelling out to git.
     machine.succeed(f"git -c init.defaultBranch={BRANCH} init -q {REPO}")

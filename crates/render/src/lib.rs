@@ -22,12 +22,14 @@
 mod answering;
 mod lists;
 mod push;
+mod update;
 mod view;
 mod when;
 
 pub use answering::{Archived, Submitted};
 pub use lists::{ArchiveEntry, PendingEntry};
 pub use push::{PushKey, Subscribed, Subscription, Unsubscribe};
+pub use update::UpdateNotice;
 pub use view::{Answered, AskView, DiffView, OptionView, QuestionView, SetView, Standing};
 pub use when::{relative_age, settled_age, utc_stamp};
 

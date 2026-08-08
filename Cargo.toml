@@ -40,6 +40,10 @@ p256 = { version = "0.13", default-features = false, features = [
 pulldown-cmark = { version = "0.13", default-features = false, features = [
     "html",
 ] }
+# Comparing the tag of the latest release against the version this binary was
+# built as — the whole of the Update Notice's arithmetic. Default features
+# only: nothing serialises a version, they are parsed and compared.
+semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "1"
 serde_json = "1"
