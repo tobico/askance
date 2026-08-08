@@ -79,30 +79,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      # pnpm before node, because the node cache below asks pnpm where its store
-      # is. 10.28.0 is the flake's, and `web/pnpm-lock.yaml` is
-      # `lockfileVersion: 9.0` — whatever pnpm the runner image happens to ship
-      # is not a version we have agreed to.
-      - name: Install pnpm 10.28.0
-        uses: pnpm/action-setup@v6.0.10
-        with:
-          version: 10.28.0
-
-      # Also the flake's, down to the patch. `cache: pnpm` caches the pnpm store
-      # keyed on the lockfile, so an unchanged lockfile means an install that
-      # unpacks rather than downloads.
-      - name: Install Node 22.22.2
-        uses: actions/setup-node@v7.0.0
-        with:
-          node-version: 22.22.2
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
-
-      # `--frozen-lockfile` is the point of the step: a `package.json` that has
-      # moved away from the lockfile fails here, rather than being quietly
-      # resolved into whatever is newest today.
-      - name: Install
-        run: pnpm install --frozen-lockfile
+      # pnpm, Node and the `--frozen-lockfile` install, shared with the release
+      # workflow — see the action for what each pin is and why. A local `uses:`
+      # path resolves against the checkout above, so it has to follow it.
+      - name: Set up the viewer
+        uses: ./.github/actions/setup-viewer
 
       # Typecheck as well as test, for the reason `nix/web.nix` gives: a
       # component that only compiles because vite erases the types would pass

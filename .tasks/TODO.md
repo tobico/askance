@@ -16,7 +16,7 @@ Roadmap stage: [03: Release pipeline](docs/roadmaps/public-release/03-release-pi
 
 ## Tasks
 
-- [ ] 01: Shared viewer setup action — [details](01-viewer-setup-action.md)
+- [x] 01: Shared viewer setup action — [details](01-viewer-setup-action.md)
 - [ ] 02: Build matrix — [details](02-build-matrix.md)
 - [ ] 03: Release on tag — [details](03-release-on-tag.md)
 - [ ] 04: Manifest commit-back — [details](04-manifest-commit-back.md)
