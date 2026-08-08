@@ -1,8 +1,10 @@
-# What a `v*` tag builds: one binary per platform the project ships, each with
-# the viewer inside it. Nothing is published here — the binaries leave as
-# workflow artifacts, so a target that will not build, or that builds something
-# that will not run, is found before a Release is put in front of anyone.
-# Publishing them is the next task's.
+# What a `v*` tag ships: one binary per platform the project ships, each with
+# the viewer inside it, published as a GitHub Release under the tag that
+# triggered the run. Every leg builds its binary and then runs it, so a target
+# that will not build, or that builds something that will not run, fails the
+# run rather than reaching a Release.
+#
+# The manifest that stage 04's binary flake reads is the next task's.
 #
 # Pinned throughout, as `ci.yml` is: actions to released versions, runners to
 # images rather than `-latest`, and Rust to the patch version the flake's
@@ -15,8 +17,10 @@ on:
   push:
     tags: ["v*"]
 
-# Nothing here writes anything back yet — the assets stay inside the run. The
-# Release and the manifest commit are later tasks, and each widens this itself.
+# Read at the top, so that the jobs which compile the dependency tree and run
+# other people's actions hold a token that can do nothing to the repository.
+# The one job that publishes widens this for itself, and the manifest commit
+# the next task adds will do the same.
 permissions:
   contents: read
 
@@ -220,3 +224,84 @@ jobs:
           name: ${{ matrix.asset }}
           path: upload/${{ matrix.asset }}
           if-no-files-found: error
+
+  # The Release, once every leg has succeeded. `needs` is the whole of that
+  # rule: a matrix job has failed if any of its legs did, and a job whose
+  # `needs` failed does not run — so a tag that could not be built for one
+  # architecture publishes nothing, rather than a set of three that looks
+  # complete until somebody reaches for the fourth.
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-24.04
+    # The only job that writes. Creating a Release is a write to the
+    # repository's contents, and it is granted here rather than at the top of
+    # the file so that the build legs never hold a token that can publish.
+    permissions:
+      contents: write
+    steps:
+      # The four binaries, and not the viewer artifact this run is also
+      # holding: `pattern` is what leaves it behind. `merge-multiple` unwraps
+      # the per-artifact directories, so what lands in `binaries/` is four
+      # files under the names the legs gave them — which are the names the
+      # assets carry, and the names the README's install command will spell.
+      - name: Fetch the binaries
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: askance-*
+          merge-multiple: true
+          path: binaries
+
+      # What the pattern matched, counted before anything is published, and
+      # counted through the same glob the upload below hands to `gh`. `needs`
+      # says all four legs passed; this says all four arrived, which a
+      # mistyped pattern would not.
+      - name: All four binaries are here
+        run: |
+          ls -l binaries
+          # So that a glob matching nothing counts as none, rather than as the
+          # one unexpanded pattern bash would otherwise leave behind.
+          shopt -s nullglob
+          binaries=(binaries/askance-*)
+          if [ "${#binaries[@]}" -ne 4 ]; then
+            echo "::error::Expected four binaries, found ${#binaries[@]}."
+            exit 1
+          fi
+
+      # `gh` rather than a release action: it is on the runner already and it
+      # takes the workflow's own token, so there is no third-party version to
+      # pin for what is one API call. It is given the repository by name
+      # because this job has no checkout to infer one from — it wants the
+      # binaries, and none of the sources.
+      #
+      # A pre-release is semver's own rule, a hyphen after the version, as in
+      # `v0.1.0-rc.1`. Task 05's throwaway tag is one of those: marking it
+      # keeps `releases/latest` on the newest real version, and keeps a
+      # rehearsal from reading as the project's first release.
+      #
+      # Notes are generated rather than written. There is nobody to write them
+      # at the moment a tag is pushed, and a release with an empty body is
+      # worse than one listing what landed since the last tag.
+      - name: Publish the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          case "$TAG" in
+            *-*) prerelease=(--prerelease) ;;
+            *) prerelease=() ;;
+          esac
+          gh release create "$TAG" --generate-notes "${prerelease[@]}" \
+            binaries/askance-*
+
+      # What GitHub says it now has, in the log of the run that put it there —
+      # the asset names an adopter's url has to match, and whether the tag was
+      # read as a pre-release. The next task reads this same Release back to
+      # build its manifest; this is the same answer, for a human.
+      - name: What was published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release view "$TAG" --json isPrerelease,assets
