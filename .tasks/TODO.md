@@ -18,5 +18,5 @@ Roadmap stage: [04: Binary flake](docs/roadmaps/public-release/04-binary-flake.m
 ## Tasks
 
 - [x] 01: Manifest-fed binary package — [details](01-manifest-fed-package.md)
-- [ ] 02: The binary as the module's default — [details](02-module-default.md)
+- [x] 02: The binary as the module's default — [details](02-module-default.md)
 - [ ] 03: README loses the private-repo token — [details](03-readme-token.md)

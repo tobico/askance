@@ -16,6 +16,9 @@
   # The flake's NixOS module, which closes over the flake's package — there is
   # no `pkgs.askance` for it to find by name.
   module,
+  # What the VM runs: `askance-source`, deliberately, rather than the module's
+  # own default. See where it is pinned below.
+  package,
 }:
 
 testers.runNixOSTest {
@@ -25,6 +28,14 @@ testers.runNixOSTest {
     imports = [ module ];
 
     services.askance.enable = true;
+
+    # Not an oversight, and not to be helpfully removed: the module defaults to
+    # the released binary, and a test fed that would be exercising whatever the
+    # last release contains rather than the tree it is run against — which makes
+    # it worthless as a check on a branch. The pin is about *what* is tested,
+    # not about network access: a `fetchurl` is a fixed-output derivation and
+    # the binary would download here perfectly well.
+    services.askance.package = package;
 
     # The CLI finds its own git through the package's wrapper; this one is here
     # so the test can build the repository the CLI then reads.

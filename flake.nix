@@ -54,7 +54,10 @@
           web = pkgs.callPackage ./nix/web.nix { runTests = true; };
         }
         // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-          module = pkgs.callPackage ./nix/vm-test.nix { module = self.nixosModules.askance; };
+          module = pkgs.callPackage ./nix/vm-test.nix {
+            module = self.nixosModules.askance;
+            package = self.packages.${pkgs.stdenv.hostPlatform.system}.askance-source;
+          };
         }
       );
 
