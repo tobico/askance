@@ -28,4 +28,4 @@ then; the history audit (2026-08-07) cleared all of it for publication.
 - [x] 03: Release pipeline — [brief](03-release-pipeline.md)
 - [x] 04: Binary flake — [brief](04-binary-flake.md)
 - [x] 05: Update Notice — [brief](05-update-notice.md)
-- [ ] 06: Adoption docs and go-live — [brief](06-adoption-docs.md)
+- [ ] 06: Adoption docs and go-live — [brief](06-adoption-docs.md) *(in progress — `adoption-docs`, stacked on `update-notice`)*
