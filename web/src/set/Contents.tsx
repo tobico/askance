@@ -273,6 +273,12 @@ function Bar(props: { watched: Watched[]; nav: Nav }): JSX.Element {
 /// focusable, announced as a button, and inert. They share the signal and
 /// nothing else.
 ///
+/// Not drawn until the page's first heading has been scrolled out of view: at
+/// the top of the page the header would be naming a heading the reader can see
+/// right under it, and saying nothing. It goes away again when scrolling back
+/// up brings the heading back. The narrow bar is not treated this way — it is
+/// the way into the table of contents, and keeps its place for that.
+///
 /// The naming is a breadcrumb rather than one line, because the sidebar beside
 /// it already says both halves with two highlights and one line would say less
 /// than what it is sitting next to. It reads from the same scroll-spy signal,
@@ -281,7 +287,8 @@ function Bar(props: { watched: Watched[]; nav: Nav }): JSX.Element {
 /// The words are hidden from assistive tech: the sidebar's own line already
 /// carries `aria-current`, and a second copy of the answer is a second thing to
 /// hear. The switch is not hidden — it is a real control, and the one thing
-/// here that is not said somewhere else on screen.
+/// here that is not said somewhere else on screen; ungating it costs a jump
+/// no more than a scroll, since both put the heading out of view.
 ///
 /// Nothing to say on a narrow viewport, where the bar is doing this; the
 /// stylesheet keeps it off, as it keeps the bar off here.
@@ -302,42 +309,92 @@ export function PageHeader(props: {
   // A Set with no Diff has no such section, so this is never true for one.
   const inTheDiff = () => named()?.section === "diff";
 
+  const passed = headingPassed(() => props.watched);
+
   return (
+    // The shell holds the pinned position and no height, so the header takes
+    // no room out of the flow whether or not it is drawn: one that did would
+    // shove the whole page down at the moment it appeared.
     <div class="page-header">
-      <p class="page-header-where" aria-hidden="true">
-        <Show when={named()}>
-          {(named) => (
-            <>
-              <Show when={inside(named())}>
-                {(section) => (
-                  <>
-                    <span class="page-header-section">{section()}</span>
-                    <span class="page-header-sep">›</span>
-                  </>
-                )}
-              </Show>
-              <span class={`page-header-name ${named().kind}`}>
-                <Show when={named().label}>
-                  {(label) => <span class="contents-label">{label()}</span>}
-                </Show>
-                {named().text}
-              </span>
-            </>
-          )}
-        </Show>
-      </p>
-      <Show when={inTheDiff()}>
-        <Switch label="Word wrap" on={props.wrapped} flip={props.flip} />
+      <Show when={passed()}>
+        <div class="page-header-chrome">
+          <p class="page-header-where" aria-hidden="true">
+            <Show when={named()}>
+              {(named) => (
+                <>
+                  <Show when={inside(named())}>
+                    {(section) => (
+                      <>
+                        <span class="page-header-section">{section()}</span>
+                        <span class="page-header-sep">›</span>
+                      </>
+                    )}
+                  </Show>
+                  <span class={`page-header-name ${named().kind}`}>
+                    <Show when={named().label}>
+                      {(label) => <span class="contents-label">{label()}</span>}
+                    </Show>
+                    {named().text}
+                  </span>
+                </>
+              )}
+            </Show>
+          </p>
+          <Show when={inTheDiff()}>
+            <Switch label="Word wrap" on={props.wrapped} flip={props.flip} />
+          </Show>
+        </div>
       </Show>
     </div>
   );
 }
 
+/// Whether the page's first heading has been scrolled out of view — which is
+/// when the floating header has something to add, and until which it would be
+/// naming a heading the reader can see.
+///
+/// Watched with an observer of its own rather than read off the scroll-spy:
+/// the spy says which section the reader is *in*, and they are in the first
+/// one, heading long gone, well before they leave it. The heading element is
+/// found from the first watched anchor — the section's own heading, or the
+/// anchor itself where the anchor is the heading, as it is on the Questions.
+function headingPassed(watched: Accessor<Watched[]>): Accessor<boolean> {
+  const [passed, setPassed] = createSignal(false);
+
+  createEffect(() => {
+    const first = watched()[0];
+    if (first === undefined || typeof IntersectionObserver !== "function") {
+      return;
+    }
+
+    const section = document.getElementById(first.anchor);
+    if (section === null) {
+      return;
+    }
+    const heading = section.classList.contains("section-heading")
+      ? section
+      : (section.querySelector(".section-heading") ?? section);
+
+    // Out of view in either direction reads as passed. In practice the first
+    // heading only ever leaves upward — it sits at the top of the page.
+    const observer = new IntersectionObserver((crossings) => {
+      const crossing = crossings.at(-1);
+      if (crossing !== undefined) {
+        setPassed(!crossing.isIntersecting);
+      }
+    });
+    observer.observe(heading);
+
+    onCleanup(() => observer.disconnect());
+  });
+
+  return passed;
+}
+
 /// Take the reader to the section, file or Question this id names.
 ///
 /// A folded file is unfolded before the jump: landing on a closed fold is
-/// landing on nothing. The scroll is the browser's own, so how it moves is the
-/// stylesheet's business — which is where `prefers-reduced-motion` is honoured.
+/// landing on nothing.
 ///
 /// The URL is set with `replaceState` rather than by letting the link navigate:
 /// the reader gets a hash they can copy or reload into, but moving around a
@@ -353,8 +410,60 @@ function jumpTo(anchor: string): void {
     target.open = true;
   }
 
-  target.scrollIntoView();
+  bring(target);
   history.replaceState(null, "", `#${anchor}`);
+}
+
+/// How long a jump's scroll plays, in milliseconds. Short enough to read as
+/// the page answering rather than travelling: the jump is a navigation, and
+/// the glide is only there to say which way the page went.
+const JUMP_MS = 120;
+
+/// Scroll the page to `target`, in the one place the viewer animates a scroll.
+///
+/// Its own animation rather than the browser's smooth scrolling, because the
+/// browser's cannot be told how long to take — and left on the stylesheet it
+/// would slow every scroll the browser does on its own, Back and Forward
+/// restoring a place included. Every scroll but this one is instant.
+///
+/// A reader who asked for less motion gets the instant jump — as does a
+/// browser with no animation frame to be had, which is also what keeps this
+/// honest under test.
+function bring(target: Element): void {
+  const reduced =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (reduced || typeof window.requestAnimationFrame !== "function") {
+    target.scrollIntoView();
+    return;
+  }
+
+  // Where the browser would have put it: the top of the target, less the
+  // scroll margin the stylesheet reserves for whatever is pinned across the
+  // top edge — and never past the bottom of the page.
+  const margin = Number.parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+  const limit = document.documentElement.scrollHeight - window.innerHeight;
+  const to = Math.min(
+    Math.max(window.scrollY + target.getBoundingClientRect().top - margin, 0),
+    Math.max(limit, 0),
+  );
+
+  const from = window.scrollY;
+  const began = performance.now();
+
+  const step = (now: number) => {
+    const part = Math.min((now - began) / JUMP_MS, 1);
+    // Ease-out: the distance is covered early and the landing is soft, which
+    // reads as arriving rather than stopping.
+    const eased = 1 - (1 - part) ** 2;
+    window.scrollTo(0, from + (to - from) * eased);
+    if (part < 1) {
+      window.requestAnimationFrame(step);
+    }
+  };
+
+  window.requestAnimationFrame(step);
 }
 
 /// Where the reading line sits, written as the margins the browser is to put

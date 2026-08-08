@@ -29,7 +29,7 @@ pub use answering::{Archived, Submitted};
 pub use lists::{ArchiveEntry, PendingEntry};
 pub use push::{PushKey, Subscribed, Subscription, Unsubscribe};
 pub use view::{Answered, AskView, DiffView, OptionView, QuestionView, SetView, Standing};
-pub use when::{relative_age, settled_when};
+pub use when::{relative_age, settled_age, utc_stamp};
 
 pub mod diff;
 pub mod markdown;

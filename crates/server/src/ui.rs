@@ -69,9 +69,11 @@ async fn pending(State(state): State<AppState>) -> HttpResponse {
             title: set.title,
             project: set.project,
             branch: set.branch,
-            // Both already decided here rather than sent as timestamps: this is
-            // the side with the clock and with the registry of held waits.
+            // All three already decided here rather than sent as timestamps:
+            // this is the side with the clock and with the registry of held
+            // waits.
             age: askance_render::relative_age(&set.created_at, now),
+            created_stamp: askance_render::utc_stamp(&set.created_at),
             liveness: state.waits.liveness(set.id, &set.created_at, now),
         })
         .collect();
@@ -81,6 +83,8 @@ async fn pending(State(state): State<AppState>) -> HttpResponse {
 
 /// `GET /api/ui/archive` — the Sets that have been settled, newest first.
 async fn archive(State(state): State<AppState>) -> HttpResponse {
+    let now = OffsetDateTime::now_utc();
+
     let archived = match store::archived_sets(&state.pool).await {
         Ok(archived) => archived,
         Err(error) => {
@@ -96,7 +100,8 @@ async fn archive(State(state): State<AppState>) -> HttpResponse {
             title: set.title,
             project: set.project,
             branch: set.branch,
-            settled_at: askance_render::settled_when(&set.settled_at),
+            settled_at: askance_render::settled_age(&set.settled_at, now),
+            settled_stamp: askance_render::utc_stamp(&set.settled_at),
             unanswered: set.settled == store::Settled::ArchivedUnanswered,
         })
         .collect();

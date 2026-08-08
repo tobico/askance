@@ -121,7 +121,7 @@
         ],
         "comment": "Do the in-process one first; we can move it later."
       },
-      "submitted_at": "2026-08-03T09:07:11.000Z"
+      "submitted_at": "2025-08-03T09:07:11.000Z"
     }
   },
   "title": "Rate limiting for the public API"

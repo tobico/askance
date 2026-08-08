@@ -1032,9 +1032,12 @@ const FIXTURES: &str = "../../web/tests/fixtures";
 /// A viewer test fed by a hand-written mock proves only that the mock and the
 /// component agree — these files are what the endpoint actually said.
 ///
-/// Everything a clock would otherwise decide is pinned first, so that a run
-/// today and a run next week write the same bytes: the ages are relative to a
-/// stated distance from now, and the settlement stamps are set outright.
+/// Everything a clock would otherwise decide is pinned, so that a run today
+/// and a run next week write the same bytes. The worded times are pinned by
+/// arrangement — each row is created or settled at a distance from now whose
+/// wording never moves, "just now" or "3h ago" or far enough back to be said
+/// as its date — and the exact stamps behind them, which would carry the run's
+/// own clock, are overwritten with stated minutes after the fact.
 #[tokio::test]
 async fn the_viewers_own_tests_are_fed_from_here() {
     let now = time::OffsetDateTime::now_utc();
@@ -1054,9 +1057,20 @@ async fn the_viewers_own_tests_are_fed_from_here() {
         stale.id,
     )
     .await;
-    write("pending.json", &get(&app, "/api/ui/pending").await);
+    write(
+        "pending.json",
+        &pin_rows(
+            &get(&app, "/api/ui/pending").await,
+            "created_stamp",
+            &["2026-08-03 06:16 UTC", "2026-08-03 09:16 UTC"],
+        ),
+    );
 
-    // The Archive: a decision, and a Set nobody was ever going to answer.
+    // The Archive: a decision, and a Set nobody was ever going to answer — one
+    // settled a moment ago and one long since, which are also the two ways a
+    // settling is worded: the age while it is fresh, and the date once it is
+    // not. Long since rather than days ago, because "4d ago" would say
+    // something different next week and these bytes must not.
     let (_dir, pool, app) = fresh_app().await;
     let decided = store::insert_set(&pool, &full_grammar_set()).await.unwrap();
     store::insert_response(&pool, decided.id, &decided_every_way())
@@ -1066,7 +1080,7 @@ async fn the_viewers_own_tests_are_fed_from_here() {
     stamp(
         &pool,
         "UPDATE responses SET submitted_at = ? WHERE set_id = ?",
-        "2026-08-03T09:07:11.000Z",
+        "2025-08-03T09:07:11.000Z",
         decided.id,
     )
     .await;
@@ -1076,14 +1090,14 @@ async fn the_viewers_own_tests_are_fed_from_here() {
     store::archive_set(&pool, &store::Settlements::new(1), orphan.id)
         .await
         .unwrap();
-    stamp(
-        &pool,
-        "UPDATE archivings SET archived_at = ? WHERE set_id = ?",
-        "2026-08-03T17:31:02.000Z",
-        orphan.id,
-    )
-    .await;
-    write("archive.json", &get(&app, "/api/ui/archive").await);
+    write(
+        "archive.json",
+        &pin_rows(
+            &get(&app, "/api/ui/archive").await,
+            "settled_stamp",
+            &["2026-08-03 17:31 UTC", "2025-08-03 09:07 UTC"],
+        ),
+    );
 
     // A Set to answer: every feature of the question grammar, the agent's markup
     // throughout, and a Diff attached.
@@ -1110,11 +1124,31 @@ async fn the_viewers_own_tests_are_fed_from_here() {
     write("set-diagram.json", &json);
 }
 
+/// Pin a list's exact stamps to stated minutes, one value per row in order, so
+/// the fixture does not carry the run's own clock. The worded times beside
+/// them need no pinning — the rows are arranged so their wording never moves.
+fn pin_rows(json: &str, field: &str, values: &[&str]) -> String {
+    let mut payload: serde_json::Value = serde_json::from_str(json).unwrap();
+
+    let rows = payload.as_array_mut().unwrap();
+    assert_eq!(rows.len(), values.len(), "one stated minute per row");
+    for (row, value) in rows.iter_mut().zip(values) {
+        assert!(
+            row.get(field).is_some(),
+            "no {field} on this row to pin:\n{row}"
+        );
+        row[field] = (*value).into();
+    }
+
+    serde_json::to_string(&payload).unwrap()
+}
+
 /// Pin the one stamp a settled Set carries, so the fixture does not change with
-/// the clock. It is the only value in these payloads that the server dates
-/// rather than words.
+/// the clock. It is the only value in these payloads the server hands over
+/// raw — the viewer words it, against its own clock — so it is pinned far
+/// enough back that the wording is the date, which never moves.
 fn pinned(json: &str) -> String {
-    let settled = "2026-08-03T09:07:11.000Z";
+    let settled = "2025-08-03T09:07:11.000Z";
 
     let mut payload: serde_json::Value = serde_json::from_str(json).unwrap();
     let standing = &mut payload["standing"];

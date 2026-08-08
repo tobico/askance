@@ -41,7 +41,11 @@ export function PendingList() {
   }));
 
   return (
-    <>
+    // The wrapper is the page's width: a row carries a title and a line of
+    // provenance, and never wanted more room than the reading column — so on a
+    // window that offers more, the whole page keeps to that and sits in the
+    // middle of it.
+    <div class="list-page">
       {/* The way through to what was already decided, in the slot the set
           view's "← Pending" sits in: every page here starts with where else
           there is to go, so neither list needs a typed URL to reach the
@@ -79,7 +83,7 @@ export function PendingList() {
           )}
         </Match>
       </Switch>
-    </>
+    </div>
   );
 }
 
@@ -100,7 +104,10 @@ function PendingRow(props: { entry: PendingEntry }) {
           <span class={`liveness ${props.entry.liveness}`}>
             {BADGE[props.entry.liveness]}
           </span>
-          <span class="age">{props.entry.age}</span>
+          {/* The exact minute rides behind the age, as the tooltip. */}
+          <span class="age" title={props.entry.created_stamp}>
+            {props.entry.age}
+          </span>
         </span>
       </A>
     </li>

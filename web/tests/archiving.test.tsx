@@ -31,6 +31,15 @@ function press(page: ParentNode, text: string) {
   fireEvent.click(button!);
 }
 
+/// Open the standing menu — the badge is its title — and choose the one thing
+/// in it, which is the offer to close the Set unanswered.
+function reachForArchive(page: ParentNode) {
+  const trigger = page.querySelector(".standing-trigger");
+  expect(trigger, "expected the badge to open the standing menu").toBeTruthy();
+  fireEvent.click(trigger!);
+  press(page, "Archive unanswered");
+}
+
 beforeEach(() => {
   localStorage.clear();
 });
@@ -41,14 +50,23 @@ afterEach(() => {
 });
 
 describe("the offer to close a Set unanswered", () => {
-  it("stands beside the badge saying whether anyone is still listening", async () => {
+  it("folds behind the badge saying whether anyone is still listening", async () => {
     const { page } = await answering(WAITING);
 
-    const standing = page.querySelector("section.standing")!;
-    expect(standing.querySelector(".liveness")!.textContent).toBe(
+    // The badge is the menu's title, and the offer is nowhere on the page
+    // until the menu is asked for: archiving is almost never the right thing
+    // to do to a Set.
+    const trigger = page.querySelector(".standing .standing-trigger")!;
+    expect(trigger.querySelector(".liveness")!.textContent).toBe(
       "agent waiting",
     );
-    expect(standing.querySelector("button.archive")!.textContent).toBe(
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(page.querySelector("button.archive")).toBeNull();
+
+    fireEvent.click(trigger);
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(page.querySelector("button.archive")!.textContent).toBe(
       "Archive unanswered",
     );
   });
@@ -79,7 +97,7 @@ describe("the offer to close a Set unanswered", () => {
   it("archives nothing until the human has confirmed it", async () => {
     const { page, fetching } = await answering(WAITING, archived("Closed"));
 
-    press(page, "Archive unanswered");
+    reachForArchive(page);
 
     const asking = page.querySelector(".confirm")!;
     expect(asking.getAttribute("role")).toBe("dialog");
@@ -104,7 +122,7 @@ describe("closing a Set unanswered", () => {
       archived("Closed"),
     );
 
-    press(page, "Archive unanswered");
+    reachForArchive(page);
     // The dialog's own button, which is the second one reading this.
     fireEvent.click(
       page.querySelector(".confirm-actions button:last-child") as HTMLElement,
@@ -130,7 +148,7 @@ describe("closing a Set unanswered", () => {
     );
     await waitFor(() => expect(localStorage.getItem(KEY)).toBeTruthy());
 
-    press(page, "Archive unanswered");
+    reachForArchive(page);
     fireEvent.click(
       page.querySelector(".confirm-actions button:last-child") as HTMLElement,
     );
@@ -147,14 +165,14 @@ describe("closing a Set unanswered", () => {
     ] as Array<[Archived, string]>) {
       const { page, fetching } = await answering(WAITING, archived(outcome));
 
-      press(page, "Archive unanswered");
+      reachForArchive(page);
       fireEvent.click(
         page.querySelector(".confirm-actions button:last-child") as HTMLElement,
       );
 
       await waitFor(() => expect(fetching).toHaveBeenCalledTimes(2));
       await waitFor(() =>
-        expect(page.querySelector(".standing .error")!.textContent).toContain(
+        expect(page.querySelector(".meta .error")!.textContent).toContain(
           said,
         ),
       );
@@ -167,14 +185,14 @@ describe("closing a Set unanswered", () => {
       json({ error: "the Question Set could not be archived" }, 503),
     );
 
-    press(page, "Archive unanswered");
+    reachForArchive(page);
     fireEvent.click(
       page.querySelector(".confirm-actions button:last-child") as HTMLElement,
     );
 
     await waitFor(() => expect(fetching).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(page.querySelector(".standing .error")!.textContent).toContain(
+      expect(page.querySelector(".meta .error")!.textContent).toContain(
         "the Question Set could not be archived",
       ),
     );

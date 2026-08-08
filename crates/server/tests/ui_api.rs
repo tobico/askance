@@ -238,10 +238,16 @@ async fn every_waiting_set_is_listed_newest_first_with_its_age_and_its_liveness(
     let row = &pending[0];
     assert_eq!(row.project.as_deref(), Some("askance"));
     assert_eq!(row.branch.as_deref(), Some("solid-viewer"));
-    // Both arrive decided rather than as a timestamp: the age in the words the
-    // list is scanned in, and the badge from the registry of held waits. A Set
-    // this new is one whose agent is on its way to its first wait.
+    // All three arrive decided rather than as a timestamp: the age in the
+    // words the list is scanned in, the exact minute behind it for the
+    // tooltip, and the badge from the registry of held waits. A Set this new
+    // is one whose agent is on its way to its first wait.
     assert_eq!(row.age, "just now");
+    assert!(
+        row.created_stamp.ends_with(" UTC"),
+        "expected the exact minute behind the age, got {:?}",
+        row.created_stamp
+    );
     assert_eq!(row.liveness, Liveness::Waiting);
 }
 
@@ -362,27 +368,30 @@ async fn an_answered_set_leaves_the_pending_list_for_the_archive() {
 }
 
 #[tokio::test]
-async fn the_archive_dates_each_decision_and_says_which_were_never_answered() {
+async fn the_archive_words_each_settling_and_says_which_were_never_answered() {
     let (_dir, pool, app) = fresh_app().await;
 
+    // Settled long ago, so however far today drifts from the stamp, it stays
+    // past the week that ends the relative wording: this row is dated.
     let decided_set = store::insert_set(&pool, &bare("decided")).await.unwrap();
     store::insert_response(&pool, decided_set.id, &Response::default())
         .await
         .unwrap()
         .unwrap();
-    settle_at(&pool, decided_set.id, "2026-08-03T09:07:00.000Z").await;
+    settle_at(&pool, decided_set.id, "2025-08-03T09:07:00.000Z").await;
 
+    // Archived just now, which is inside the week: this row is aged.
     let orphan = store::insert_set(&pool, &bare("nobody ever answered"))
         .await
         .unwrap();
     store::archive_set(&pool, &store::Settlements::new(1), orphan.id)
         .await
         .unwrap();
-    archive_at(&pool, orphan.id, "2026-08-03T17:00:00.000Z").await;
 
     let archive: Vec<ArchiveEntry> = get(&app, "/api/ui/archive").await;
 
-    // Newest decision first, whichever way each of them was settled.
+    // Newest settling first, whichever way each of them was settled — aged
+    // while fresh, dated once it is not, with the exact minute beside both.
     let rows: Vec<(&str, &str, bool)> = archive
         .iter()
         .map(|row| (row.title.as_str(), row.settled_at.as_str(), row.unanswered))
@@ -390,9 +399,15 @@ async fn the_archive_dates_each_decision_and_says_which_were_never_answered() {
     assert_eq!(
         rows,
         [
-            ("nobody ever answered", "2026-08-03 17:00 UTC", true),
-            ("decided", "2026-08-03 09:07 UTC", false),
+            ("nobody ever answered", "just now", true),
+            ("decided", "2025-08-03", false),
         ]
+    );
+    assert_eq!(archive[1].settled_stamp, "2025-08-03 09:07 UTC");
+    assert!(
+        archive[0].settled_stamp.ends_with(" UTC"),
+        "expected the exact minute behind the age, got {:?}",
+        archive[0].settled_stamp
     );
 }
 
@@ -780,16 +795,6 @@ async fn backdate_created(pool: &SqlitePool, id: i64, created_at: &str) {
 async fn settle_at(pool: &SqlitePool, id: i64, submitted_at: &str) {
     sqlx::query("UPDATE responses SET submitted_at = ? WHERE set_id = ?")
         .bind(submitted_at)
-        .bind(id)
-        .execute(pool)
-        .await
-        .unwrap();
-}
-
-/// The same for a Set that was closed unanswered.
-async fn archive_at(pool: &SqlitePool, id: i64, archived_at: &str) {
-    sqlx::query("UPDATE archivings SET archived_at = ? WHERE set_id = ?")
-        .bind(archived_at)
         .bind(id)
         .execute(pool)
         .await

@@ -51,6 +51,10 @@ describe("the pending list", () => {
     expect(row.querySelector(".project")!.textContent).toBe(DEAD.project);
     expect(row.querySelector(".branch")!.textContent).toBe(DEAD.branch);
     expect(row.querySelector(".age")!.textContent).toBe(DEAD.age);
+    // The exact minute rides behind the age, as the tooltip.
+    expect(row.querySelector(".age")!.getAttribute("title")).toBe(
+      DEAD.created_stamp,
+    );
     // The whole row is the tap target, so the link is the row's and not the
     // title's.
     expect(row.querySelector("a")!.getAttribute("href")).toBe(`/sets/${DEAD.id}`);
@@ -115,6 +119,7 @@ describe("the pending list", () => {
       project: "askance",
       branch: "outbound-retries",
       age: "just now",
+      created_stamp: "2026-08-03 09:17 UTC",
       liveness: "waiting",
     };
 
