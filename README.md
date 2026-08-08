@@ -592,10 +592,11 @@ A Set is answered once: a second Response is a 409 and the first one stands.
 | `POST /api/v1/sets/{id}/response` | The human's Response in, `201` with `set_id` and `submitted_at` back. Wakes every wait held on the Set. |
 
 The viewer has a namespace of its own under `/api/ui/` — the pending list, the
-Archive, one Set, answering it, archiving it, and the three push endpoints. It
-is private to the viewer that ships in the same binary and is not part of the
-contract above: it speaks JSON rather than YAML, and it may be rearranged
-whenever the viewer is. Agents use `/api/v1/` alone.
+Archive, one Set, answering it, archiving it, the three push endpoints, and the
+Nudge stream an open page listens on. It is private to the viewer that ships in
+the same binary and is not part of the contract above: it speaks JSON rather
+than YAML, and it may be rearranged whenever the viewer is. Agents use
+`/api/v1/` alone.
 
 Everything outside `/api/` is the viewer: its own files where it has them, and
 the document everywhere else, because the viewer routes in the browser and

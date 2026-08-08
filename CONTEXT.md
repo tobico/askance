@@ -128,6 +128,13 @@ Whether an agent is currently connected and waiting on a Question Set
 automatic withdrawal.
 _Avoid_: connection status, presence
 
+**Nudge**:
+The contentless signal telling an open viewer page that the pending world
+changed — a Set arrived, was answered, or was archived — so the page should
+look again. It says nothing about what changed; the page refetches everything
+it is showing.
+_Avoid_: tick, refresh signal, ping, change event
+
 **Update Notice**:
 The banner the viewer shows when the server has learned that a newer release
 exists than the one it is running, linking to the update instructions. Informs

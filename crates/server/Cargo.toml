@@ -43,6 +43,9 @@ serde_json.workspace = true
 sqlx.workspace = true
 time.workspace = true
 tokio = { workspace = true, features = ["signal", "sync", "time"] }
+# The Nudge stream is a broadcast channel turned into a `Stream` for axum's SSE
+# response, which is the `sync` feature and nothing else here uses.
+tokio-stream = { version = "0.1", features = ["sync"] }
 # The events only; where they go is the starting binary's call, so the
 # subscriber is the CLI's dependency rather than this crate's — see
 # `crates/cli/src/serve.rs`.
@@ -58,4 +61,7 @@ web-push-native = { version = "0.4", default-features = false }
 http-body-util = "0.1"
 serde-saphyr.workspace = true
 tempfile.workspace = true
+# `test-util` for the runtime's own clock: a keep-alive is a quarter-minute
+# apart, and no test should spend that waiting for one.
+tokio = { workspace = true, features = ["test-util"] }
 tower = { version = "0.5", features = ["util"] }

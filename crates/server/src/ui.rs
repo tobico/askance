@@ -45,6 +45,8 @@ pub(crate) fn routes() -> axum::Router<AppState> {
         .route("/api/ui/sets/{id}", get(set))
         .route("/api/ui/sets/{id}/response", post(submit_response))
         .route("/api/ui/sets/{id}/archive", post(archive_set))
+        // Not a thing to fetch but a thing to listen on — see [`crate::nudge`].
+        .route("/api/ui/nudges", get(crate::nudge::nudges))
         .route("/api/ui/push/key", get(push_key))
         .route("/api/ui/push/subscribe", post(subscribe))
         .route("/api/ui/push/unsubscribe", post(unsubscribe))
