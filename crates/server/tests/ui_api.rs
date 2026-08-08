@@ -4,7 +4,9 @@
 //! What is worth proving here is that this namespace is a way through to the
 //! same store and the same held waits the agents' half uses — that a submit from
 //! the browser ends a wait an agent is genuinely holding, and not merely that a
-//! row appeared. The rendering it answers with is `ui_content.rs`'s subject.
+//! row appeared. The rendering it answers with is `ui_content.rs`'s subject, and
+//! the ninth thing under the same prefix — the Nudge stream, which is listened
+//! on rather than asked — is `nudges.rs`'s.
 
 use std::time::{Duration, Instant};
 

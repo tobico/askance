@@ -8,10 +8,11 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use askance_store::{Settlements, Waits};
 use axum::Router;
-use axum::extract::{DefaultBodyLimit, FromRef};
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 use sqlx::SqlitePool;
 
+mod nudge;
 mod push;
 mod reply;
 mod responses;
@@ -43,19 +44,15 @@ const MAX_HOLD: Duration = Duration::from_secs(60);
 /// Set settled, for a single human settling them: this is generous.
 const SETTLEMENT_BACKLOG: usize = 64;
 
-/// What the handlers share: the store, word of Sets that have just been settled
-/// so held waits need not poll it, and which Sets a wait is being held on.
+/// What the handlers share: the store, word of Sets that have just arrived or
+/// have just been settled — so held waits need not poll for the one and open
+/// pages hear about both — and which Sets a wait is being held on.
 #[derive(Clone)]
 pub(crate) struct AppState {
     pool: SqlitePool,
+    creations: nudge::Creations,
     settlements: Settlements,
     waits: Waits,
-}
-
-impl FromRef<AppState> for SqlitePool {
-    fn from_ref(state: &AppState) -> Self {
-        state.pool.clone()
-    }
 }
 
 /// How the server is pointed at its database and its socket. There is no
@@ -98,6 +95,7 @@ pub fn router(pool: SqlitePool) -> Router {
         .merge(ui::routes())
         .with_state(AppState {
             pool,
+            creations: nudge::Creations::new(),
             settlements: Settlements::new(SETTLEMENT_BACKLOG),
             waits: Waits::new(),
         })
