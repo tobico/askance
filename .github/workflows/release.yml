@@ -1,0 +1,445 @@
+# What a `v*` tag ships: one binary per platform the project ships, each with
+# the viewer inside it, published as a GitHub Release under the tag that
+# triggered the run. Every leg builds its binary and then runs it, so a target
+# that will not build, or that builds something that will not run, fails the
+# run rather than reaching a Release.
+#
+# A last job then records what was published in `nix/release.json` and commits
+# it to `main`, which is the whole interface to stage 04's binary flake.
+#
+# Pinned throughout, as `ci.yml` is: actions to released versions, runners to
+# images rather than `-latest`, and Rust to the patch version the flake's
+# nixpkgs carries.
+name: Release
+
+# Tags and nothing else. What runs here is the build that ships, and a branch
+# has nothing to ship; every other commit is `ci.yml`'s.
+on:
+  push:
+    tags: ["v*"]
+
+# Read at the top, so that the jobs which compile the dependency tree and run
+# other people's actions hold a token that can do nothing to the repository.
+# The two jobs that write — the Release, and the manifest commit — widen this
+# for themselves.
+permissions:
+  contents: read
+
+jobs:
+  # The viewer, built once. `rust-embed` reads `web/dist` at compile time, so
+  # every build leg needs it on disk before cargo runs — but what vite writes
+  # does not vary by platform, so building it in each leg would cost four times
+  # over and let the four legs disagree about what they embedded.
+  viewer:
+    name: Viewer
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # pnpm, Node and the `--frozen-lockfile` install, shared with `ci.yml` —
+      # see the action for what each pin is and why. So the viewer that ships is
+      # built by the toolchain that CI checked it with.
+      - name: Set up the viewer
+        uses: ./.github/actions/setup-viewer
+
+      - name: Build
+        run: pnpm build
+
+      # `path` is the job's one path that is not the viewer's: the job-wide
+      # `working-directory` above governs `run` steps alone, and an action's
+      # inputs are read from the repository root regardless.
+      - name: Upload the viewer
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: viewer
+          path: web/dist
+          if-no-files-found: error
+
+  # One leg per asset, each on a runner of its own architecture: nothing is
+  # cross-compiled, and so every leg can run the binary it just built.
+  build:
+    name: ${{ matrix.asset }}
+    needs: viewer
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # A broken leg does not cancel its siblings. Which targets are broken is
+      # the thing this run is for, and cancelling would report them one per run.
+      fail-fast: false
+      matrix:
+        include:
+          - asset: askance-linux-x64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - asset: askance-linux-arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - asset: askance-macos-x64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - asset: askance-macos-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+    env:
+      # Where cargo leaves it, said once: every step below either runs this file
+      # or asks something of it.
+      BINARY: target/${{ matrix.target }}/release/askance
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Straight to where `#[folder]` points — see `crates/server/src/viewer.rs`.
+      # `web/dist` is gitignored, so the checkout above left the directory empty
+      # and this is the whole of what the embed will read.
+      - name: Fetch the viewer
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: viewer
+          path: web/dist
+
+      # musl-tools for the C in the dependency tree: `libsqlite3-sys` bundles
+      # SQLite's own source and `ring` compiles C of its own, and both are built
+      # by cc-rs rather than by rustc. The `CC_<target>` line is what points
+      # cc-rs at the musl compiler: it looks for an `aarch64-linux-musl-gcc`
+      # that Ubuntu's package does not install — what it installs is a native
+      # `musl-gcc`, on both architectures — and falling back to the host gcc
+      # would compile those C sources against glibc's headers.
+      - name: Install musl
+        if: runner.os == 'Linux'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
+
+      # The version branch _is_ the pin, as in `ci.yml`: 1.91.1 is what the
+      # flake's nixpkgs carries, so a release binary is compiled by the rustc
+      # the dev shell and CI both use.
+      - name: Install Rust 1.91.1
+        uses: dtolnay/rust-toolchain@1.91.1
+        with:
+          targets: ${{ matrix.target }}
+
+      # The same cache `ci.yml` uses, keyed by target on top of what the action
+      # already keys on: the four legs compile four different dependency trees,
+      # and a key they shared would have each of them evicting the last.
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          key: ${{ matrix.target }}
+
+      # The package by name rather than the whole workspace, for the reason
+      # `nix/askance.nix` gives: `askance-render`'s own default features turn on
+      # the TypeScript emitter, which is a test's business, and a
+      # workspace-wide build would unify it into the release binary.
+      - name: Build
+        run: >
+          cargo build --release --locked
+          --package askance-cli --target ${{ matrix.target }}
+
+      # The claim the paragraph above makes, checked rather than trusted: the
+      # emitter is a normal dependency of `askance-render` whenever its
+      # `typescript` feature is on, so it is in this tree or it is in nothing
+      # that was linked. `--edges normal` is what makes that the binary's
+      # question — dev-dependencies enable the feature and are no part of it.
+      - name: The build does not carry the TypeScript emitter
+        run: |
+          tree=$(cargo tree --package askance-cli --edges normal \
+            --target ${{ matrix.target }})
+          echo "$tree"
+          if printf '%s\n' "$tree" | grep -q 'ts-rs'; then
+            echo "::error::ts-rs was linked into the release binary."
+            exit 1
+          fi
+
+      - name: The binary runs
+        run: ./"$BINARY" --help
+
+      # And answers as the binary an adopter downloads: with the viewer, rather
+      # than the 503 that `serve` gives when nothing was embedded.
+      #
+      # `--retry-connrefused` rather than a sleep — the server is up when it
+      # answers, which is a moment after the fork and not a fixed one.
+      - name: The viewer is inside the binary
+        run: |
+          ./"$BINARY" serve --listen 127.0.0.1:8422 \
+            --database "$RUNNER_TEMP/askance.db" &
+          server=$!
+          document=$(curl --fail --silent --show-error \
+            --retry 10 --retry-delay 1 --retry-connrefused \
+            http://127.0.0.1:8422/)
+          kill "$server"
+          # An absent viewer is a 503, which `--fail` has already caught. This
+          # is the rest of it: the document vite wrote names the hashed bundle
+          # vite wrote beside it, and the fallback names nothing.
+          case "$document" in
+            */assets/*) ;;
+            *)
+              echo "::error::The binary served a document with no bundle in it."
+              printf '%s\n' "$document"
+              exit 1
+              ;;
+          esac
+
+      # Static, so that one Linux binary runs on any distro — the whole point of
+      # offering one — and so that stage 04's flake can fetch it without
+      # patchelf. `ldd` exits non-zero on a binary it finds nothing to say about,
+      # which is the answer we want, so its verdict is read rather than its
+      # status.
+      #
+      # Both of its verdicts: rust's musl targets link x86_64 as a static PIE
+      # and aarch64 as a plain static executable, and `ldd` calls the first
+      # "statically linked" and the second "not a dynamic executable". Neither
+      # names a library, which is the property being checked; a dynamic binary
+      # is a list of them.
+      - name: The Linux binaries are static
+        if: runner.os == 'Linux'
+        run: |
+          report=$(ldd ./"$BINARY" 2>&1 || true)
+          printf '%s\n' "$report"
+          case "$report" in
+            *"not a dynamic executable"* | *"statically linked"*) ;;
+            *)
+              echo "::error::$BINARY is dynamically linked."
+              exit 1
+              ;;
+          esac
+
+      # Under the name it will carry as a Release asset — `askance-linux-x64`
+      # rather than a target triple, because that name is what the README's
+      # install command will spell out. An artifact is a zip, so the executable
+      # bit does not survive the trip; the binary was run above, where it still
+      # had it, and whoever downloads one chmods it either way.
+      #
+      # `upload/` rather than the `assets/` next to it, which is vite's
+      # `publicDir` and the repository's own.
+      - name: Name the binary for the asset it will be
+        run: |
+          mkdir -p upload
+          cp ./"$BINARY" "upload/${{ matrix.asset }}"
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ matrix.asset }}
+          path: upload/${{ matrix.asset }}
+          if-no-files-found: error
+
+  # The Release, once every leg has succeeded. `needs` is the whole of that
+  # rule: a matrix job has failed if any of its legs did, and a job whose
+  # `needs` failed does not run — so a tag that could not be built for one
+  # architecture publishes nothing, rather than a set of three that looks
+  # complete until somebody reaches for the fourth.
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-24.04
+    # The only job that writes. Creating a Release is a write to the
+    # repository's contents, and it is granted here rather than at the top of
+    # the file so that the build legs never hold a token that can publish.
+    permissions:
+      contents: write
+    steps:
+      # The four binaries, and not the viewer artifact this run is also
+      # holding: `pattern` is what leaves it behind. `merge-multiple` unwraps
+      # the per-artifact directories, so what lands in `binaries/` is four
+      # files under the names the legs gave them — which are the names the
+      # assets carry, and the names the README's install command will spell.
+      - name: Fetch the binaries
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: askance-*
+          merge-multiple: true
+          path: binaries
+
+      # What the pattern matched, counted before anything is published, and
+      # counted through the same glob the upload below hands to `gh`. `needs`
+      # says all four legs passed; this says all four arrived, which a
+      # mistyped pattern would not.
+      - name: All four binaries are here
+        run: |
+          ls -l binaries
+          # So that a glob matching nothing counts as none, rather than as the
+          # one unexpanded pattern bash would otherwise leave behind.
+          shopt -s nullglob
+          binaries=(binaries/askance-*)
+          if [ "${#binaries[@]}" -ne 4 ]; then
+            echo "::error::Expected four binaries, found ${#binaries[@]}."
+            exit 1
+          fi
+
+      # `gh` rather than a release action: it is on the runner already and it
+      # takes the workflow's own token, so there is no third-party version to
+      # pin for what is one API call. It is given the repository by name
+      # because this job has no checkout to infer one from — it wants the
+      # binaries, and none of the sources.
+      #
+      # A pre-release is semver's own rule, a hyphen after the version, as in
+      # `v0.1.0-rc.1`. A throwaway tag rehearsing this workflow is one of
+      # those: marking it keeps `releases/latest` on the newest real version,
+      # and keeps a rehearsal from reading as the project's first release.
+      #
+      # Notes are generated rather than written. There is nobody to write them
+      # at the moment a tag is pushed, and a release with an empty body is
+      # worse than one listing what landed since the last tag.
+      - name: Publish the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          case "$TAG" in
+            *-*) prerelease=(--prerelease) ;;
+            *) prerelease=() ;;
+          esac
+          gh release create "$TAG" --generate-notes "${prerelease[@]}" \
+            binaries/askance-*
+
+      # What GitHub says it now has, in the log of the run that put it there —
+      # the asset names an adopter's url has to match, and whether the tag was
+      # read as a pre-release. The `manifest` job below reads this same Release
+      # back to hash it; this is the same answer, for a human.
+      - name: What was published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release view "$TAG" --json isPrerelease,assets
+
+  # What the Release now holds, written down where stage 04's flake can read it.
+  # The flake fetches by url and verifies by hash, and nothing about it is
+  # hand-edited, so this job is the only thing standing between a release and a
+  # flake that still points at the version before it.
+  #
+  # It runs after `publish` rather than beside it because the assets it hashes
+  # are the published ones — see the hashing step for why that distinction is
+  # the point of the job.
+  manifest:
+    name: Manifest
+    needs: publish
+    runs-on: ubuntu-24.04
+    # The second and last job that writes: the manifest is a commit on `main`.
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      # Where the four assets now live. Built once here because both the step
+      # that hashes them and the manifest it writes need the same urls, and a
+      # url the manifest only resembles is a url nobody checked.
+      DOWNLOAD_BASE: >-
+        ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}
+    steps:
+      # `main`, not the tag: the commit goes on top of whatever `main` has
+      # reached by now. What the tag's own tree held is beside the point — the
+      # manifest describes the Release, and the Release is already built.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+
+      # Keyed by nix system name rather than by asset name, because a nix system
+      # name is what the consumer already has in hand — the flake asks for
+      # `x86_64-linux`, not for `askance-linux-x64`.
+      #
+      # Hashes are SRI, which is what `fetchurl` takes verbatim, so there is no
+      # conversion step at the point of use. `sha256sum` speaks hex and SRI is
+      # base64 of the same digest, which is the whole of what the `basenc` pair
+      # is doing: decode the hex, re-encode as base64.
+      #
+      # Downloaded rather than read off the `publish` job's artifacts, so what
+      # the manifest promises is what an adopter actually receives. A hash taken
+      # from the build output would still be a true hash of a file we built; it
+      # would just have never been compared against the one GitHub serves.
+      - name: Build the manifest
+        run: |
+          mkdir -p downloads
+          systems='{}'
+          for pair in \
+            x86_64-linux:askance-linux-x64 \
+            aarch64-linux:askance-linux-arm64 \
+            x86_64-darwin:askance-macos-x64 \
+            aarch64-darwin:askance-macos-arm64
+          do
+            system=${pair%%:*}
+            asset=${pair#*:}
+            url="$DOWNLOAD_BASE/$asset"
+            curl --fail --location --silent --show-error \
+              --output "downloads/$asset" "$url"
+            digest=$(sha256sum "downloads/$asset" | cut -d' ' -f1 |
+              tr 'a-f' 'A-F' | basenc --base16 --decode | basenc --base64)
+            systems=$(printf '%s' "$systems" | jq \
+              --arg system "$system" --arg url "$url" \
+              --arg hash "sha256-$digest" \
+              '.[$system] = {url: $url, hash: $hash}')
+          done
+          # The tag without its leading `v`, which is how Cargo.toml and the
+          # flake both spell a version.
+          jq -n --arg version "${TAG#v}" --argjson systems "$systems" \
+            '{version: $version, systems: $systems}' > nix/release.json
+          cat nix/release.json
+
+      # The same claim again, but read only through the file — every url and
+      # every hash comes back out of the manifest rather than out of the loop
+      # that wrote it. That is what makes this more than a repeat: a step that
+      # paired a hash with the wrong system would have agreed with itself above,
+      # and disagrees here, because the download is now driven by the url the
+      # manifest actually recorded for that system.
+      - name: The manifest matches what was published
+        run: |
+          if [ "$(jq -r .version nix/release.json)" != "${TAG#v}" ]; then
+            echo "::error::The manifest does not name $TAG."
+            exit 1
+          fi
+          if [ "$(jq -r '.systems | length' nix/release.json)" -ne 4 ]; then
+            echo "::error::The manifest does not carry all four nix systems."
+            exit 1
+          fi
+          mkdir -p verify
+          drift=0
+          # Fed by process substitution rather than a pipe, so the loop runs in
+          # this shell and `drift` survives it.
+          while read -r system url hash; do
+            curl --fail --location --silent --show-error \
+              --output verify/asset "$url"
+            digest=$(sha256sum verify/asset | cut -d' ' -f1 |
+              tr 'a-f' 'A-F' | basenc --base16 --decode | basenc --base64)
+            if [ "sha256-$digest" != "$hash" ]; then
+              echo "::error::$system: the manifest says $hash, but $url is sha256-$digest."
+              drift=1
+            else
+              echo "$system $hash"
+            fi
+          done < <(jq -r '.systems | to_entries[] |
+            "\(.key) \(.value.url) \(.value.hash)"' nix/release.json)
+          exit "$drift"
+
+      # Straight onto `main`, with no pull request — the exception this project
+      # makes to its own review process, and `docs/agents/git-workflow.md`
+      # records why: a manifest that needs a merge per release is a manifest
+      # that goes stale the first time somebody is busy.
+      #
+      # The author is the bot, not whoever pushed the tag. That address is
+      # GitHub's own for `github-actions[bot]`, so the commit is attributed to
+      # the app in the UI rather than to a person who never wrote it.
+      #
+      # Nothing re-triggers: a push made with the workflow's own `GITHUB_TOKEN`
+      # does not start a workflow run, so this neither re-enters CI nor loops
+      # back into this workflow. `release.yml` is tag-only besides.
+      #
+      # A rejected push means `main` moved between the checkout and here, which
+      # fails the run loudly; re-running the job checks out the new `main` and
+      # writes the same manifest onto it.
+      - name: Commit the manifest to main
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email \
+            '41898282+github-actions[bot]@users.noreply.github.com'
+          git add nix/release.json
+          # A re-run of a release that already landed its manifest has nothing
+          # to say, and an empty commit would say it anyway.
+          if git diff --cached --quiet; then
+            echo "The manifest already describes $TAG; nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore: release manifest for $TAG"
+          git push origin HEAD:main
