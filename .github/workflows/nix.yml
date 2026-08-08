@@ -1,0 +1,72 @@
+# `nix flake check`: the viewer's suite built hermetically, and the NixOS module
+# booted in a VM — the only automated check that module has.
+#
+# A file of its own rather than a job in `ci.yml`, because what differs is the
+# trigger and not the work. Here `on:` states the rule outright; as a job in
+# `ci.yml` it would have to be an `if: github.event_name == 'push'`, which only
+# reads as "on `main`" for as long as nobody adds a branch to that workflow's
+# push trigger.
+name: Nix
+
+# Pushes to `main` only. This is the slow path — see the timing note on the
+# flake check step — and holding every branch's feedback behind it would cost
+# more than it buys. Landing on `main` is where it earns its place.
+on:
+  push:
+    branches: [main]
+
+# Nothing here writes anything back; the default token would otherwise carry
+# write access to the repository's contents.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Flake check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # The VM test needs KVM, and the runner image does have `/dev/kvm` — what
+      # it does not have is anyone able to open it. Nix bind-mounts the device
+      # into the build sandbox when it exists, but runs builds as its own
+      # `nixbld` users, which are in no group we can add ourselves to; so the
+      # rule widens the mode rather than granting a membership.
+      #
+      # Without this the module check does not silently degrade — Nix refuses
+      # the build outright, because `runNixOSTest` asks the builder for the
+      # `kvm` system feature and the daemon only advertises it when it can open
+      # the device.
+      - name: Make /dev/kvm openable
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm-for-all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.11.0
+
+      # Proof that the step above took, read from the daemon rather than from
+      # the device: `kvm` in this list is the daemon saying it could open
+      # `/dev/kvm`, and `nixos-test` is the other feature the VM test asks for.
+      # If a future runner image withdraws KVM, this is the step that says so
+      # in one line, rather than a build failure eight minutes later.
+      - name: The builder offers kvm
+        run: |
+          features=$(nix config show system-features)
+          echo "$features"
+          case " $features " in
+            *" kvm "*) ;;
+            *) echo "::error::The runner cannot offer KVM, so the VM test cannot boot."; exit 1 ;;
+          esac
+
+      # No Nix store cache, on the measurement rather than on principle. A cold
+      # store — 178 derivations built here, ~1000 substituted from
+      # cache.nixos.org — ran green in 8 minutes on 2026-08-08, of which the VM
+      # itself was 23 seconds; the rest is rust. That is affordable on `main`
+      # alone. A later stage that makes this slower, or that wants it on
+      # branches too, has a number here to beat before adding a cache.
+      - name: Flake check
+        run: nix flake check --print-build-logs
