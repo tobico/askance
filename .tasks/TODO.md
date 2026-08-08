@@ -11,7 +11,7 @@ and keeps the Liveness badge honest.
 
 ## Tasks
 
-- [ ] 01: Refetch on reopen — [details](01-refetch-on-reopen.md)
+- [x] 01: Refetch on reopen — [details](01-refetch-on-reopen.md)
 - [ ] 02: The server Nudges — [details](02-server-nudges.md)
 - [ ] 03: The page listens — [details](03-page-listens.md)
 - [ ] 04: The worker relays — [details](04-worker-relays.md)
