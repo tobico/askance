@@ -64,3 +64,52 @@ jobs:
             git diff
             exit 1
           fi
+
+  # The viewer's own checks, on the viewer's own sources. Nothing here waits on
+  # the Rust job and nothing there waits on this one: neither produces anything
+  # the other reads, so they run side by side.
+  viewer:
+    name: Viewer
+    runs-on: ubuntu-24.04
+    # Every step below is the viewer's, and `web/` is where its `package.json`
+    # lives. Said once here rather than on each step.
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # pnpm before node, because the node cache below asks pnpm where its store
+      # is. 10.28.0 is the flake's, and `web/pnpm-lock.yaml` is
+      # `lockfileVersion: 9.0` — whatever pnpm the runner image happens to ship
+      # is not a version we have agreed to.
+      - name: Install pnpm 10.28.0
+        uses: pnpm/action-setup@v6.0.10
+        with:
+          version: 10.28.0
+
+      # Also the flake's, down to the patch. `cache: pnpm` caches the pnpm store
+      # keyed on the lockfile, so an unchanged lockfile means an install that
+      # unpacks rather than downloads.
+      - name: Install Node 22.22.2
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22.22.2
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # `--frozen-lockfile` is the point of the step: a `package.json` that has
+      # moved away from the lockfile fails here, rather than being quietly
+      # resolved into whatever is newest today.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Typecheck as well as test, for the reason `nix/web.nix` gives: a
+      # component that only compiles because vite erases the types would pass
+      # vitest and fail nobody, and the generated `web/src/api/types.ts` is only
+      # worth generating if something checks the viewer against it.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
