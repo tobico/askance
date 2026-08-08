@@ -14,4 +14,4 @@ and keeps the Liveness badge honest.
 - [x] 01: Refetch on reopen — [details](01-refetch-on-reopen.md)
 - [x] 02: The server Nudges — [details](02-server-nudges.md)
 - [x] 03: The page listens — [details](03-page-listens.md)
-- [ ] 04: The worker relays — [details](04-worker-relays.md)
+- [x] 04: The worker relays — [details](04-worker-relays.md)

@@ -15,10 +15,14 @@ self.addEventListener("fetch", () => {});
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
-// A Question Set has arrived. Every push the server sends is one, and every one
-// of them shows a notification: the subscription was made with
+// A Question Set has arrived. Every push the server sends is one, and it does
+// two things with it: it shows a notification, and it tells every Askance that
+// is already open to look again.
+//
+// The notification is not the negotiable half. The subscription was made with
 // `userVisibleOnly`, and a push that showed nothing would cost the subscription
-// itself.
+// itself — so it is shown even where a window is open on the very list the Nudge
+// beside it is about to refresh.
 self.addEventListener("push", (event) => {
   const notice = read(event.data);
 
@@ -26,15 +30,18 @@ self.addEventListener("push", (event) => {
   // waiting rather than that some decision is. The project goes in the body,
   // because it is what tells two Sets apart at a glance.
   event.waitUntil(
-    self.registration.showNotification(notice.title || "A Question Set is waiting", {
-      body: notice.project ? `Askance · ${notice.project}` : "Askance",
-      icon: "/icons/icon-192.png",
-      // One notification per Set, tagged by its id: a push service that
-      // delivers the same push twice then replaces the notification instead of
-      // stacking a second one over it.
-      tag: notice.id ? `askance-set-${notice.id}` : "askance",
-      data: { url: notice.id ? `/sets/${notice.id}` : "/" },
-    }),
+    Promise.all([
+      self.registration.showNotification(notice.title || "A Question Set is waiting", {
+        body: notice.project ? `Askance · ${notice.project}` : "Askance",
+        icon: "/icons/icon-192.png",
+        // One notification per Set, tagged by its id: a push service that
+        // delivers the same push twice then replaces the notification instead of
+        // stacking a second one over it.
+        tag: notice.id ? `askance-set-${notice.id}` : "askance",
+        data: { url: notice.id ? `/sets/${notice.id}` : "/" },
+      }),
+      nudge(),
+    ]),
   );
 });
 
@@ -44,6 +51,31 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(open((event.notification.data || {}).url || "/"));
 });
+
+// Tell every open Askance that the pending world moved. The page reacts to this
+// exactly as it does to a Nudge down the server's stream — look again at
+// everything it is showing — and nothing here says what changed, because a Nudge
+// never does.
+//
+// This is the second of the two channels the viewer's freshness is layered from.
+// The stream is instant while the page is alive but dies when iOS suspends the
+// PWA; the push that woke this worker survived exactly that. Each covers the
+// other's gap, and neither has to work: the ten-second poll is underneath both.
+//
+// The message is named, so a page is never left guessing at whatever else may
+// one day be posted to it. The page's half is `web/src/nudge.ts`, which cannot
+// share the name with this file: a worker is a static file served from the site
+// root rather than a module of the bundle.
+async function nudge() {
+  // includeUncontrolled, for the same reason opening a notification's Set does:
+  // a page loaded before this worker took control is still an open Askance, and
+  // it is the one that would otherwise sit on the poll alone.
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+
+  for (const client of windows) {
+    client.postMessage({ askance: "nudge" });
+  }
+}
 
 // What the server sent, or an empty notice if it sent something unreadable —
 // a notification saying a Set is waiting is still worth more than none.

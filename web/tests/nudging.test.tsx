@@ -1,23 +1,32 @@
-//! The Nudge stream: the open page being told the pending world moved, and
-//! looking again because of it.
+//! The Nudge: the open page being told the pending world moved, and looking
+//! again because of it — over the server's stream, and relayed by the service
+//! worker off a push (ADR-0005).
 //!
 //! Driven through `App` for the same reason `resuming` is — what the Nudge acts
 //! on is the app's own query client, and a test that built a client of its own
 //! would be asserting its own arrangement rather than the app's.
 //!
 //! The clock is held still throughout, except where the poll is the thing being
-//! asked about: anything a page learns here it learned from the stream, because
-//! the fallback underneath never ran.
+//! asked about: anything a page learns here it learned from a Nudge, because the
+//! fallback underneath never ran.
 
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/App";
-import type { PendingEntry } from "../src/api/types";
+import type { PendingEntry, SetView } from "../src/api/types";
 import { json, serving } from "./serving";
+import { worker } from "./worker";
 import pending from "./fixtures/pending.json" with { type: "json" };
+import answered from "./fixtures/set-answered.json" with { type: "json" };
+import answering from "./fixtures/set-answering.json" with { type: "json" };
 
 const SETS = pending as PendingEntry[];
+
+/// One Set twice over: waiting when the page was drawn, answered from another
+/// device by the time a Nudge says to look again.
+const WAITING = answering as SetView;
+const ANSWERED = answered as SetView;
 
 /// The Set the stream is there to be immediate about — submitted while the
 /// human is looking straight at the list it belongs on.
@@ -83,6 +92,68 @@ function stream(): Streaming {
   return opened;
 }
 
+/// A stand-in for `navigator.serviceWorker`, the page's end of the relay, which
+/// jsdom has none of either.
+class Container {
+  private readonly listeners = new Set<(event: MessageEvent) => void>();
+
+  addEventListener(
+    _name: "message",
+    listener: (event: MessageEvent) => void,
+  ): void {
+    this.listeners.add(listener);
+  }
+
+  removeEventListener(
+    _name: "message",
+    listener: (event: MessageEvent) => void,
+  ): void {
+    this.listeners.delete(listener);
+  }
+
+  /// Whether anything on the page is still listening for a relayed Nudge.
+  get listening(): boolean {
+    return this.listeners.size > 0;
+  }
+
+  /// One message from the worker, as the browser hands it over.
+  delivers(data: unknown): void {
+    for (const listener of [...this.listeners]) {
+      listener(new MessageEvent("message", { data }));
+    }
+  }
+}
+
+/// A browser whose worker can reach this page. Defined on the real navigator
+/// rather than stubbed over it, because everything else the app reads there is
+/// still wanted — and taken away again after the test.
+function attaches(): Container {
+  const container = new Container();
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    value: container,
+  });
+  return container;
+}
+
+/// A push arriving at the service worker and relayed on, as the worker relays
+/// it: the message delivered is the worker's own — `assets/sw.js` driven with a
+/// real push — so what the page is asked about is what it will really be sent
+/// rather than a guess at it.
+async function pushed(container: Container): Promise<void> {
+  const sw = worker();
+  sw.opens();
+  await sw.pushes({
+    id: ARRIVAL.id,
+    title: ARRIVAL.title,
+    project: ARRIVAL.project,
+  });
+
+  for (const message of sw.relayed) {
+    container.delivers(message);
+  }
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   Streaming.opened = [];
@@ -92,6 +163,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  // The property is this test's own, over a navigator every other test shares.
+  delete (navigator as { serviceWorker?: unknown }).serviceWorker;
 });
 
 describe("the Nudge stream", () => {
@@ -164,5 +237,90 @@ describe("the Nudge stream", () => {
     // The stream is the fast path, never the only one: a page that cannot have
     // one at all still keeps up, ten seconds at a time.
     expect(fetching).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("a Nudge relayed by the worker", () => {
+  it("shows the Set the push was about, with no stream to hear it on", async () => {
+    window.history.pushState({}, "", "/");
+    // The list as the server would answer for it now, which the arrival changes
+    // under the open page exactly as it does in the world.
+    let listed = SETS;
+    const fetching = serving(() => json(listed)());
+    const container = attaches();
+    render(() => <App />);
+    await waitFor(() => screen.getByText(SETS[0]!.title));
+    const read = fetching.mock.calls.length;
+
+    listed = [ARRIVAL, ...SETS];
+    await pushed(container);
+
+    await waitFor(() => screen.getByText(ARRIVAL.title));
+    // One read more than the page had already done, and not one beyond it: the
+    // stream never opened — which is what a suspended PWA leaves behind — and
+    // the clock never moved, so the poll never ran either. The push is the whole
+    // of how this page found out.
+    expect(fetching).toHaveBeenCalledTimes(read + 1);
+  });
+
+  it("reads everything back, exactly as a Nudge on the stream does", async () => {
+    window.history.pushState({}, "", `/sets/${WAITING.id}`);
+    serving(json(WAITING), json(ANSWERED));
+    const container = attaches();
+    const { container: page } = render(() => <App />);
+    // The badge and the menu under it belong to a Set still waiting: the page
+    // as it was drawn.
+    await waitFor(() => expect(page.querySelector(".standing")).toBeTruthy());
+
+    await pushed(container);
+
+    // A relayed Nudge is as contentless as a streamed one — it says a Set
+    // arrived, not which — so the reaction is the same either way: everything
+    // this page is showing, which here is a Set answered elsewhere in the
+    // meantime.
+    await waitFor(() => expect(page.querySelector(".answered-at")).toBeTruthy());
+  });
+
+  it("ignores a message that is not a Nudge", async () => {
+    window.history.pushState({}, "", "/");
+    const fetching = serving(json(SETS));
+    const container = attaches();
+    render(() => <App />);
+    await waitFor(() => screen.getByText(SETS[0]!.title));
+    const read = fetching.mock.calls.length;
+
+    container.delivers({ askance: "something else" });
+    container.delivers("a message from somewhere else entirely");
+    container.delivers(null);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Whatever else may one day be posted to a page, by this worker or another,
+    // is not a Nudge until it says so.
+    expect(fetching).toHaveBeenCalledTimes(read);
+  });
+
+  it("stops listening when the app goes", async () => {
+    window.history.pushState({}, "", "/");
+    serving(json(SETS));
+    const container = attaches();
+    const { unmount } = render(() => <App />);
+    await waitFor(() => screen.getByText(SETS[0]!.title));
+    expect(container.listening).toBe(true);
+
+    unmount();
+
+    // Nothing is left holding a query client that has no page to refresh.
+    expect(container.listening).toBe(false);
+  });
+
+  it("shrugs where the browser has no worker at all", async () => {
+    window.history.pushState({}, "", "/");
+    serving(json(SETS));
+
+    // No `attaches()`: jsdom has no `navigator.serviceWorker`, which is the same
+    // absence a browser without service workers presents. The page loses the
+    // relay and nothing else.
+    expect(() => render(() => <App />)).not.toThrow();
+    await waitFor(() => screen.getByText(SETS[0]!.title));
   });
 });

@@ -34,6 +34,12 @@ export default defineConfig(({ mode }) => ({
     proxy: {
       "/api": SERVER,
     },
+
+    // Under vitest, let a test read a file above this directory — which
+    // `relaying.test.ts` does, the service worker it drives being `assets/sw.js`
+    // at the repo root rather than a module of this bundle. Said only for the
+    // test run: what the dev server hands a browser stays inside `web/`.
+    ...(mode === "test" ? { fs: { allow: [".."] } } : {}),
   },
 
   resolve: {
