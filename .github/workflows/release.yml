@@ -4,7 +4,8 @@
 # that will not build, or that builds something that will not run, fails the
 # run rather than reaching a Release.
 #
-# The manifest that stage 04's binary flake reads is the next task's.
+# A last job then records what was published in `nix/release.json` and commits
+# it to `main`, which is the whole interface to stage 04's binary flake.
 #
 # Pinned throughout, as `ci.yml` is: actions to released versions, runners to
 # images rather than `-latest`, and Rust to the patch version the flake's
@@ -19,8 +20,8 @@ on:
 
 # Read at the top, so that the jobs which compile the dependency tree and run
 # other people's actions hold a token that can do nothing to the repository.
-# The one job that publishes widens this for itself, and the manifest commit
-# the next task adds will do the same.
+# The two jobs that write — the Release, and the manifest commit — widen this
+# for themselves.
 permissions:
   contents: read
 
@@ -297,11 +298,148 @@ jobs:
 
       # What GitHub says it now has, in the log of the run that put it there —
       # the asset names an adopter's url has to match, and whether the tag was
-      # read as a pre-release. The next task reads this same Release back to
-      # build its manifest; this is the same answer, for a human.
+      # read as a pre-release. The `manifest` job below reads this same Release
+      # back to hash it; this is the same answer, for a human.
       - name: What was published
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: gh release view "$TAG" --json isPrerelease,assets
+
+  # What the Release now holds, written down where stage 04's flake can read it.
+  # The flake fetches by url and verifies by hash, and nothing about it is
+  # hand-edited, so this job is the only thing standing between a release and a
+  # flake that still points at the version before it.
+  #
+  # It runs after `publish` rather than beside it because the assets it hashes
+  # are the published ones — see the hashing step for why that distinction is
+  # the point of the job.
+  manifest:
+    name: Manifest
+    needs: publish
+    runs-on: ubuntu-24.04
+    # The second and last job that writes: the manifest is a commit on `main`.
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      # Where the four assets now live. Built once here because both the step
+      # that hashes them and the manifest it writes need the same urls, and a
+      # url the manifest only resembles is a url nobody checked.
+      DOWNLOAD_BASE: >-
+        ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}
+    steps:
+      # `main`, not the tag: the commit goes on top of whatever `main` has
+      # reached by now. What the tag's own tree held is beside the point — the
+      # manifest describes the Release, and the Release is already built.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+
+      # Keyed by nix system name rather than by asset name, because a nix system
+      # name is what the consumer already has in hand — the flake asks for
+      # `x86_64-linux`, not for `askance-linux-x64`.
+      #
+      # Hashes are SRI, which is what `fetchurl` takes verbatim, so there is no
+      # conversion step at the point of use. `sha256sum` speaks hex and SRI is
+      # base64 of the same digest, which is the whole of what the `basenc` pair
+      # is doing: decode the hex, re-encode as base64.
+      #
+      # Downloaded rather than read off the `publish` job's artifacts, so what
+      # the manifest promises is what an adopter actually receives. A hash taken
+      # from the build output would still be a true hash of a file we built; it
+      # would just have never been compared against the one GitHub serves.
+      - name: Build the manifest
+        run: |
+          mkdir -p downloads
+          systems='{}'
+          for pair in \
+            x86_64-linux:askance-linux-x64 \
+            aarch64-linux:askance-linux-arm64 \
+            x86_64-darwin:askance-macos-x64 \
+            aarch64-darwin:askance-macos-arm64
+          do
+            system=${pair%%:*}
+            asset=${pair#*:}
+            url="$DOWNLOAD_BASE/$asset"
+            curl --fail --location --silent --show-error \
+              --output "downloads/$asset" "$url"
+            digest=$(sha256sum "downloads/$asset" | cut -d' ' -f1 |
+              tr 'a-f' 'A-F' | basenc --base16 --decode | basenc --base64)
+            systems=$(printf '%s' "$systems" | jq \
+              --arg system "$system" --arg url "$url" \
+              --arg hash "sha256-$digest" \
+              '.[$system] = {url: $url, hash: $hash}')
+          done
+          # The tag without its leading `v`, which is how Cargo.toml and the
+          # flake both spell a version.
+          jq -n --arg version "${TAG#v}" --argjson systems "$systems" \
+            '{version: $version, systems: $systems}' > nix/release.json
+          cat nix/release.json
+
+      # The same claim again, but read only through the file — every url and
+      # every hash comes back out of the manifest rather than out of the loop
+      # that wrote it. That is what makes this more than a repeat: a step that
+      # paired a hash with the wrong system would have agreed with itself above,
+      # and disagrees here, because the download is now driven by the url the
+      # manifest actually recorded for that system.
+      - name: The manifest matches what was published
+        run: |
+          if [ "$(jq -r .version nix/release.json)" != "${TAG#v}" ]; then
+            echo "::error::The manifest does not name $TAG."
+            exit 1
+          fi
+          if [ "$(jq -r '.systems | length' nix/release.json)" -ne 4 ]; then
+            echo "::error::The manifest does not carry all four nix systems."
+            exit 1
+          fi
+          mkdir -p verify
+          drift=0
+          # Fed by process substitution rather than a pipe, so the loop runs in
+          # this shell and `drift` survives it.
+          while read -r system url hash; do
+            curl --fail --location --silent --show-error \
+              --output verify/asset "$url"
+            digest=$(sha256sum verify/asset | cut -d' ' -f1 |
+              tr 'a-f' 'A-F' | basenc --base16 --decode | basenc --base64)
+            if [ "sha256-$digest" != "$hash" ]; then
+              echo "::error::$system: the manifest says $hash, but $url is sha256-$digest."
+              drift=1
+            else
+              echo "$system $hash"
+            fi
+          done < <(jq -r '.systems | to_entries[] |
+            "\(.key) \(.value.url) \(.value.hash)"' nix/release.json)
+          exit "$drift"
+
+      # Straight onto `main`, with no pull request — the exception this project
+      # makes to its own review process, and `docs/agents/git-workflow.md`
+      # records why: a manifest that needs a merge per release is a manifest
+      # that goes stale the first time somebody is busy.
+      #
+      # The author is the bot, not whoever pushed the tag. That address is
+      # GitHub's own for `github-actions[bot]`, so the commit is attributed to
+      # the app in the UI rather than to a person who never wrote it.
+      #
+      # Nothing re-triggers: a push made with the workflow's own `GITHUB_TOKEN`
+      # does not start a workflow run, so this neither re-enters CI nor loops
+      # back into this workflow. `release.yml` is tag-only besides.
+      #
+      # A rejected push means `main` moved between the checkout and here, which
+      # fails the run loudly; re-running the job checks out the new `main` and
+      # writes the same manifest onto it.
+      - name: Commit the manifest to main
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email \
+            '41898282+github-actions[bot]@users.noreply.github.com'
+          git add nix/release.json
+          # A re-run of a release that already landed its manifest has nothing
+          # to say, and an empty commit would say it anyway.
+          if git diff --cached --quiet; then
+            echo "The manifest already describes $TAG; nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore: release manifest for $TAG"
+          git push origin HEAD:main
