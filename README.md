@@ -10,28 +10,9 @@ agent uses to put questions to you. The CLI blocks on your answer so your agent
 waits on you, and you can answer whenever you're ready without wasting any
 tokens.
 
-## Getting started
+## Installation
 
-### Installation
-
-#### User binary
-
-Askance is distributed as a single binary, which you download and run from your
-home folder. It runs on Linux, Mac, and Windows via WSL.
-
-```console
-mkdir -p ~/.local/bin && curl -fsSL -o ~/.local/bin/askance \
-  "https://github.com/tobico/askance/releases/latest/download/askance-$(uname -s | tr '[:upper:]' '[:lower:]' | sed s/darwin/macos/)-$(uname -m | sed -e s/x86_64/x64/ -e s/aarch64/arm64/)" \
-  && chmod +x ~/.local/bin/askance
-```
-
-You can run the server manually with `askance serve`, by default it will listen
-on '127.0.0.1:8422". I recommend setting up systemd config to run it
-automatically on system start:
-
-EXAMPLE GOES HERE
-
-#### Nix flake
+### NixOS
 
 Add the following to your nix flake to install fully on nix.
 
@@ -42,9 +23,139 @@ inputs.askance = {
   inputs.nixpkgs.follows = "nixpkgs";
 };
 
-# Enables the askance server daemon and CLI utility.
-services.askance.enable = true;
+# The module comes from the input rather than from pkgs, so it has to be
+# imported before it can be enabled. In your host's module list:
+modules = [
+  askance.nixosModules.askance
+  { services.askance.enable = true; }
+];
 ```
+
+This runs the server daemon under its own user, and adds the Askance CLI to
+every user's `PATH`.
+
+### Other Linux, Mac, Windows
+
+Askance is distributed as a single binary, which you download and run from your
+home folder. It runs on Linux, Mac, and Windows via WSL.
+
+```console
+mkdir -p ~/.local/bin && curl -fsSL -o ~/.local/bin/askance \
+  "https://github.com/tobico/askance/releases/latest/download/askance-$(uname -s | tr '[:upper:]' '[:lower:]' | sed s/darwin/macos/)-$(uname -m | sed -e s/x86_64/x64/ -e s/aarch64/arm64/)" \
+  && chmod +x ~/.local/bin/askance
+```
+
+`~/.local/bin` needs to be on your `PATH`, which on most systems it already is.
+
+You can run the server manually with `askance serve`, by default it will listen
+on `127.0.0.1:8422`. Open <http://127.0.0.1:8422/> and you'll find the pending
+list, which is where your agent's questions turn up.
+
+#### Askance Server on Linux
+
+Askance server works fine run manually, but for convenience you can add it
+to your systemd to have it start automatically with your machine.
+
+The unit below runs as a user of its own, so put the binary somewhere that user
+can reach it and create the account:
+
+```console
+sudo cp ~/.local/bin/askance /usr/local/bin/
+sudo useradd --system --user-group --no-create-home \
+  --shell /usr/sbin/nologin askance
+```
+
+Then `/etc/systemd/system/askance.service`:
+
+```ini
+[Unit]
+Description=Askance — questions from coding agents to a human
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/askance serve --listen 127.0.0.1:8422 \
+    --database /var/lib/askance/askance.db
+
+User=askance
+Group=askance
+
+# systemd creates /var/lib/askance, owned by the service user, before the first
+# start and leaves it there across restarts — which is what keeps the Archive
+# and the push subscriptions. Relative paths resolve here too.
+StateDirectory=askance
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/askance
+
+# An agent is blocked on an answer whenever the server is down, so come back
+# rather than sit in a failed state.
+Restart=always
+RestartSec=5s
+
+# Enough hardening to be worth having, without breaking the two things that
+# matter: SQLite in WAL mode, which writes `-wal` and `-shm` beside the
+# database and so needs a writable directory rather than a writable file, and
+# outbound HTTPS to the push services, whose addresses cannot be enumerated
+# ahead of time.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```console
+sudo systemctl daemon-reload
+sudo systemctl enable --now askance
+```
+
+#### Askance Server on Mac
+
+MacOS doesn't have systemd, it's equivalent is launchd.
+
+A per-user agent, running as you, in
+`~/Library/LaunchAgents/net.tobico.askance.plist`. launchd doesn't expand `~`,
+so the paths are spelled out — replace `you` with your username:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>net.tobico.askance</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/you/.local/bin/askance</string>
+    <string>serve</string>
+    <string>--listen</string>
+    <string>127.0.0.1:8422</string>
+    <string>--database</string>
+    <string>/Users/you/Library/Application Support/askance/askance.db</string>
+  </array>
+  <!-- Start at login, and come back if it dies — an agent is blocked on an
+       answer for as long as the server is down. -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>
+```
+
+```console
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/net.tobico.askance.plist
+launchctl print gui/$(id -u)/net.tobico.askance
+```
+
+The database's parent directory is created for you, so there's nothing to set
+up before the first start.
 
 ### Configuring your agent
 
@@ -59,7 +170,7 @@ built-in guides on how to use it effectively as needed.
 
 ## Skills
 
-Askance is designed to be especially useful in two sitations:
+Askance is designed to be especially useful in two situations:
 
 1. When your agent asks you a lot of questions
 2. When your agent leaves code uncommitted as an acceptance gate, asking your
@@ -76,7 +187,7 @@ or prompting approach you prefer, Askance will adapt to it.
   Inspired by the [Matt Pocock grilling skill](https://github.com/mattpocock/skills)
 
 **[Acceptance gate](examples/skills/acceptance-gate.md)** — puts a gate before
-  commiting code changes. The agent waits for your feedback and addresses it,
+  committing code changes. The agent waits for your feedback and addresses it,
   only proceeding to commit the code with your express approval.
 
 ## Securing access
@@ -114,8 +225,13 @@ To check the current version, run `askance --version`
 binary in place, then restart the server.
 
 **Installed from the flake:** Run `nix flake update askance` in your host
-configuration, then rebuild. Then run `sudo systemctl restart askance` to
-restart the server.
+configuration, then rebuild — the rebuild restarts the service for you.
+
+The database is untouched either way, so the Archive and your phone's push
+subscription come back with the new binary. The server also asks GitHub once a
+day whether a newer release exists, and puts a banner above the pending list
+when there is one; it never installs anything itself, and
+`ASKANCE_NO_UPDATE_CHECK` turns the check off.
 
 ## Configuration
 
@@ -130,4 +246,23 @@ Askance can be configured by environment variables or CLI options:
 
 ## Other documentation
 
-LINKS TO DOCS HERE
+**[Deployment](docs/deployment.md)** — running the server as a service, in
+full: the NixOS module this flake carries, and a systemd unit for a host that
+isn't NixOS.
+
+**[On your phone](docs/phone.md)** — `tailscale serve`, adding the site to your
+home screen, turning notifications on per device, and how the long waits behave
+through the proxy.
+
+**[Development](docs/development.md)** — the dev shell, building the viewer,
+and the loop for working on Askance itself.
+
+**[Releasing](docs/releasing.md)** — how a tag becomes the binaries the install
+command above fetches.
+
+**[CONTEXT.md](CONTEXT.md)** — the project's vocabulary. Question Set, Preface,
+Answer, Response and the rest, defined once.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
