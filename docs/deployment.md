@@ -1,11 +1,12 @@
 # Deployment
 
 Answering from the phone is only half of it: the server also has to be up when
-nobody has a terminal open. This guide is the two ways of getting there — the
-NixOS module this flake carries, and a systemd unit for a host that is not
-NixOS.
+nobody has a terminal open. This guide is the ways of getting there — the NixOS
+module this flake carries, and, for a host that is not NixOS, a systemd unit in
+either of its two shapes: yours, running the binary in your home, or the
+system's, running one under an account of its own.
 
-Either way the server binds loopback and speaks plain HTTP. HTTPS is
+Every way of it binds loopback and speaks plain HTTP. HTTPS is
 [`tailscale serve`](phone.md#1-put-tailscale-serve-in-front-of-it) in front of
 it, and stays host-level configuration in both.
 
@@ -104,11 +105,88 @@ that is not a notification.
 ## Anywhere else: a systemd unit
 
 Without the module, the same shape is a unit file you write once. The Linux
-release assets are statically linked, so the whole of the install is putting
-one somewhere on `PATH` — [the README](../README.md#installing-the-binary) has
-the download — and
-pointing a unit at it. The rest of this section assumes
-`/usr/local/bin/askance`.
+release assets are statically linked, so the whole of the install is one file
+somewhere — [the README](../README.md#other-linux-mac-windows) has the
+download — and a unit pointing at it.
+
+Which unit depends on where that one file lives, and there is only ever one of
+it: in your home, run by a user service as you, or in `/usr/local/bin`, run by
+a system service under an account of its own. A copy in both is what breaks
+updating — the download writes one of them and the service goes on running the
+other, so `askance --version` in a shell stops describing the server.
+
+### The one in your home: a user service
+
+The README's install leaves `~/.local/bin/askance`, and a user service runs it
+from exactly there. `~/.config/systemd/user/askance.service`:
+
+```ini
+[Unit]
+Description=Askance — questions from coding agents to a human
+After=network.target
+
+[Service]
+# %h is the home directory of whoever owns this unit, so this is the binary the
+# install command wrote — and overwriting that one file is the whole of an
+# update, picked up on the next start.
+ExecStart=%h/.local/bin/askance serve --listen 127.0.0.1:8422 \
+    --database %S/askance/askance.db
+
+# %S is the state directory root, $XDG_STATE_HOME for a user manager, so this
+# is ~/.local/state/askance — created before the first start and left there
+# across restarts, which is what keeps the Archive and the push subscriptions.
+StateDirectory=askance
+
+# An agent is blocked on an answer whenever the server is down, so come back
+# rather than sit in a failed state.
+Restart=always
+RestartSec=5s
+
+# The hardening a user service can count on. The mount-namespace options below
+# are not free here: per-user, ProtectSystem=, PrivateTmp=, ProtectHome= and
+# ProtectKernelTunables= imply PrivateUsers= and so need unprivileged user
+# namespaces, and ProtectControlGroups= is not supported at all.
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+UMask=0077
+
+[Install]
+WantedBy=default.target
+```
+
+```console
+$ systemctl --user daemon-reload
+$ systemctl --user enable --now askance
+$ sudo loginctl enable-linger $USER
+$ systemctl --user status askance
+● askance.service - Askance — questions from coding agents to a human
+     Active: active (running)
+
+$ curl http://127.0.0.1:8422/api/v1/health
+ok
+```
+
+`enable-linger` is what makes a user service a service: without it the manager
+starts at your first login and stops at your last, which is precisely when an
+agent is left blocked. Updating is the download again, into the same path, and
+`systemctl --user restart askance`.
+
+What this shape gives up is the account: the service runs as you, so the
+database and the VAPID keypair are readable by anything else you run. If that
+matters more than the single file does, the unit below is the other trade.
+
+### The alternative: a system service under its own user
+
+Here the binary lives in `/usr/local/bin` — `ProtectHome=true` below is what
+puts it there, since a service that cannot see `/home` cannot run a binary out
+of it — so install it there in the first place, and re-run this to update
+rather than copying anything across:
+
+```console
+$ sudo curl -fsSL -o /usr/local/bin/askance \
+    "https://github.com/tobico/askance/releases/latest/download/askance-linux-$(uname -m | sed -e s/x86_64/x64/ -e s/aarch64/arm64/)" \
+    && sudo chmod +x /usr/local/bin/askance
+```
 
 Give the service a user of its own, so the database and the VAPID keypair are
 not readable by everything on the box:
@@ -192,4 +270,5 @@ ok
 
 The CLI is the same binary, already on `PATH` from the install, so an agent on
 this host calls `askance ask` with nothing set in its environment. Updating is
-replacing the file and restarting the unit; the database is untouched by both.
+re-running the download above and `sudo systemctl restart askance`; the
+database is untouched by both, whichever of the two units it is.

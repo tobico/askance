@@ -56,16 +56,7 @@ list, which is where your agent's questions turn up.
 Askance server works fine run manually, but for convenience you can add it
 to your systemd to have it start automatically with your machine.
 
-The unit below runs as a user of its own, so put the binary somewhere that user
-can reach it and create the account:
-
-```console
-sudo cp ~/.local/bin/askance /usr/local/bin/
-sudo useradd --system --user-group --no-create-home \
-  --shell /usr/sbin/nologin askance
-```
-
-Then `/etc/systemd/system/askance.service`:
+`~/.config/systemd/user/askance.service`:
 
 ```ini
 [Unit]
@@ -73,45 +64,24 @@ Description=Askance — questions from coding agents to a human
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/askance serve --listen 127.0.0.1:8422 \
-    --database /var/lib/askance/askance.db
-
-User=askance
-Group=askance
-
-# systemd creates /var/lib/askance, owned by the service user, before the first
-# start and leaves it there across restarts — which is what keeps the Archive
-# and the push subscriptions. Relative paths resolve here too.
+ExecStart=%h/.local/bin/askance serve --listen 127.0.0.1:8422 \
+    --database %S/askance/askance.db
 StateDirectory=askance
-StateDirectoryMode=0750
-WorkingDirectory=/var/lib/askance
-
-# An agent is blocked on an answer whenever the server is down, so come back
-# rather than sit in a failed state.
 Restart=always
 RestartSec=5s
-
-# Enough hardening to be worth having, without breaking the two things that
-# matter: SQLite in WAL mode, which writes `-wal` and `-shm` beside the
-# database and so needs a writable directory rather than a writable file, and
-# outbound HTTPS to the push services, whose addresses cannot be enumerated
-# ahead of time.
 NoNewPrivileges=true
-PrivateTmp=true
-ProtectHome=true
-ProtectSystem=strict
-ProtectKernelTunables=true
-ProtectControlGroups=true
 RestrictSUIDSGID=true
 UMask=0077
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 ```
 
+Then start it:
+
 ```console
-sudo systemctl daemon-reload
-sudo systemctl enable --now askance
+systemctl --user daemon-reload
+systemctl --user enable --now askance
 ```
 
 #### Askance Server on Mac
@@ -222,7 +192,8 @@ your home screen. On Mobile Safari, tap "...", "Share", "View More", then
 To check the current version, run `askance --version` 
 
 **Installed with curl:** run the install command again, which overwrites the
-binary in place, then restart the server.
+binary in place, then restart the server — `systemctl --user restart askance`
+on Linux, or `launchctl kickstart -k gui/$(id -u)/net.tobico.askance` on a Mac.
 
 **Installed from the flake:** Run `nix flake update askance` in your host
 configuration, then rebuild — the rebuild restarts the service for you.
