@@ -1,21 +1,21 @@
 {
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0",
   "systems": {
     "x86_64-linux": {
-      "url": "https://github.com/tobico/askance/releases/download/v0.1.0-rc.1/askance-linux-x64",
-      "hash": "sha256-dSGhO+OSHt29isngD9J36Xy6GN/hjwAo2qYr6//ljwc="
+      "url": "https://github.com/tobico/askance/releases/download/v0.1.0/askance-linux-x64",
+      "hash": "sha256-0ORznWFFe2Wone/02ILhtDCGJbeVRmD88KfBJ7HM1AY="
     },
     "aarch64-linux": {
-      "url": "https://github.com/tobico/askance/releases/download/v0.1.0-rc.1/askance-linux-arm64",
-      "hash": "sha256-lAZ8S6Gl+esBj2wLK1zPCv1Nt9APkjhp4GCwqGTYeT0="
+      "url": "https://github.com/tobico/askance/releases/download/v0.1.0/askance-linux-arm64",
+      "hash": "sha256-RscEvnIdW+GL2fN1pr0Avnjl8odHO4aaxSemHF/O1kE="
     },
     "x86_64-darwin": {
-      "url": "https://github.com/tobico/askance/releases/download/v0.1.0-rc.1/askance-macos-x64",
-      "hash": "sha256-nZtDBKwCgcZ/Z2doxORddGUunonNfmWCG2rV//GqqJE="
+      "url": "https://github.com/tobico/askance/releases/download/v0.1.0/askance-macos-x64",
+      "hash": "sha256-uN1K51+AO2xRM85qWwaxtw8nhywPEMJnm6VKszkifsE="
     },
     "aarch64-darwin": {
-      "url": "https://github.com/tobico/askance/releases/download/v0.1.0-rc.1/askance-macos-arm64",
-      "hash": "sha256-WlUKh9pViTycMePimvrzDc8WhHlmXM9T7LF+0xPoeLA="
+      "url": "https://github.com/tobico/askance/releases/download/v0.1.0/askance-macos-arm64",
+      "hash": "sha256-WO0i2IekaYIphGQOltEhN0DGI6asdoYOH6DS0VJytL0="
     }
   }
 }
