@@ -4,11 +4,10 @@ Askance is a simple and beautiful human-in-the-loop GUI for answering questions
 from an AI coding agent such as Claude Code, either in the browser or on the go
 with your phone.
 
-It works by combining a server that you run locally and access from your phone
-via Tailscale, and a small self-documenting command-line utility which your
-agent uses to put questions to you. The CLI blocks on your answer so your agent
-waits on you, and you can answer whenever you're ready without wasting any
-tokens.
+It works by combining a server which you run locally with a self-documenting
+command-line utility which your agent uses to put questions to you. The CLI
+blocks on your answer so your agent waits for you, you answer whenever you're
+ready.
 
 #### Features
 
