@@ -1,11 +1,11 @@
 # Askance
 
-Askance is simple and beautiful human-in-the-loop GUI for answering questions
+Askance is a simple and beautiful human-in-the-loop GUI for answering questions
 from an AI coding agent such as Claude Code, either in the browser or on the go
 with your phone.
 
 It works by combining a server that you run locally and access from your phone
-via Tailscale, and a small self-documenting command line utility which your
+via Tailscale, and a small self-documenting command-line utility which your
 agent uses to put questions to you. The CLI blocks on your answer so your agent
 waits on you, and you can answer whenever you're ready without wasting any
 tokens.
@@ -47,14 +47,14 @@ mkdir -p ~/.local/bin && curl -fsSL -o ~/.local/bin/askance \
 
 `~/.local/bin` needs to be on your `PATH`, which on most systems it already is.
 
-You can run the server manually with `askance serve`, by default it will listen
+You can run the server manually with `askance serve`; by default it will listen
 on `127.0.0.1:8422`. Open <http://127.0.0.1:8422/> and you'll find the pending
 list, which is where your agent's questions turn up.
 
 #### Askance Server on Linux
 
-Askance server works fine run manually, but for convenience you can add it
-to your systemd to have it start automatically with your machine.
+Askance server works fine when run manually, but for convenience you can add a
+systemd user unit to have it start automatically with your machine.
 
 `~/.config/systemd/user/askance.service`:
 
@@ -86,9 +86,9 @@ systemctl --user enable --now askance
 
 #### Askance Server on Mac
 
-MacOS doesn't have systemd, it's equivalent is launchd.
+macOS doesn't have systemd; its equivalent is launchd.
 
-A per-user agent, running as you, in
+Create a per-user agent, running as you, in
 `~/Library/LaunchAgents/net.tobico.askance.plist`. launchd doesn't expand `~`,
 so the paths are spelled out — replace `you` with your username:
 
@@ -144,13 +144,13 @@ Askance is designed to be especially useful in two situations:
 
 1. When your agent asks you a lot of questions
 2. When your agent leaves code uncommitted as an acceptance gate, asking your
-  permission before committing them.
+  permission before committing it.
 
 In order to benefit from this, you need to actually have skills or prompts which
 instruct your agent to do those things.
 
 Two such skills are included as examples, but feel free to use whichever skills
-or prompting approach you prefer, Askance will adapt to it.
+or prompting approach you prefer; Askance will adapt to it.
 
 **[Grilling](examples/skills/grilling.md)** — interviews you about a plan by
   asking a series of questions until a shared understanding is reached.
@@ -183,13 +183,13 @@ Askance server. The `--bg` option makes it persistent across reboots.
 tailscale serve --bg 8422
 ```
 
-**Note:** — To receive notifications on iOS, you'll need to add the site to
+**Note:** To receive notifications on iOS, you'll need to add the site to
 your home screen. On Mobile Safari, tap "...", "Share", "View More", then
 "Add to Home Screen".
 
 ## Updating
 
-To check the current version, run `askance --version` 
+To check the current version, run `askance --version`.
 
 **Installed with curl:** run the install command again, which overwrites the
 binary in place, then restart the server — `systemctl --user restart askance`
