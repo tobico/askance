@@ -10,6 +10,19 @@ agent uses to put questions to you. The CLI blocks on your answer so your agent
 waits on you, and you can answer whenever you're ready without wasting any
 tokens.
 
+#### Features
+
+* 📊 See agent feedback in richly formatted Markdown with Mermaid diagrams.
+* ✅ Answer questions with a single click, and attach free text to any answer.
+* 📋 Decide on multi-factor tradeoffs by picking from a table.
+* 🔍 View diffs of uncommitted code right next to agent feedback.
+* 📱 Respond from your desktop or your phone.
+* 🔔 Get notified when an agent is waiting on you with push notifications.
+
+#### Screenshot
+
+![A question set in Askance — a preface with a diagram, the agent's uncommitted diff, and two questions](docs/screenshot.png)
+
 ## Installation
 
 ### NixOS
