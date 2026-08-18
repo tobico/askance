@@ -33,7 +33,10 @@ label. Add Options where there are discrete choices, and then recommend one.
   session** — never reset the counter for a new Set, so `Q4` still means the
   same Question when either side points back to it later.
 - **Sub-questions** append a letter: `Q7a`, `Q7b`. Use them when one Question
-  has distinct parts that each need their own Answer.
+  has distinct parts that each need their own Answer. That label is what comes
+  back rather than what is sent: a Sub-question sits under its parent's
+  `subquestions` and carries a bare `letter: a`, and the `Q7` in front of it is
+  the parent's own `label`.
 - **Options** append `.N`: a Question's are `Q7.1`, `Q7.2`, a Sub-question's
   are `Q7a.1`, `Q7a.2`. The **Recommendation** is the `★` appended to an
   Option's number — `Q7.1★` — and there is at most one per Question or
@@ -64,6 +67,11 @@ Q11 — Which framing should the rewritten README take?
              Q11b.1★  Keep it, updated
              Q11b.2   Drop it
 ```
+
+Those are the labels the Answers key back to, not the shape a Set is written
+in. Nesting is the `subquestions` field and nothing else, a Sub-question's
+`letter` is bare, and **Authoring the Set** below spells the whole of the tree
+above as the YAML that actually goes over the wire.
 
 ## Pacing
 
@@ -187,6 +195,26 @@ questions:
             recommended: true
           - n: 2
             text: Change it
+  - label: Q12
+    text: |
+      **The rest of the rewrite.** Neither of these turns on Q11.
+    subquestions:
+      - letter: a
+        text: Keep the screenshot?
+        options:
+          - n: 1
+            text: Keep it
+            recommended: true
+          - n: 2
+            text: Drop it
+      - letter: b
+        text: Keep the badge row?
+        options:
+          - n: 1
+            text: Keep it
+          - n: 2
+            text: Drop it
+            recommended: true
 postscript: |
   Anything else you'd like to add, such as:
 
@@ -204,7 +232,9 @@ Mapping from the labels:
 - `recommended: true` is the `★`. At most one per Question or Sub-question.
 - Options are optional. A Question with none is a bare clarifying Question, and
   the Answer is whatever the human writes — unless it carries Sub-questions, in
-  which case it is a Heading over them and takes no Answer at all.
+  which case it is a Heading over them and takes no Answer at all. `Q12` above
+  is one: Options on its Sub-questions, none of its own, so the Response comes
+  back with `Q12a` and `Q12b` and no `Q12`.
 - `postscript` closes the Set after the last Question, and carries no label
   because nothing answers it directly: what it raises comes back in the
   set-level `comment`, in the box drawn beneath it.
@@ -316,6 +346,10 @@ answers:
     free_text: Start there, revisit if the catalog case gets stronger.
   - label: Q11a
     unanswered: true
+  - label: Q12a
+    selected: 1
+  - label: Q12b
+    selected: 2
 comment: |
   On Q11a I genuinely don't know — pick whatever's least work to change later.
 ```

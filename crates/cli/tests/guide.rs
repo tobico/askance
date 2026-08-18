@@ -3,7 +3,7 @@
 
 use std::process::{Command, Output};
 
-use askance_schema::QuestionSet;
+use askance_schema::{Question, QuestionSet};
 
 /// Run the binary with `args` and insist it had something to say.
 fn run(args: &[&str]) -> Output {
@@ -369,22 +369,22 @@ fn the_answer_table_example_round_trips() {
 
 /// The Response the Guide shows answers the Set the Guide shows. An example
 /// that answers a Question the example Set never asks teaches an agent to wait
-/// for an Answer that cannot arrive.
+/// for an Answer that cannot arrive — and a Heading is exactly that Question,
+/// so the example Response has to step over the one the example Set heads with.
 #[test]
 fn the_example_response_answers_the_example_set() {
     let guide = stdout(&run(&["guide"]));
-    let set = quoted_after(&guide, "## Authoring the Set");
+    let set = QuestionSet::from_yaml(&quoted_after(&guide, "## Authoring the Set"))
+        .expect("the worked example should parse as a Set");
     let response = quoted_after(&guide, "## Reading the Response");
 
     let mut asked: Vec<String> = Vec::new();
-    let mut parent = String::new();
-    for line in set.lines() {
-        let line = line.trim();
-        if let Some(label) = line.strip_prefix("- label: ") {
-            parent = label.trim().to_string();
-            asked.push(parent.clone());
-        } else if let Some(letter) = line.strip_prefix("- letter: ") {
-            asked.push(format!("{parent}{}", letter.trim()));
+    for question in &set.questions {
+        if !question.heading() {
+            asked.push(question.name().to_string());
+        }
+        for subquestion in &question.subquestions {
+            asked.push(subquestion.name(question));
         }
     }
 
@@ -396,9 +396,55 @@ fn the_example_response_answers_the_example_set() {
 
     assert_eq!(
         answered, asked,
-        "every Question and Sub-question comes back exactly once — the example \
-         Response should answer the example Set and nothing besides"
+        "every Question and Sub-question comes back exactly once and a Heading \
+         never does — the example Response should answer the example Set and \
+         nothing besides"
     );
+}
+
+/// Both nesting shapes have to be shown, not just described. A Heading is what
+/// an agent reaches for the first time it batches related decisions, and the
+/// prose that defines one sits ~100 lines from any YAML — so an agent that
+/// writes its Set from the labels section invents `label:` on a Sub-question
+/// and a `questions:` key to nest under, and gets two refusals for it.
+#[test]
+fn the_worked_example_shows_both_nesting_shapes() {
+    let guide = stdout(&run(&["guide"]));
+    let set = QuestionSet::from_yaml(&quoted_after(&guide, "## Authoring the Set"))
+        .expect("the worked example should parse as a Set");
+    set.validate()
+        .expect("the worked example should pass the grammar the server holds Sets to");
+
+    assert!(
+        set.questions.iter().any(Question::heading),
+        "the worked example should show a Heading — Sub-questions under a \
+         Question with no Options of its own, which no other example spells"
+    );
+    assert!(
+        set.questions
+            .iter()
+            .any(|question| !question.heading() && !question.subquestions.is_empty()),
+        "and a Question carrying both its own Options and Sub-questions, so the \
+         two shapes are told apart by example rather than by prose alone"
+    );
+}
+
+/// The labels section introduces the `Q7a` notation ~100 lines before the YAML
+/// that spells it, so it is where an agent's model of the tree actually forms.
+/// One that teaches the label without naming the fields teaches a shape the
+/// server refuses.
+#[test]
+fn the_labels_section_names_the_fields_behind_the_notation() {
+    let guide = stdout(&run(&["guide"]));
+    let labels = section(&guide, "## Question labels");
+
+    for phrase in ["`subquestions`", "`letter"] {
+        assert!(
+            labels.contains(phrase),
+            "the labels section should name {phrase} where it introduces the \
+             `Q7a` notation, got:\n{labels}"
+        );
+    }
 }
 
 /// The comment box is always there and always optional, so an empty one is an
