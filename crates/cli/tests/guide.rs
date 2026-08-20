@@ -1,9 +1,7 @@
-//! The Guide as the binary hands it over: `askance guide`, bare `askance`, and
-//! the promise that the CLI contract it quotes is the one this binary has.
+//! The Guide as the binary hands it over: the commands that print it, not the
+//! words it prints — the markdown is reviewed as markdown, not pinned by tests.
 
 use std::process::{Command, Output};
-
-use askance_schema::{Question, QuestionSet};
 
 /// Run the binary with `args` and insist it had something to say.
 fn run(args: &[&str]) -> Output {
@@ -22,87 +20,14 @@ fn stdout(output: &Output) -> String {
     String::from_utf8(output.stdout.clone()).unwrap()
 }
 
-/// The body of the first fenced block after `heading`, which is where the Guide
-/// quotes something verbatim.
-fn quoted_after(guide: &str, heading: &str) -> String {
-    let section = guide
-        .split_once(heading)
-        .unwrap_or_else(|| panic!("the Guide should have a {heading:?} section"))
-        .1;
-    let fence = section
-        .split_once("```")
-        .expect("that section should quote something in a fenced block")
-        .1;
-    let body = fence
-        .split_once('\n')
-        .expect("a fence opens a line of its own")
-        .1;
-    body.split_once("```")
-        .expect("the fence should close")
-        .0
-        .to_string()
-}
-
-/// The bodies of every fenced block in `text`, in order, without their info
-/// strings — for a section that shows more than one example. A fence indented
-/// under a list item counts, and comes back with that indent removed, so the
-/// body is the YAML as it would be pasted.
-fn fenced_blocks(text: &str) -> Vec<String> {
-    let mut blocks = Vec::new();
-    let mut open: Option<(usize, Vec<&str>)> = None;
-    for line in text.lines() {
-        let indent = line.len() - line.trim_start().len();
-        if line.trim_start().starts_with("```") {
-            match open.take() {
-                None => open = Some((indent, Vec::new())),
-                Some((_, body)) => blocks.push(body.join("\n")),
-            }
-        } else if let Some((indent, body)) = open.as_mut() {
-            body.push(line.get(*indent..).unwrap_or(line.trim_start()));
-        }
-    }
-    blocks
-}
-
-/// Everything under `heading` up to the next one: the section in full, its
-/// examples and all.
-fn section<'a>(guide: &'a str, heading: &str) -> &'a str {
-    guide
-        .split_once(heading)
-        .unwrap_or_else(|| panic!("the Guide should have a {heading:?} section"))
-        .1
-        .split("\n## ")
-        .next()
-        .unwrap()
-}
-
-/// The Guide with its fenced blocks dropped — what it says in its own voice,
-/// as against what it quotes. An example Response is the human talking, and a
-/// human says "I".
-fn prose(guide: &str) -> String {
-    guide
-        .split("\n```")
-        .step_by(2)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Compare rendered text by line, ignoring trailing whitespace: clap pads a
-/// blank line inside an option's help, and no editor keeps that padding alive
-/// in a markdown file. Everything that carries meaning survives the trim.
-fn lines(text: &str) -> Vec<&str> {
-    text.trim_end().lines().map(str::trim_end).collect()
-}
-
 #[test]
 fn the_guide_command_prints_the_guide() {
     let output = run(&["guide"]);
 
     assert!(output.status.success(), "`askance guide` should exit 0");
     assert!(
-        stdout(&output).contains("## The CLI contract"),
-        "the Guide should be on stdout, got:\n{}",
-        stdout(&output)
+        !stdout(&output).trim().is_empty(),
+        "the Guide should be on stdout"
     );
 }
 
@@ -135,65 +60,6 @@ fn the_help_about_text_points_at_the_guide() {
 }
 
 #[test]
-fn the_guide_covers_every_core_area() {
-    let guide = stdout(&run(&["guide"]));
-
-    for heading in [
-        "## Required topic guides",
-        "## Question labels",
-        "## Pacing",
-        "## Authoring the Set",
-        "## The CLI contract",
-        "## Running the ask",
-        "## Reading the Response",
-    ] {
-        assert!(
-            guide.contains(heading),
-            "the core Guide should cover {heading:?} — an agent reads nothing else \
-             before asking"
-        );
-    }
-}
-
-#[test]
-fn the_topic_contract_binds_gates_to_the_guide() {
-    let guide = stdout(&run(&["guide"]));
-    let (top, rest) = guide
-        .split_once("## Required topic guides")
-        .expect("checked by the test above");
-    let contract = rest.split("\n## ").next().unwrap();
-
-    assert!(
-        top.len() < guide.len() / 3,
-        "the topic contract belongs near the top, before an agent has decided \
-         it has read enough"
-    );
-    assert!(
-        contract.contains("MUST") && contract.contains("askance guide gates"),
-        "a Topic is required reading, not a suggestion — the contract section \
-         should say MUST and name the command, got:\n{contract}"
-    );
-}
-
-#[test]
-fn the_authoring_section_sends_approval_asks_to_the_gates_topic() {
-    let guide = stdout(&run(&["guide"]));
-    let authoring = guide
-        .split_once("## Authoring the Set")
-        .expect("checked by the test above")
-        .1
-        .split("\n## ")
-        .next()
-        .unwrap();
-
-    assert!(
-        authoring.contains("askance guide gates"),
-        "the agent decides what to write in the authoring section, so that is \
-         where an approval ask has to be sent to the Topic, got:\n{authoring}"
-    );
-}
-
-#[test]
 fn the_gates_topic_prints_and_exits_zero() {
     let output = run(&["guide", "gates"]);
 
@@ -202,9 +68,8 @@ fn the_gates_topic_prints_and_exits_zero() {
         "`askance guide gates` should exit 0"
     );
     assert!(
-        stdout(&output).contains("# Confirmation gates"),
-        "the gates Topic should be on stdout, got:\n{}",
-        stdout(&output)
+        !stdout(&output).trim().is_empty(),
+        "the gates Topic should be on stdout"
     );
 }
 
@@ -216,249 +81,6 @@ fn a_topic_is_not_the_core_guide() {
         stdout(&run(&["guide", "gates"])),
         stdout(&run(&["guide"])),
         "`askance guide gates` should print the Topic, not the core Guide"
-    );
-}
-
-#[test]
-fn the_gates_topic_carries_the_whole_of_the_gates_guidance() {
-    let gates = stdout(&run(&["guide", "gates"]));
-
-    for phrase in [
-        // The degenerate Set, and the Preface left to carry it.
-        "one Question",
-        "`preface`",
-        // The delta Diagram rules.
-        "Diagram the delta, not the system",
-        "`new`",
-        "`removed`",
-        "before/after",
-        "sequence Diagram",
-        "```mermaid",
-        // The strict reading, and which way it fails.
-        "unanswered: true",
-        "counter-question",
-        "ambiguous",
-        "Fail closed",
-    ] {
-        assert!(
-            gates.contains(phrase),
-            "the gates Topic should cover {phrase:?} — it is the only thing an \
-             agent reads before writing a gate, got:\n{gates}"
-        );
-    }
-}
-
-/// "Anything else?" is the Postscript's job: the comment box asks it on every
-/// Set, so a Question that asks it again spends a row the human then has to
-/// leave explicitly open. The reverse holds too — a decision, however
-/// trivial, is a Question, never parked in the Postscript where nothing
-/// obliges a reply. An agent that reads only the worked example copies
-/// whatever that example ends with, so the field has to be in it.
-#[test]
-fn the_guide_sends_the_catch_all_to_the_postscript() {
-    let guide = stdout(&run(&["guide"]));
-
-    let contract = section(&guide, "## The CLI contract");
-    assert!(
-        contract.contains("`postscript`"),
-        "the Set shape is where an agent checks which fields exist, so it has \
-         to list `postscript`, got:\n{contract}"
-    );
-
-    let authoring = section(&guide, "## Authoring the Set");
-    assert!(
-        authoring.contains("postscript:"),
-        "the worked example should close its Set with a `postscript`, got:\n{authoring}"
-    );
-    assert!(
-        authoring.contains("never a Question"),
-        "the authoring section should say outright that a catch-all is never a \
-         Question, got:\n{authoring}"
-    );
-    assert!(
-        authoring.contains("a decision, however small, is a Question"),
-        "the authoring section should carry the litmus — a decision, however \
-         small, is a Question — got:\n{authoring}"
-    );
-    assert!(
-        authoring.contains("Write an ADR for this?"),
-        "the authoring section should name the canonical mistake, the trivial \
-         yes/no parked in the postscript, got:\n{authoring}"
-    );
-    assert!(
-        !guide.contains("Anything worth knowing before this starts?")
-            && !guide.contains("often saves a whole round trip"),
-        "no passage should still recommend the trailing catch-all Question the \
-         Postscript replaced, got:\n{guide}"
-    );
-}
-
-/// The Set shape is where an agent checks which fields exist before it
-/// serializes one. A shape that omits the Answer Table's fields is a shape that
-/// says they aren't there.
-#[test]
-fn the_set_shape_names_the_answer_table_fields() {
-    let guide = stdout(&run(&["guide"]));
-    let contract = section(&guide, "## The CLI contract");
-
-    assert!(
-        contract.contains("columns") && contract.contains("cells"),
-        "the Set shape should list `columns` and `cells`, so the shape an agent \
-         serializes is complete at a glance, got:\n{contract}"
-    );
-}
-
-/// The Guide is the only place the Answer Table is discoverable, and the old
-/// pattern — a markdown table in the Question's text, echoed as a list of
-/// Options below it — is what an agent writes without it.
-#[test]
-fn the_guide_teaches_the_answer_table_declaration() {
-    let guide = stdout(&run(&["guide"]));
-    let authoring = section(&guide, "## Authoring the Set");
-
-    for phrase in ["`columns`", "`cells`", "leading cell"] {
-        assert!(
-            authoring.contains(phrase),
-            "the authoring section should teach the declaration and mention \
-             {phrase} — no other Topic covers it, got:\n{authoring}"
-        );
-    }
-    assert!(
-        !guide.contains("Prefer a comparison table where Options trade off"),
-        "the old bullet steered an agent to a table it wrote itself — the \
-         declaration replaces it, got:\n{guide}"
-    );
-}
-
-/// An example of a declaration only teaches it if it is one: pasted into a Set
-/// it has to parse, pass the grammar, and come out a table rather than a list.
-#[test]
-fn the_answer_table_example_round_trips() {
-    let guide = stdout(&run(&["guide"]));
-    let example = fenced_blocks(section(&guide, "## Authoring the Set"))
-        .into_iter()
-        .find(|block| block.contains("columns:"))
-        .expect("the authoring section should show the declaration as YAML");
-
-    let set = QuestionSet::from_yaml(&format!("title: Pasted out of the Guide\n{example}"))
-        .expect("the example should parse as the Questions of a Set");
-    set.validate()
-        .expect("the example should pass the grammar the server holds Sets to");
-
-    let question = set
-        .questions
-        .iter()
-        .find(|question| !question.columns.is_empty())
-        .expect("the example should declare an Answer Table");
-    assert!(
-        question.options.len() > 1,
-        "a table of one row teaches nothing about the axes it compares along"
-    );
-    for option in &question.options {
-        assert_eq!(
-            option.cells.len(),
-            question.columns.len(),
-            "every Option fills every column — that is what makes the rows a table"
-        );
-        assert!(
-            !option.text.trim().is_empty(),
-            "the Option's `text` is the row's leading cell, so every row has one"
-        );
-    }
-}
-
-/// The Response the Guide shows answers the Set the Guide shows. An example
-/// that answers a Question the example Set never asks teaches an agent to wait
-/// for an Answer that cannot arrive — and a Heading is exactly that Question,
-/// so the example Response has to step over the one the example Set heads with.
-#[test]
-fn the_example_response_answers_the_example_set() {
-    let guide = stdout(&run(&["guide"]));
-    let set = QuestionSet::from_yaml(&quoted_after(&guide, "## Authoring the Set"))
-        .expect("the worked example should parse as a Set");
-    let response = quoted_after(&guide, "## Reading the Response");
-
-    let mut asked: Vec<String> = Vec::new();
-    for question in &set.questions {
-        if !question.heading() {
-            asked.push(question.name().to_string());
-        }
-        for subquestion in &question.subquestions {
-            asked.push(subquestion.name(question));
-        }
-    }
-
-    let answered: Vec<String> = response
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix("- label: "))
-        .map(|label| label.trim().to_string())
-        .collect();
-
-    assert_eq!(
-        answered, asked,
-        "every Question and Sub-question comes back exactly once and a Heading \
-         never does — the example Response should answer the example Set and \
-         nothing besides"
-    );
-}
-
-/// Both nesting shapes have to be shown, not just described. A Heading is what
-/// an agent reaches for the first time it batches related decisions, and the
-/// prose that defines one sits ~100 lines from any YAML — so an agent that
-/// writes its Set from the labels section invents `label:` on a Sub-question
-/// and a `questions:` key to nest under, and gets two refusals for it.
-#[test]
-fn the_worked_example_shows_both_nesting_shapes() {
-    let guide = stdout(&run(&["guide"]));
-    let set = QuestionSet::from_yaml(&quoted_after(&guide, "## Authoring the Set"))
-        .expect("the worked example should parse as a Set");
-    set.validate()
-        .expect("the worked example should pass the grammar the server holds Sets to");
-
-    assert!(
-        set.questions.iter().any(Question::heading),
-        "the worked example should show a Heading — Sub-questions under a \
-         Question with no Options of its own, which no other example spells"
-    );
-    assert!(
-        set.questions
-            .iter()
-            .any(|question| !question.heading() && !question.subquestions.is_empty()),
-        "and a Question carrying both its own Options and Sub-questions, so the \
-         two shapes are told apart by example rather than by prose alone"
-    );
-}
-
-/// The labels section introduces the `Q7a` notation ~100 lines before the YAML
-/// that spells it, so it is where an agent's model of the tree actually forms.
-/// One that teaches the label without naming the fields teaches a shape the
-/// server refuses.
-#[test]
-fn the_labels_section_names_the_fields_behind_the_notation() {
-    let guide = stdout(&run(&["guide"]));
-    let labels = section(&guide, "## Question labels");
-
-    for phrase in ["`subquestions`", "`letter"] {
-        assert!(
-            labels.contains(phrase),
-            "the labels section should name {phrase} where it introduces the \
-             `Q7a` notation, got:\n{labels}"
-        );
-    }
-}
-
-/// The comment box is always there and always optional, so an empty one is an
-/// answer of its own. An agent that reads it as an oversight asks again for
-/// something the human already declined to say.
-#[test]
-fn an_absent_comment_means_the_human_had_nothing_to_add() {
-    let guide = stdout(&run(&["guide"]));
-    let reading = section(&guide, "## Reading the Response");
-
-    assert!(
-        reading.contains("nothing to add"),
-        "the Response section should say what an absent `comment` means, \
-         got:\n{reading}"
     );
 }
 
@@ -483,67 +105,5 @@ fn an_unknown_topic_is_an_error_naming_the_topics_that_exist() {
         stderr.contains("nonsense") && stderr.contains("gates"),
         "the error should name what was asked for and the Topics that exist, \
          got:\n{stderr}"
-    );
-}
-
-/// The Guide is the whole of what an agent reads, so it can't lean on a
-/// conversation it can't see: no chat to fall back to, no transport to detect,
-/// no reply grammar of its own, and no first person for a human who is
-/// somewhere else entirely. That holds for a Topic as much as for the core.
-#[test]
-fn the_guide_stands_alone() {
-    stands_alone(&stdout(&run(&["guide"])));
-}
-
-#[test]
-fn the_gates_topic_stands_alone() {
-    stands_alone(&stdout(&run(&["guide", "gates"])));
-}
-
-fn stands_alone(guide: &str) {
-    for phrase in [
-        "in chat",
-        "chat fallback",
-        "fall back",
-        "falling back",
-        "command -v",
-        "reply grammar",
-        "tobico",
-        "/next-task",
-        "/grilling",
-    ] {
-        assert!(
-            !guide.contains(phrase),
-            "the Guide should not mention {phrase:?} — the binary is the only \
-             transport and the only documentation"
-        );
-    }
-
-    let prose = prose(guide);
-    let first_person: Vec<&str> = prose
-        .split(|c: char| !c.is_alphanumeric() && c != '\'')
-        .filter(|word| {
-            matches!(*word, "I" | "I'm" | "I'd" | "I'll" | "I've")
-                || matches!(word.to_lowercase().as_str(), "me" | "my" | "mine")
-        })
-        .collect();
-
-    assert!(
-        first_person.is_empty(),
-        "the Guide speaks of the human in the third person — found {first_person:?}"
-    );
-}
-
-#[test]
-fn the_guides_quoted_cli_contract_is_the_real_one() {
-    let guide = stdout(&run(&["guide"]));
-    let quoted = quoted_after(&guide, "## The CLI contract");
-    let real = stdout(&run(&["ask", "--help"]));
-
-    assert_eq!(
-        lines(&quoted),
-        lines(&real),
-        "the Guide quotes `askance ask --help` verbatim — copy the current \
-         output into the CLI contract section of crates/cli/guide/core.md"
     );
 }

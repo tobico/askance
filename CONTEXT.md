@@ -109,7 +109,9 @@ _Avoid_: margin, sidebar, left rail
 The agent-facing usage instructions shipped inside the CLI and printed by
 it, so an agent needs nothing beyond the binary to learn how to ask. Split
 into a core that every ask needs and Topics fetched when their task arises.
-_Avoid_: help, manual, docs
+Judged solely by whether it produces correct usage — it exists for successful
+asking, not deep understanding.
+_Avoid_: help, manual, docs, explainer
 
 **Topic**:
 A task-scoped section of the Guide (e.g. gates), split out so an agent pays

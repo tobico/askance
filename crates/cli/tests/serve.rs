@@ -309,7 +309,7 @@ fn serve_is_listed_without_displacing_the_guide() {
 
     let bare = run(&[]);
     assert!(
-        bare.status.success() && stdout(&bare).contains("## The CLI contract"),
+        bare.status.success() && stdout(&bare).contains("# Asking the human"),
         "bare `askance` should still print the Guide, got:\n{}",
         stdout(&bare)
     );
